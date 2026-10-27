@@ -3,6 +3,12 @@ import { decompositionHeldManifestKey, decompositionHeldPageKey, type Item } fro
 import { z } from 'zod';
 import type { ObjectStore } from '../storage/object-store.js';
 
+/** The most pages a held PDF has: the page route asks for no page past it. */
+export const MAX_HELD_PAGES = 5000;
+
+/** The image types a held image is served as; anything else (SVG, say) could run script. */
+export const HELD_IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg']);
+
 /**
  * The held manifest the worker writes beside a PDF held for review (worker `decompose/hold.py`,
  * `HeldManifest`; its camelCase shape is a contract). Only what the API reads is checked here;
@@ -12,7 +18,7 @@ const HeldManifestSchema = z.object({
   version: z.literal(1),
   document: DecomposedDocumentSchema,
   images: z.array(z.object({ id: z.string(), key: z.string(), contentType: z.string() })),
-  pageCount: z.number().int().nonnegative(),
+  pageCount: z.number().int().nonnegative().max(MAX_HELD_PAGES),
   pageMap: z.record(z.string(), z.array(z.number().int().positive())),
 });
 export type HeldManifest = z.infer<typeof HeldManifestSchema>;

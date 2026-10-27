@@ -1488,8 +1488,15 @@ describe('reviewing a held PDF', () => {
     report: [],
   };
 
-  /** A started PDF item held for review, with the worker's held files in the runs bucket. */
-  async function heldItem(c: Ctx, cookie?: string) {
+  /**
+   * A started PDF item held for review, with the worker's held files in the runs bucket.
+   * `manifest` changes what the stored manifest says.
+   */
+  async function heldItem(
+    c: Ctx,
+    cookie?: string,
+    manifest: (m: Record<string, unknown>, item: Item) => void = () => {},
+  ) {
     const item = await startedItem(c, 'policies/leave.pdf', fakePdf, cookie);
     Object.assign(c.repo.conversionItems.get(item.id)!, {
       outcome: 'awaiting_review',
@@ -1502,7 +1509,7 @@ describe('reviewing a held PDF', () => {
       sha256: 'a',
       contentType: 'image/png',
     };
-    const manifest = {
+    const stored: Record<string, unknown> = {
       version: 1,
       sourceSha256: item.contentSha256,
       decomposerVersion: 2001,
@@ -1513,9 +1520,10 @@ describe('reviewing a held PDF', () => {
       pageCount: 2,
       pageMap: { s1: [1, 2] },
     };
+    manifest(stored, item);
     const put = (key: string, body: Buffer, type: string) => c.store.put('runs', key, body, type);
     const manifestKey = decompositionHeldManifestKey(item.batchId, item.id);
-    await put(manifestKey, Buffer.from(JSON.stringify(manifest)), 'application/json');
+    await put(manifestKey, Buffer.from(JSON.stringify(stored)), 'application/json');
     await put(image.key, PNG, 'image/png');
     await put(decompositionHeldPageKey(item.batchId, item.id, 1), JPEG, 'image/jpeg');
     await put(decompositionHeldPageKey(item.batchId, item.id, 2), JPEG, 'image/jpeg');
@@ -1658,6 +1666,16 @@ describe('reviewing a held PDF', () => {
     });
   });
 
+  it('review refuses a manifest with more pages than a page can be asked for', async () => {
+    const c = await setup();
+    const item = await heldItem(c, undefined, (m) => Object.assign(m, { pageCount: 5001 }));
+
+    const res = await get(c, item, 'review');
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: 'the held document is not readable' });
+  });
+
   it('review is refused unless the item awaits review, and 404 for none or no files', async () => {
     const c = await setup();
     const item = await startedItem(c);
@@ -1685,6 +1703,33 @@ describe('reviewing a held PDF', () => {
     expect(image.headers['content-type']).toBe('image/png');
     expect(image.headers['x-content-type-options']).toBe('nosniff');
     expect(image.rawPayload.equals(PNG)).toBe(true);
+  });
+
+  it('serves an image only as PNG or JPEG, under a policy that runs nothing', async () => {
+    const c = await setup();
+    const item = await heldItem(c, undefined, (m) => {
+      const [png] = m.images as { contentType: string }[];
+      m.images = [png, { ...png, id: 'img-2', contentType: 'image/svg+xml' }];
+    });
+
+    const png = await get(c, item, 'images/0');
+    expect(png.statusCode).toBe(200);
+    expect(png.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    expect((await get(c, item, 'images/1')).statusCode).toBe(404);
+  });
+
+  it("never serves or deletes a file outside the item's held files", async () => {
+    const c = await setup();
+    const foreign = 'decompositions/elsewhere/other.held/images/0';
+    await c.store.put('runs', foreign, PNG, 'image/png');
+    const item = await heldItem(c, undefined, (m) => {
+      m.images = [{ id: 'img-1', key: foreign, sha256: 'a', contentType: 'image/png' }];
+    });
+
+    expect((await get(c, item, 'images/0')).statusCode).toBe(404);
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reject`, { note: 'no' });
+    expect(res.statusCode).toBe(200);
+    expect(runsObjects(c)).toContain(`runs/${foreign}`);
   });
 
   it('refuses a page or image that is not there, or an item not held', async () => {

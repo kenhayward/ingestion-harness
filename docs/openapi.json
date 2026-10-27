@@ -15881,7 +15881,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "One of the images extracted from a PDF held for review, by its position in the review's\n`images`, with its own content type. Only while the item is `awaiting_review`.",
+        "description": "One of the images extracted from a PDF held for review, by its position in the review's\n`images`, with its own content type: PNG or JPEG (an image of any other type is not\nserved). Only while the item is `awaiting_review`.",
         "parameters": [
           {
             "schema": {
@@ -15914,18 +15914,6 @@
                 }
               },
               "image/jpeg": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              },
-              "image/gif": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              },
-              "image/webp": {
                 "schema": {
                   "type": "string",
                   "format": "binary"

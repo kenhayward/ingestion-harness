@@ -27,7 +27,13 @@ import {
 import { z } from 'zod';
 import { creatorOf } from '../access/routes.js';
 import { acceptPlanOf } from '../conversions/accept.js';
-import { deleteHeld, isHeldKey, readHeld } from '../conversions/held.js';
+import {
+  deleteHeld,
+  HELD_IMAGE_TYPES,
+  isHeldKey,
+  MAX_HELD_PAGES,
+  readHeld,
+} from '../conversions/held.js';
 import type { RegisterEntry } from '../repositories/types.js';
 import {
   batchCreator,
@@ -713,7 +719,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const page = Number(req.params.n);
-      if (!Number.isInteger(page) || page < 1 || page > 5000) {
+      if (!Number.isInteger(page) || page < 1 || page > MAX_HELD_PAGES) {
         return reply.code(400).send({ error: 'page must be a positive integer' });
       }
       const item = await awaitingItem(req.params.id, reply);
@@ -746,11 +752,12 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Get a held PDF image',
         description: md`
           One of the images extracted from a PDF held for review, by its position in the review's
-          \`images\`, with its own content type. Only while the item is \`awaiting_review\`.
+          \`images\`, with its own content type: PNG or JPEG (an image of any other type is not
+          served). Only while the item is \`awaiting_review\`.
         `,
         params: ItemParams.extend({ index: z.string().describe('The 0-based image position.') }),
         response: {
-          200: binary('The image.', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'),
+          200: binary('The image.', 'image/png', 'image/jpeg'),
           400: error('`index must be a non-negative integer`.'),
           404: error('No such item, or no such image.'),
           409: NotAwaiting,
@@ -773,8 +780,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(502).send({ error: 'the held document is not readable' });
         }
         const image = held.ok ? held.manifest.images[index] : undefined;
-        // Only the item's own held files are ever read, whatever the manifest names.
-        if (image && isHeldKey(item, image.key)) {
+        // Only the item's own held files are ever read, and only as PNG or JPEG, whatever the
+        // manifest names.
+        if (image && isHeldKey(item, image.key) && HELD_IMAGE_TYPES.has(image.contentType)) {
           contentType = image.contentType;
           body = await app.deps.store.get(app.deps.buckets.runs, image.key);
         }
@@ -786,6 +794,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .header('content-type', contentType)
         .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'none'; sandbox")
         .header('cache-control', 'private, max-age=300')
         .send(body);
     },

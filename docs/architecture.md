@@ -220,7 +220,9 @@ or review step.
   - The API reviews a hold through routes under `/api/conversions/items/:id/` (any role that may
     convert), all refused (409 `NOT_AWAITING_REVIEW`) unless the item is `awaiting_review`: `review`
     (the held document, page count, page map and image types, read from the manifest), `pages/:n`
-    and `images/:index` (the held JPEG and image), `approve` and `reject`. Approving records the
+    and `images/:index` (the held JPEG and image; PNG or JPEG only, under a CSP that runs nothing,
+    and only files under the item's `.held/` prefix), `approve` and `reject`. A manifest of more
+    than 5000 pages is not readable (the page route's bound). Approving records the
     reviewer, time and note, sets the item `queued` and queues the approved `decompose` job, with
     the batch's `force`, in one transaction. Rejecting records the same and sets `rejected`
     (final), then deletes the held files the manifest names. Uploads and redeliveries take a Word
