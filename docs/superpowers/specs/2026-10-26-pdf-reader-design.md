@@ -158,13 +158,28 @@ Dropping is where body text could go silently, so it is guarded: **[call]**
 - A line is furniture only when it is in the page's top or bottom margin band, and either Docling
   labels it furniture or it repeats (digits aside) at the same place on at least half the pages.
   A furniture label outside the margin bands is ignored.
+- A printed page number in a margin band is furniture on any page, whatever its form ("8",
+  "- 8 -", "A3 8", "Page 8 of 120", "8/120", "iv"), even when it repeats on too few pages for the
+  rule above: an annex's own page numbers ("A3 8") don't. A picture region in a margin band is
+  dropped, not cropped, when no image object lies under it and every char it overlaps is its own
+  page-number text or already dropped as furniture (Docling sometimes takes a footer's page
+  number for a picture too). It counts in the flag as a picture. (2026-10-27)
+- Printed line numbers are dropped from the start of the lines they number (`line-number` in the
+  ledger): on a page, the lines' leading runs of up to five digits that stand in one column (left
+  or right edges within 3 points), at least five of them on at least half the page's lines,
+  increasing down the page, with every other char on the page at least half an em to their
+  right. Once a page's column is found in the body, numbers in the margin bands that line up with
+  it and carry on its count go too (the body can start in the top band). A numbered list fails
+  the last test against the body text beside it; a table's cells are never looked at, so a first
+  column of numbers stays. Only born-digital pages are looked at. (2026-10-27)
 - A contents list is dropped only as a block: lines ending in a page number, most with dot leaders,
   under a contents heading or forming a run of them. A single such line in the body is kept.
   A run without a contents heading starts on a line with a dot leader, and a run's page numbers
   never go back nor past the document's last page, so body lines ending in numbers and a "Max
   load ........ 250" line are kept. (2026-10-27)
-- What was dropped is listed in one `info` flag, by page: how many furniture lines, and which pages
-  held contents or lists. A reviewer can see that nothing else was dropped.
+- What was dropped is listed in one `info` flag, by page: how many furniture lines and pictures,
+  how many line numbers, and which pages held contents or lists. A reviewer can see that nothing
+  else was dropped.
 
 ### 4.4 Headings and their levels
 
@@ -183,7 +198,10 @@ The heading tree comes from the best source the PDF has, in this order: **[call]
 2. **Typed numbering.** Without bookmarks, a heading that starts with a number ("2.1 Scope", "2.1.
    Scope", "2.1.Scope") takes its level from the number's parts.
 3. **Inference.** An unnumbered heading without bookmarks sits one level below the numbered
-   heading before it (or at level 1 when there is none), and is flagged `structure_inferred`.
+   heading before it (or at level 1 when there is none). The headings inferred are counted in one
+   `structure_inferred` flag at no element, with severity `info` ("Heading levels inferred for 34
+   headings"), not flagged one by one: on a real document nearly every heading is inferred, and a
+   warning each buried the flags that matter. (2026-10-27)
 
 Heading text follows the decomposition spec's rules: typed numbers left out, only superscript and
 subscript kept, section ids from the whole heading text.
@@ -244,10 +262,11 @@ pages, notes. **[call]**
 
 The flag codes stay those of contract version 2, so the contract and the sink don't change.
 **[call]** Every inference is a `structure_inferred` flag at the element, and its message says
-which: an inferred heading level, a table's grid, a join across pages, notes moved out of a grid,
+which: a table's grid, a join across pages, notes moved out of a grid,
 text the layout analysis missed, a footnote with no marker or an ambiguous one, a bookmark left
 out. The dropped-text summary (§4.3) is a `structure_inferred` flag too, at no element, with
-severity `info`, and so is a count of the visible glyphs on a page that the text layer gives no
+severity `info`, and so is the count of headings whose level was inferred (§4.4, 2026-10-27), and a
+count of the visible glyphs on a page that the text layer gives no
 text (or no box) and that are therefore left out. (2026-10-27)
 
 A PDF's structure flags are many by nature. The batch row and the report show their count, so a
@@ -537,7 +556,9 @@ The page is read-only. It shows the item's file name, its target, and the count 
 The contract's `decomposerVersion` is an integer and stays one. For a PDF it is
 `DECOMPOSER_VERSION × 1000 + PDF_READER_VERSION`; a Word file's stays `DECOMPOSER_VERSION`.
 **[call]** So a new reader version changes the idempotency key and the provenance of a PDF, and
-not of Word files. The reader's version stays below 1000.
+not of Word files. The reader's version stays below 1000. Printed line and page numbers dropped as furniture
+(§4.3) and the one count of inferred heading levels (§4.4) change what the reader produces, so
+`PDF_READER_VERSION` goes to 3 and a PDF's decomposer version to 1003. (2026-10-27)
 
 ### 14.9 Done when
 
