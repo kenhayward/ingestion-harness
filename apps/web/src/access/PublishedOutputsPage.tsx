@@ -5,6 +5,7 @@ import type { Api, Me } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { AddTargetDialog } from './AddTargetDialog.js';
+import { SinkAdminDialog } from './SinkAdminDialog.js';
 import { SinkTargetRow } from './SinkTargetRow.js';
 import { TargetRow } from './TargetRow.js';
 
@@ -75,6 +76,7 @@ export function PublishedOutputsPage({
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [sinks, setSinks] = useState<SinkInfo[]>([]);
+  const [administering, setAdministering] = useState<SinkInfo | null>(null);
   const isAdmin = me.role === 'admin';
   // A change on the bridge's connections page: targets show their connections' status.
   const version = useConnectionsVersion();
@@ -114,6 +116,15 @@ export function PublishedOutputsPage({
           <Icon name="key" />
           Manage connections
         </button>
+        {/* A system's instances and clients are the whole system's, not one target's. */}
+        {sinks
+          .filter((s) => s.capabilities.administration)
+          .map((s) => (
+            <button key={s.id} type="button" onClick={() => setAdministering(s)}>
+              <Icon name="users" />
+              Administer {s.name}
+            </button>
+          ))}
         <button type="button" className="primary" onClick={() => setAdding(true)}>
           <Icon name="plus" />
           Add target
@@ -143,6 +154,9 @@ export function PublishedOutputsPage({
         </section>
       )}
       {sinks.length > 0 && <SinksSection sinks={sinks} />}
+      {administering && (
+        <SinkAdminDialog api={api} sink={administering} onClose={() => setAdministering(null)} />
+      )}
       {adding && (
         <AddTargetDialog
           api={api}

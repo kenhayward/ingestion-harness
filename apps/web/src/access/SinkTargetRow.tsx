@@ -3,7 +3,6 @@ import { targetInUse, type PublishTargetView, type SinkInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { connectionStatus } from './ConnectionPicker.js';
-import { SinkAdminDialog } from './SinkAdminDialog.js';
 import { SinkTargetFields, sinkTargetComplete, type SinkTargetValue } from './SinkTargetFields.js';
 
 const same = (a: Record<string, string>, b: Record<string, string>) =>
@@ -12,7 +11,7 @@ const same = (a: Record<string, string>, b: Record<string, string>) =>
 /**
  * A target of an external sink: a row that opens on its fields, as its sink declares them.
  * While the target is in use its instance and fixed fields are read-only; its label, connection
- * and name patterns always change. A sink that declares administration adds Administer.
+ * and name patterns always change.
  */
 export function SinkTargetRow({
   api,
@@ -36,7 +35,6 @@ export function SinkTargetRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [administering, setAdministering] = useState(false);
   useEffect(() => {
     setLabel(t.label);
     setValue({
@@ -148,12 +146,6 @@ export function SinkTargetRow({
             >
               Save
             </button>
-            {sink?.capabilities.administration && (
-              <button type="button" onClick={() => setAdministering(true)}>
-                <Icon name="users" />
-                Administer
-              </button>
-            )}
             {!confirmRemove && (
               <button
                 type="button"
@@ -184,9 +176,6 @@ export function SinkTargetRow({
             </p>
           )}
         </form>
-      )}
-      {administering && sink && (
-        <SinkAdminDialog api={api} sink={sink} onClose={() => setAdministering(false)} />
       )}
     </section>
   );
