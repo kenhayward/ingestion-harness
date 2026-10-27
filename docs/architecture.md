@@ -225,7 +225,8 @@ or review step.
     than 5000 pages is not readable (the page route's bound). Approving records the
     reviewer, time and note, sets the item `queued` and queues the approved `decompose` job, with
     the batch's `force`, in one transaction. Rejecting records the same and sets `rejected`
-    (final), then deletes the held files the manifest names. Uploads and redeliveries take a Word
+    (final, finished then), then deletes the held files the manifest names. An item's `held` is
+    true only while it is `awaiting_review`. Uploads and redeliveries take a Word
     file or a PDF (415 `Word or PDF files only` otherwise); a PDF is stored as `.pdf`.
   - The web's review page (`#/conversion/items/:id/review`,
     `apps/web/src/conversion/review/`) shows the held pages in the extraction review's page

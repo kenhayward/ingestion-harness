@@ -118,6 +118,14 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             [itemId, outcome, entryId],
           );
         },
+        hold: async (itemId: string) => {
+          await p.query(
+            `UPDATE decomposition_items
+                SET outcome = 'awaiting_review', held_sha256 = repeat('a', 64)
+              WHERE id = $1`,
+            [itemId],
+          );
+        },
         times: async (itemId: string, startedAt: string | null, finishedAt: string | null) => {
           await p.query(
             `UPDATE decomposition_items SET started_at = $2, finished_at = $3 WHERE id = $1`,

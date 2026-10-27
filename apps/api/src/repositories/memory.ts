@@ -1341,6 +1341,8 @@ export class MemoryRepo implements IngestionRepo {
     const rerunBatch = rerun && this.conversionBatches.get(rerun.batchId);
     return structuredClone({
       ...item,
+      // Held files exist only while the item awaits review (pg's `held`).
+      held: item.held && item.outcome === 'awaiting_review',
       resolution,
       unversioned,
       gone,
@@ -1548,11 +1550,13 @@ export class MemoryRepo implements IngestionRepo {
     const item = this.conversionItems.get(id);
     if (!item) return { kind: 'not_found' };
     if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+    const now = new Date().toISOString();
     Object.assign(item, {
       outcome: 'rejected',
       reviewedBy: batchCreator(by),
-      reviewedAt: new Date().toISOString(),
+      reviewedAt: now,
       reviewNote: note,
+      finishedAt: now,
     });
     return { kind: 'rejected', item: this.withResolution(item) };
   }

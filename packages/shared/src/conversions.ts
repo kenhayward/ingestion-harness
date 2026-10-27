@@ -123,7 +123,10 @@ export const ItemSchema = z
      * for review whatever it is.
      */
     flagCount: z.number().int().nonnegative().nullable(),
-    /** A converted PDF is held for review (its held files are in the runs bucket). */
+    /**
+     * A converted PDF is held for review: its held files are in the runs bucket. True only while
+     * the item is `awaiting_review` (not once it is approved, rejected or delivered).
+     */
     held: z.boolean(),
     /** Who approved or rejected the held document, and when, with their note (§14). */
     reviewedBy: BatchCreatorSchema.nullable(),

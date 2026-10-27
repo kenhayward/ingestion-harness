@@ -51,6 +51,12 @@ conversionsContract('memory', async () => {
       settleItem: async (itemId, outcome, entryId) => {
         Object.assign(repo.conversionItems.get(itemId)!, { outcome, registerEntryId: entryId });
       },
+      hold: async (itemId) => {
+        Object.assign(repo.conversionItems.get(itemId)!, {
+          outcome: 'awaiting_review',
+          held: true,
+        });
+      },
       actions: async (entryId) => repo.registerActions.filter((a) => a.entryId === entryId),
       times: async (itemId, startedAt, finishedAt) => {
         Object.assign(repo.conversionItems.get(itemId)!, { startedAt, finishedAt });

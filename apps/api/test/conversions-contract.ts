@@ -39,6 +39,8 @@ export interface ConversionFacts {
   entry(seed: EntrySeed): Promise<string>;
   /** Links an item to an entry with an outcome, as the worker or an event does. */
   settleItem(itemId: string, outcome: Item['outcome'], entryId: string | null): Promise<void>;
+  /** Holds an item for review, as the worker does: `awaiting_review`, with its held files. */
+  hold(itemId: string): Promise<void>;
   /** The register actions recorded on an entry, oldest first. */
   actions(entryId: string): Promise<RegisterAction[]>;
   /** Removes an entry, as the worker does when a create replaces a detached tombstone. */
@@ -591,7 +593,7 @@ export function conversionsContract(
       const a = item(batch.id, 'manuals/a.pdf');
       await repo.addItem(a);
       await repo.startBatch(batch.id, null);
-      await facts.settleItem(a.id, 'awaiting_review', null);
+      await facts.hold(a.id);
       return { repo, facts, batch, item: (await repo.getItem(a.id))! };
     };
     const REVIEWER = { name: 'Rae', userId: '5b9d2f60-7c1e-4a38-9f4d-0c6e1a2b3d44' };
@@ -628,6 +630,19 @@ export function conversionsContract(
         createdByUser: REVIEWER.userId,
       });
       DecomposeParamsSchema.parse(job!.params);
+    });
+
+    it('says an item is held only while it awaits review', async () => {
+      const { repo, facts, item: a } = await held();
+      expect(a).toMatchObject({ outcome: 'awaiting_review', held: true });
+
+      const done = await repo.approveItem({ id: a.id, by: REVIEWER, note: null });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'queued', held: false });
+      // The approved run delivered it (the worker then deletes the held files).
+      await facts.settleItem(a.id, 'created', null);
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'created', held: false });
     });
 
     it('approves with the batch not forced as not forced, and no note as none', async () => {
@@ -689,8 +704,11 @@ export function conversionsContract(
         reviewedBy: { id: REVIEWER.userId, name: 'Rae' },
         reviewNote: 'a table is wrong',
         jobId: before,
+        // Its held files are deleted, and rejected is final: it finished now.
+        held: false,
       });
       expect(done.item.reviewedAt).not.toBeNull();
+      expect(done.item.finishedAt).toBe(done.item.reviewedAt);
       expect(await repo.getItem(a.id)).toEqual(done.item);
     });
 
