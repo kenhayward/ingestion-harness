@@ -196,7 +196,7 @@ def continues_word(before: Char, c: Char) -> bool:
         not c.text.isspace()
         and not before.text.isspace()
         and not c.space_before
-        and abs(c.baseline - before.baseline) <= _BASELINE_TOLERANCE * max(before.size, c.size)
+        and _same_line(before, c)
     )
 
 
@@ -301,9 +301,14 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
                 )
             targets[c.index] = target
         # A word is never split: it goes whole to the item most of its chars are in, and in a
-        # table to the cell most of those are in (the first such, on a tie).
-        for word in words_of(page):
-            whole = _majority([targets[c.index] for c in word])
+        # table to the cell most of those are in (the first such, on a tie). A blank's box is
+        # flat on the baseline, so its centre says little: it goes with the text of its line.
+        words = words_of(page)
+        wholes = [_majority([targets[c.index] for c in word]) for word in words]
+        for n, word in enumerate(words):
+            if word[0].text.isspace():
+                wholes[n] = _blank_target(words, wholes, n)
+        for word, whole in zip(words, wholes, strict=True):
             for c in word:
                 if whole is None:
                     loose[number].append(c)
@@ -321,6 +326,24 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
 
     orphans = _orphans(pages, loose, ledger)
     return _place(pieces, orphans), ledger
+
+
+def _same_line(a: Char, b: Char) -> bool:
+    return abs(a.baseline - b.baseline) <= _BASELINE_TOLERANCE * max(a.size, b.size)
+
+
+def _blank_target(words: list[list[Char]], wholes: list[_Target | None], n: int) -> _Target | None:
+    """Where the blank `words[n]` goes: with the word before it on its line, else with the
+    word after it on its line, else where its own centre is."""
+    blank = words[n][0]
+    for k in (n - 1, n + 1):
+        if (
+            0 <= k < len(words)
+            and not words[k][0].text.isspace()
+            and _same_line(words[k][0], blank)
+        ):
+            return wholes[k]
+    return wholes[n]
 
 
 def _majority(targets: list[_Target | None]) -> _Target | None:

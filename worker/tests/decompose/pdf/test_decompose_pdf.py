@@ -15,6 +15,7 @@ from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeCropper, FakeLayout
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 from tests.decompose.pdf.test_pdf_tables import cell_runs, grid, simple
+from tests.decompose.pdf.test_pieces import blank_on_the_edge
 
 WIDTH, HEIGHT = 595.0, 842.0
 
@@ -87,6 +88,15 @@ def test_cell_text_past_the_table_box_stays_in_its_table() -> None:
     assert [[c.blocks[0].inlines for c in row.cells] for row in built.rows] == [
         [[Text(text="Dose")], [Text(text="Over")]]
     ]
+
+
+def test_a_blank_on_a_cell_edge_keeps_its_word_gap() -> None:
+    runs, table = blank_on_the_edge()
+    data = make_pdf([Page(runs=runs)])
+    result = decompose_pdf(data, layout=answering([table]), cropper=FakeCropper())
+    [built] = result.document.blocks
+    assert isinstance(built, Table)
+    assert built.rows[0].cells[0].blocks[0].inlines == [Text(text="Fresh mix")]
 
 
 def test_scanned_page_fails_for_now() -> None:

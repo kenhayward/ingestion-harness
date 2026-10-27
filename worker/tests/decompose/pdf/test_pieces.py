@@ -172,6 +172,28 @@ def test_a_word_goes_to_the_item_most_of_it_is_in_then_to_its_cell() -> None:
     assert {o for owners in ledger.entries(0).values() for o in owners} == {piece.ref}
 
 
+def blank_on_the_edge() -> tuple[list[Run], dict[str, Any]]:
+    """A two-row table whose first row's box ends just above its text's baseline: a space's
+    box is flat on the baseline, so its centre is in the second row's box, the letters'
+    centres in the first's."""
+    table = docling.table(1, bl(72, 200, 272, 240), [(0, 0), (1, 0)], rows=2, cols=1)
+    for cell, (top, bottom) in zip(
+        table["data"]["table_cells"], [(200, 218.5), (218.5, 240)], strict=True
+    ):
+        cell["bbox"] = {"l": 72, "t": top, "r": 272, "b": bottom, "coord_origin": "TOPLEFT"}
+    return [Run("Fresh mix", 76, 219), Run("Next", 76, 235)], table
+
+
+def test_a_blank_goes_with_the_text_of_its_line() -> None:
+    runs, table = blank_on_the_edge()
+    pieces, _ = attach(runs, [table])
+    assert pieces[0].cells is not None
+    assert {k: [ln.text for ln in v] for k, v in pieces[0].cells.items()} == {
+        (0, 0): ["Fresh mix"],
+        (1, 0): ["Next"],
+    }
+
+
 def test_table_cells_without_boxes_keep_every_char_in_the_first_cell() -> None:
     runs, table = _table_page()
     for cell in table["data"]["table_cells"]:
