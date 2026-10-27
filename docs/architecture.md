@@ -12,6 +12,7 @@
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`, internal publishing targets' buckets, and the bridge's package staging bucket (`ingest-bridge`). |
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the bridge writes, as the `rdf-default` target ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md), [ADR 0017](adr/0017-delivery-bridge.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
+| `layout` | Docling, pinned weights ([deploy/layout/README.md](../deploy/layout/README.md)) | PDF layout analysis for the worker's PDF reader (`LAYOUT_URL`), on an internal network shared only with the worker, with no route out. The deploy scripts start it with the stack ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §14.7); the worker does not depend on it, and retries a PDF while it can't be reached. A worker without `LAYOUT_URL` fails a PDF item at once. |
 
 ## Job lifecycle
 
@@ -202,6 +203,38 @@ or review step.
   (`worker/src/ingest_worker/decompose/job.py`). The job decomposes the file and writes its report
   beside the source in the runs bucket. It then decides through the register what to deliver, and
   hands the package to the bridge. These jobs stay out of the Jobs page.
+  - A PDF is held for review instead (`decompose/hold.py`). The worker asks the register what it
+    would decide, without recording anything. Only when that would send something does it store
+    the held decomposition beside the source: its images, a JPEG of every page and a manifest
+    with the document and its page map, under `decompositions/{batchId}/{itemId}.held/`. The item
+    is then `awaiting_review`, recording the manifest's sha256 and the register entry the hold
+    was decided against, and the job succeeds with "held for review". Any other answer is the
+    item's outcome at once, as for Word.
+  - An approved hold comes back as a `decompose` job marked `approved`. The worker delivers the
+    held decomposition as it was reviewed, without reading the PDF again: with the decomposer
+    version it was read with, acting as whoever started the batch. It fails the item, sending
+    nothing, when the held files or the source are not the reviewed ones (their sha256s), or when
+    the register's entry for the source is no longer the one the hold recorded ("the target's
+    document changed after this was reviewed; run it again"). The outcome is then any delivery's,
+    never `awaiting_review` again, and the held files are deleted once it is recorded.
+  - The API reviews a hold through routes under `/api/conversions/items/:id/` (any role that may
+    convert), all refused (409 `NOT_AWAITING_REVIEW`) unless the item is `awaiting_review`: `review`
+    (the held document, page count, page map and image types, read from the manifest), `pages/:n`
+    and `images/:index` (the held JPEG and image; PNG or JPEG only, under a CSP that runs nothing,
+    and only files under the item's `.held/` prefix), `approve` and `reject`. A manifest of more
+    than 5000 pages is not readable (the page route's bound). Approving records the
+    reviewer, time and note, sets the item `queued` and queues the approved `decompose` job, with
+    the batch's `force`, in one transaction. Rejecting records the same and sets `rejected`
+    (final, finished then), then deletes the held files the manifest names. An item's `held` is
+    true only while it is `awaiting_review`. Uploads and redeliveries take a Word
+    file or a PDF (415 `Word or PDF files only` otherwise); a PDF is stored as `.pdf`.
+  - The web's review page (`#/conversion/items/:id/review`,
+    `apps/web/src/conversion/review/`) shows the held pages in the extraction review's page
+    viewer beside the decomposed document as it would be delivered: the heading outline, each
+    section's blocks (tables with their merges, figures as their crops) and each flag beside
+    the element it is on. A heading, block or flag shows its first page from the page map (a
+    section without pages, its first placed block's). It is read-only: Approve, with an optional
+    note, or Reject, with a required one; a 409 says someone else has already decided.
 - **The register.** `decomposition_register` holds one entry per document, scoped to the
   target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
   *duplicate*, *update* or *create*. An update carries the component versions the last receipt
@@ -227,6 +260,12 @@ or review step.
   its outcome, its link in the target and its report. Each row offers force-load, redeliver,
   detach or accept the target's state where they apply. Earlier batches are listed newest first.
   The view polls while anything is unfinished.
+- **End to end.** `apps/api/test/integration/conversion-e2e-pg.test.ts` runs batches from the
+  API's routes through the worker (`worker/tests/conversion_e2e_worker.py`, with a layout
+  analyser answering the PDF fixtures with their saved Docling output) and the bridge to the fake
+  document sink. A batch of two PDFs and a Word file holds both PDFs and creates the Word
+  document; one PDF is then approved (created, decomposer version 1001, its held files gone) and
+  the other rejected (its held files gone, nothing sent).
 
 ## Access
 

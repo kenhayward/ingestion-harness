@@ -31,15 +31,19 @@ import {
 } from '@ih/shared';
 import { acceptedReceipt } from '../conversions/accept.js';
 import {
+  batchCreator,
   emptyCounts,
   type AcceptResult,
   type AddItemResult,
+  type ApproveResult,
   type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
   type Accept,
   type Detach,
+  type RejectResult,
+  type ReviewInput,
   type Rerun,
   type RerunResult,
   type Retry,
@@ -280,6 +284,11 @@ interface ItemRow {
   redeliver_of: string | null;
   started_at: Date | null;
   finished_at: Date | null;
+  flag_count: number | null;
+  held: boolean;
+  reviewed_by: Item['reviewedBy'];
+  reviewed_at: Date | null;
+  review_note: string | null;
   resolution: Item['resolution'];
   unversioned: boolean;
   gone: boolean;
@@ -299,7 +308,9 @@ interface ItemRow {
  */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
   job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of, started_at,
-  finished_at,
+  finished_at, flag_count,
+  (decomposition_items.outcome = 'awaiting_review' AND held_sha256 IS NOT NULL) AS held,
+  reviewed_by, reviewed_at, review_note,
   CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
        ELSE (SELECT CASE
                       WHEN count(*) = 0 THEN 'detached'
@@ -374,6 +385,11 @@ const toItem = (r: ItemRow): Item => ({
   rerunAt: r.rerun_at?.toISOString() ?? null,
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
+  flagCount: r.flag_count,
+  held: r.held,
+  reviewedBy: r.reviewed_by,
+  reviewedAt: r.reviewed_at?.toISOString() ?? null,
+  reviewNote: r.review_note,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -1546,14 +1562,85 @@ export class PgRepo implements IngestionRepo {
     });
   }
 
+  async approveItem({ id, by, note }: ReviewInput): Promise<ApproveResult> {
+    return this.inTransaction(async (client) => {
+      // The item locked: of two reviewers, the second finds the outcome moved on.
+      const held = await client.query<{
+        batch_id: string;
+        source_key: string;
+        outcome: ItemOutcome;
+        target_id: string;
+        force: boolean;
+      }>(
+        `SELECT i.batch_id, i.source_key, i.outcome, b.target_id, b.force
+           FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
+          WHERE i.id = $1 FOR UPDATE OF i`,
+        [id],
+      );
+      const row = held.rows[0];
+      if (!row) return { kind: 'not_found' };
+      if (row.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+         VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+        [
+          priority,
+          maxAttempts,
+          JSON.stringify({
+            batchId: row.batch_id,
+            itemId: id,
+            targetId: row.target_id,
+            sourceKey: row.source_key,
+            force: row.force,
+            approved: true,
+          }),
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      const jobId = job.rows[0]!.id;
+      await client.query(
+        `UPDATE decomposition_items
+            SET outcome = 'queued', job_id = $2, reviewed_by = $3, reviewed_at = now(),
+                review_note = $4
+          WHERE id = $1`,
+        [id, jobId, JSON.stringify(batchCreator(by)), note],
+      );
+      return { kind: 'approved', jobId };
+    });
+  }
+
+  async rejectItem({ id, by, note }: ReviewInput): Promise<RejectResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<{ outcome: ItemOutcome }>(
+        'SELECT outcome FROM decomposition_items WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!locked.rows[0]) return { kind: 'not_found' };
+      if (locked.rows[0].outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+      const { rows } = await client.query<ItemRow>(
+        `UPDATE decomposition_items
+            SET outcome = 'rejected', reviewed_by = $2, reviewed_at = now(), review_note = $3,
+                finished_at = now()
+          WHERE id = $1
+          RETURNING ${ITEM_COLUMNS}`,
+        [id, JSON.stringify(batchCreator(by)), note],
+      );
+      return { kind: 'rejected', item: toItem(rows[0]!) };
+    });
+  }
+
   async retryItems({
     batchId,
-    items,
+    items: asked,
     targetId,
     force,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
+    // A rejected document was decided on: only a failed one is run again.
+    const items = asked.filter((i) => i.of.outcome !== 'rejected');
     return this.inTransaction(async (client) => {
       const ids = items.map((i) => i.of.id);
       // The items re-run, locked in one order: a repeated request waits, then finds the reruns.

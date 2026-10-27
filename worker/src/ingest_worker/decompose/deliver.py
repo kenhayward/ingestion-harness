@@ -4,6 +4,11 @@ phase 3's batch jobs call).
 `deliver_decomposition` decomposes the source, checks the register (`decide`, spec §8's two
 checks), writes the entry `pending` and hands a contract version 2 package to the bridge. The
 entry's final state arrives later, from the bridge's events, through the API.
+
+`preview_decision` asks the register what it would decide, writing nothing: a PDF is held for
+review only when its delivery would send something (spec §14.2). `source_entry` reads the
+source's entry, writing nothing: an approved hold is delivered only if it is still the one the
+hold was decided against (spec §14.4a).
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from ingest_worker.bridge.models import (
     ActingUser,
     BridgeError,
     BridgePackage,
+    ComponentVersion,
     CreateDeliveriesRequest,
     DecompositionProvenance,
     PackageImage,
@@ -30,13 +36,22 @@ from ingest_worker.bridge.models import (
 )
 from ingest_worker.bridge.package import PRODUCER
 from ingest_worker.decompose import (
-    DECOMPOSER_VERSION,
     Decomposition,
     DecompositionFailed,
     DecompositionRejected,
-    decompose_docx,
+    decompose_source,
+    source_kind,
 )
-from ingest_worker.decompose.register import RegisterEntry, RegisterRaced, RegisterStore
+from ingest_worker.decompose import (
+    decomposer_version as version_of,
+)
+from ingest_worker.decompose.pdf.layout import LayoutAnalyser
+from ingest_worker.decompose.register import (
+    RegisterEntry,
+    RegisterRaced,
+    RegisterStore,
+    RegisterTx,
+)
 from ingest_worker.decompose.render import Renderer
 
 Outcome = Literal[
@@ -213,6 +228,8 @@ class DeliverDeps:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     #: This deployment's id, as packages name their producer.
     deployment: str = "default"
+    #: Reads a PDF's layout (None: a PDF can't be decomposed here).
+    layout: LayoutAnalyser | None = None
 
 
 def _iso(at: datetime) -> str:
@@ -243,6 +260,7 @@ def build_decomposition_package(
     decomposed_at: datetime,
     published_at: datetime,
     deployment: str,
+    decomposer_version: int,
 ) -> BridgePackage:
     """The version 2 package of a decomposed document: the document, one image per document
     image (its bytes, base64; converted images' originals are not sent) and its provenance."""
@@ -258,7 +276,7 @@ def build_decomposition_package(
             source_filename=filename,
             source_key=source_key,
             batch_id=batch_id,
-            decomposer_version=DECOMPOSER_VERSION,
+            decomposer_version=decomposer_version,
             started_by=started_by,
             decomposed_at=_iso(decomposed_at),
             published_at=_iso(published_at),
@@ -358,10 +376,87 @@ def _own_pending(
     return by_key
 
 
-def _refused(decision: Decision) -> DeliveryOutcome:
+def refused(decision: Decision) -> DeliveryOutcome:
+    """The outcome of a decision that sends nothing."""
     assert decision.outcome is not None
     entry_id = decision.entry.id if decision.entry is not None else None
     return DeliveryOutcome(decision.outcome, None, entry_id, decision.reason)
+
+
+def _tenant(deps: DeliverDeps, data: bytes, target_id: str) -> tuple[str, str, str | None]:
+    """`data`'s sha-256, and the target's tenant: its sink id and instance id."""
+    sha = hashlib.sha256(data).hexdigest()
+    sink_id, instance_id = deps.target_lookup(target_id)
+    return sha, sink_id, instance_id
+
+
+def _source_entry(
+    tx: RegisterTx, sink_id: str, instance_id: str | None, source_key: str
+) -> tuple[RegisterEntry | None, RegisterEntry | None]:
+    """The source's entry, and its tombstone when it is detached (the API's detach): absent
+    from both checks, and the next create replaces it, under a key its detach makes new."""
+    by_key = tx.by_key(sink_id, instance_id, source_key)
+    if by_key is not None and by_key.state == "detached":
+        return None, by_key
+    return by_key, None
+
+
+def _checked(
+    tx: RegisterTx,
+    by_key: RegisterEntry | None,
+    *,
+    sink_id: str,
+    instance_id: str | None,
+    source_key: str,
+    sha: str,
+    force: bool,
+) -> Decision:
+    """`decide` on the source's entry and the live entries with its content."""
+    by_hash = [e for e in tx.by_hash(sink_id, instance_id, sha) if e.state != "detached"]
+    return decide(by_key, by_hash, sha, force, source_key=source_key)
+
+
+def _expected(decision: Decision) -> list[ComponentVersion]:
+    """The versions an update decision holds the target's copy to: its entry's last receipt's
+    components (none: nothing to send an update against)."""
+    assert decision.entry is not None and decision.entry.persistent_id is not None
+    receipt = decision.entry.last_receipt
+    return receipt.document.components if receipt and receipt.document else []
+
+
+def source_entry(deps: DeliverDeps, *, source_key: str, target_id: str) -> RegisterEntry | None:
+    """The source's entry on the target's tenant now, as both checks see it (a detached one is
+    none), recording nothing: what an approved hold compares with the entry it was decided
+    against (spec §14.4a)."""
+    sink_id, instance_id = deps.target_lookup(target_id)
+    with deps.register.transaction() as tx:
+        by_key, _ = _source_entry(tx, sink_id, instance_id, source_key)
+    return by_key
+
+
+def preview_decision(
+    deps: DeliverDeps, *, data: bytes, source_key: str, target_id: str, force: bool
+) -> Decision:
+    """What `deliver_decomposition` would decide for `data` now, recording nothing: the same
+    reads and checks, and an update with no versions to send against unresolved, as its
+    delivery would be. Outcome None: it would be sent. A held PDF is delivered later, and the
+    register decides again then (spec §14.2). There is no batch, so a pending entry is in
+    flight, never this run's own to resume."""
+    sha, sink_id, instance_id = _tenant(deps, data, target_id)
+    with deps.register.transaction() as tx:
+        by_key, _ = _source_entry(tx, sink_id, instance_id, source_key)
+        decision = _checked(
+            tx,
+            by_key,
+            sink_id=sink_id,
+            instance_id=instance_id,
+            source_key=source_key,
+            sha=sha,
+            force=force,
+        )
+    if decision.outcome is None and not decision.create and not _expected(decision):
+        return Decision("unresolved", False, decision.entry, _NO_VERSIONS)
+    return decision
 
 
 def deliver_decomposition(
@@ -374,6 +469,7 @@ def deliver_decomposition(
     batch_id: str | None = None,
     force: bool = False,
     decomposed: Decomposition | None = None,
+    decomposer_version: int | None = None,
 ) -> DeliveryOutcome:
     """Decompose `data` and deliver it to `target_id` as the register decides.
 
@@ -395,26 +491,27 @@ def deliver_decomposition(
 
     `decomposed`: `data`'s decomposition when the caller made it already (the `decompose` job,
     which writes its report first), so nothing is rendered twice.
+
+    `decomposer_version`: the version sent with the document and part of its idempotency key
+    (None: the version of `data`'s kind).
     """
+    if decomposer_version is None:
+        decomposer_version = version_of(source_kind(data))
     try:
         result = (
-            decomposed if decomposed is not None else decompose_docx(data, renderer=deps.renderer)
+            decomposed
+            if decomposed is not None
+            else decompose_source(data, renderer=deps.renderer, layout=deps.layout)
         )
     except DecompositionRejected as exc:
         return DeliveryOutcome("failed", None, None, f"rejected: {exc}")
     except DecompositionFailed as exc:
         return DeliveryOutcome("failed", None, None, f"decomposition failed: {exc}")
     decomposed_at = deps.clock()
-    sha = hashlib.sha256(data).hexdigest()
-    sink_id, instance_id = deps.target_lookup(target_id)
+    sha, sink_id, instance_id = _tenant(deps, data, target_id)
 
     with deps.register.transaction() as tx:
-        by_key = tx.by_key(sink_id, instance_id, source_key)
-        # A detached entry is a tombstone (the API's detach): absent from both checks, and the
-        # next create replaces it, under a key its detach makes new.
-        tombstone = by_key if by_key is not None and by_key.state == "detached" else None
-        if tombstone is not None:
-            by_key = None
+        by_key, tombstone = _source_entry(tx, sink_id, instance_id, source_key)
         own = _own_pending(by_key, batch_id, sha)
         if own is not None and own.delivery_id is not None:
             # This batch's own earlier run handed it over (the worker stopped before recording
@@ -426,15 +523,21 @@ def deliver_decomposition(
             # under the stored key, which the sink answers with the same document.
             decision = Decision(None, own.persistent_id is None, own, _RESUMED, own.idempotency_key)
         else:
-            by_hash = [e for e in tx.by_hash(sink_id, instance_id, sha) if e.state != "detached"]
-            decision = decide(by_key, by_hash, sha, force, source_key=source_key)
+            decision = _checked(
+                tx,
+                by_key,
+                sink_id=sink_id,
+                instance_id=instance_id,
+                source_key=source_key,
+                sha=sha,
+                force=force,
+            )
         if decision.outcome is not None:
-            return _refused(decision)
+            return refused(decision)
         update: Update | None = None
         if not decision.create:
             assert decision.entry is not None and decision.entry.persistent_id is not None
-            receipt = decision.entry.last_receipt
-            expected = receipt.document.components if receipt and receipt.document else []
+            expected = _expected(decision)
             if not expected:
                 # Nothing to hold the target's copy to, so no update is sent: unresolved, and
                 # detach applies (the API's detach takes an entry with a document and no
@@ -447,7 +550,7 @@ def deliver_decomposition(
         key = decision.idempotency_key or decomposition_idempotency_key(
             sha,
             update.persistent_id if update else None,
-            DECOMPOSER_VERSION,
+            decomposer_version,
             _run_token(batch_id, force, _detached_by(tombstone, decision.entry), update),
         )
         try:
@@ -475,6 +578,7 @@ def deliver_decomposition(
         decomposed_at=decomposed_at,
         published_at=deps.clock(),
         deployment=deps.deployment,
+        decomposer_version=decomposer_version,
     )
     request = CreateDeliveriesRequest(
         targets=[target_id], acting_user=started_by, package=package, update=update

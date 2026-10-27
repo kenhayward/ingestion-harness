@@ -12,6 +12,7 @@ import { ConnectionsDialog } from './access/ConnectionsDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { ConversionPage } from './conversion/ConversionPage.js';
+import { ConversionReviewPage } from './conversion/review/ConversionReviewPage.js';
 import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
@@ -397,6 +398,8 @@ function SignedInApp({
         {...(route.batchId ? { batchId: route.batchId } : {})}
       />
     );
+  } else if (route.name === 'conversionReview') {
+    page = <ConversionReviewPage key={route.itemId} api={api} itemId={route.itemId} />;
   } else if (route.name === 'workbench') {
     page = <WorkbenchPage api={api} onNavigate={navigate} query={query} />;
   } else if (route.name === 'project') {

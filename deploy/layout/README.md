@@ -11,10 +11,13 @@ privileges.
 
 ## Running it
 
-It is opt-in (compose profile `pdf`): a plain `docker compose build` or `up` neither builds nor
-starts it. Start it with `docker compose --profile pdf up -d --build layout`, or add `pdf` to
-`COMPOSE_PROFILES` in `deploy/.env`. The worker does not wait for it; a missing layout service
-is a retryable error there.
+It is part of the stack (PDF reader design, section 14.7), in no compose profile, since the
+Conversion tab takes PDFs: `deploy/scripts/deploy.sh` (and `.ps1`) build and start it with the
+rest. The worker does not depend on it, so a stack started without it (CI's smoke test) still
+extracts and converts Word files. The worker reaches it at `LAYOUT_URL` (default
+`http://layout:8000`); with `LAYOUT_URL` empty a PDF item fails at once ("this CT Studio has no
+layout service (LAYOUT_URL)"). A layout service that can't be reached is retried, as the converter
+is; on the job's last attempt the item fails.
 
 ## API
 

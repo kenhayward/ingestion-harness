@@ -19,6 +19,8 @@ export const ITEM_OUTCOMES = [
   'read_back_mismatch',
   'unresolved',
   'failed',
+  'awaiting_review',
+  'rejected',
 ] as const;
 export const ItemOutcomeSchema = z.enum(ITEM_OUTCOMES);
 export type ItemOutcome = z.infer<typeof ItemOutcomeSchema>;
@@ -123,6 +125,21 @@ export const ItemSchema = z
      */
     startedAt: z.string().nullable(),
     finishedAt: z.string().nullable(),
+    /**
+     * How many flags the decomposition report holds (null until the worker wrote the report, and
+     * for items converted before migration 202610271200): a Word row says it, and a PDF is held
+     * for review whatever it is.
+     */
+    flagCount: z.number().int().nonnegative().nullable(),
+    /**
+     * A converted PDF is held for review: its held files are in the runs bucket. True only while
+     * the item is `awaiting_review` (not once it is approved, rejected or delivered).
+     */
+    held: z.boolean(),
+    /** Who approved or rejected the held document, and when, with their note (§14). */
+    reviewedBy: BatchCreatorSchema.nullable(),
+    reviewedAt: z.string().nullable(),
+    reviewNote: z.string().nullable(),
   })
   .strict();
 export type Item = z.infer<typeof ItemSchema>;
@@ -185,9 +202,37 @@ export const DecomposeParamsSchema = z
     targetId: TargetIdSchema,
     sourceKey: SourceKeySchema,
     force: z.boolean(),
+    /** Deliver a held document as reviewed (an approval's run), not decompose the source again. */
+    approved: z.boolean().optional(),
   })
   .strict();
 export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;
+
+/** A person's decision on a held document: approve, with an optional note. */
+export const ReviewDecisionSchema = z.object({ note: z.string().optional() }).strict();
+export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>;
+
+/** Rejecting a held document says why: a note that is more than spaces (stored trimmed). */
+export const RejectDecisionSchema = z.object({ note: z.string().trim().min(1) }).strict();
+export type RejectDecision = z.infer<typeof RejectDecisionSchema>;
+
+/**
+ * What the review page reads for a held item (`GET /api/conversions/items/:id/review`), from the
+ * worker's held manifest: the decomposed document as it would be delivered (a `DecomposedDocument`
+ * of `@ih/bridge-contract`, which the API validates and this package does not depend on), the
+ * pages it came from, and the held images by position (`/images/:index` serves each).
+ */
+export const ConversionReviewSchema = z
+  .object({
+    item: ItemSchema,
+    document: z.record(z.string(), z.unknown()),
+    pageCount: z.number().int().nonnegative(),
+    /** The 1-based pages each section and block came from, by id. */
+    pageMap: z.record(z.string(), z.array(z.number().int().positive())),
+    images: z.array(z.object({ id: z.string(), contentType: z.string() })),
+  })
+  .strict();
+export type ConversionReview = z.infer<typeof ConversionReviewSchema>;
 
 /** How many of a batch's items have each outcome (every outcome present, zero or more). */
 export const ItemCountsSchema = z.record(ItemOutcomeSchema, z.number().int().nonnegative());

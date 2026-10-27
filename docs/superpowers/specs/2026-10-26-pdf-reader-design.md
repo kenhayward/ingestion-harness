@@ -1,10 +1,11 @@
 # The PDF reader: decomposing PDFs
 
 **Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
-implemented (2026-10-27)**; results in §13.
+implemented (2026-10-27)**; results in §13. **5b implemented (2026-10-27)**: PDFs in CT Studio,
+with review, in §14; the owner's run against the real sink is pending.
 
-- Start the layout service: `docker compose -f deploy/docker-compose.yml --profile pdf up -d --build layout`
-  (opt-in; see `deploy/layout/README.md`).
+- The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
+  `docker compose -f deploy/docker-compose.yml up -d --build layout`.
 - Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
 - Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
 
@@ -325,6 +326,10 @@ scores, and its dev tool decomposes PDFs outside CT Studio. Step 5b, which lets 
 follows the owner's decision, with or without a review step. **[call]** No score threshold is set
 in advance: the owner judges the scores.
 
+**Decided (2026-10-27): PDF decompositions are reviewed in CT Studio before delivery.** **[owner]**
+The owner saw the scores of §13, where headings and text are reliable but about 3 tables in 10
+have the wrong shape. Word documents still go straight through. How the review works is §14.
+
 ## 9. Repeatable runs
 
 The same PDF must give the same decomposed document, so that re-runs update in place (decomposition
@@ -362,7 +367,7 @@ before release.
 |---|---|---|
 | 5a | **Born-digital PDFs:** the layout service, the text layer, the mapping, the fidelity checks, a dev tool, the twin scorer | Twins and the owner's real PDFs decompose with no text-accounting failure, and the twin scores are reported to the owner |
 | — | **The owner's decision** on review (§8) | — |
-| 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with a review step if decided | A PDF goes through to the fake sink, and to the real sink in the owner's run |
+| 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (§14). **Implemented (2026-10-27)**; the owner's run is pending | A PDF goes through to the fake sink, and to the real sink in the owner's run |
 | 5c | **Scanned pages** through the OCR model | A scanned sample decomposes with every scanned page flagged |
 
 ## 12. Left to the builder
@@ -413,3 +418,127 @@ with the heading's text, so the Word reading keeps "Table N:" in the caption, wh
 reading drops it as the caption's number. (2026-10-27)
 
 The owner's decision on review (§8) waits on these scores.
+
+## 14. Step 5b: PDFs in CT Studio, with review
+
+The Conversion tab takes PDFs beside Word files. A PDF is decomposed and checked as in 5a, then
+**held for review**: nothing is delivered until a person approves it. A Word file goes straight
+through as before. (2026-10-27)
+
+### 14.1 What the reviewer decides
+
+The reviewer **approves or rejects the whole document**. Nothing is edited in CT Studio. **[call]**
+Correcting inferred structure (a table's grid, a heading's level) would be an editor of its own,
+and the reviewer's job is to keep a wrong reading out of the target. A rejected PDF can be
+re-delivered with a replacement file, the Word original when there is one, or decomposed again
+after a newer reader.
+
+Rejecting needs a note, so the row says why. **[call]** Approving takes an optional note.
+
+### 14.2 When a PDF is held
+
+- After the PDF is decomposed and passes its fidelity checks (§6). A PDF that fails them fails, as
+  before; there is nothing to review.
+- Only when the delivery would send something. The worker first asks the register what it would
+  decide, without recording anything. If the answer is `already_loaded`, `duplicate`, `in_flight`,
+  `changed_in_target` or `unresolved`, that outcome is recorded at once, as for Word, and nothing
+  is held. **[call]** The register decides again, for real, when the approved document is
+  delivered, so a change in between (another delivery landing first) is still caught.
+- Every run that would deliver is held, forced runs and re-deliveries included. **[call]** A
+  forced run exists to send the document again, and what is sent should have been looked at.
+
+### 14.3 What is kept while it waits
+
+The worker stores, beside the item's source in the runs bucket:
+
+- the **held decomposition**: the decomposed document and its image bytes, exactly as they would
+  be delivered;
+- the **page images**, one JPEG per page, rendered by pdfium, the same size as the extraction
+  review's page previews;
+- the **page map**: for each section and block, the pages it came from (the reader's provenance).
+
+The item's outcome is `awaiting_review`, and it records the held decomposition's sha256. The job
+**succeeds** with the note "held for review". It doesn't wait: a held item can sit for days.
+
+The held files are deleted when the item is approved and delivered, or rejected.
+
+### 14.4 Approve and reject
+
+- **Approve** (`POST /conversions/items/:id/approve`, optional note) records who and when on the
+  item and queues a `decompose` job marked `approved`. The worker reads the held decomposition,
+  checks its sha256 against the item's, and delivers it through the register as any other
+  delivery. It does **not** read the PDF again, so what is delivered is what was reviewed, even if
+  the reader has changed since. The delivery acts as the user who started the batch, as for Word;
+  the reviewer is recorded on the item. **[call]**
+- **Reject** (`POST /conversions/items/:id/reject`, note required) records who, when and the note,
+  sets the outcome `rejected` and deletes the held files. `rejected` is final. The row's usual
+  actions then apply: a forced run decomposes again (and holds again), and re-delivering with a
+  replacement file takes either a Word file or a PDF. **[call]**
+- Whether a run is held depends on **the file being delivered**, not on the item: a PDF item
+  re-delivered with its Word original goes straight through, and a Word item re-delivered with a
+  PDF is held. **[call]**
+- The bulk "retry failed" action leaves `rejected` items out: running the same reader again would
+  give the same reading. A forced run of one row still works. **[call]**
+- Both are refused (409) unless the item is `awaiting_review`, so two reviewers can't both decide.
+- **Who reviews:** anyone who may use the Conversion tab (operators, designers, admins), including
+  the person who started the batch. **[call]** A separate reviewer permission can come later.
+- **An approved run ends like any delivery.** **[call]** Whatever the register and the bridge
+  answer (`created`, `updated`, `changed_in_target`, a refusal, the bridge unreachable) is the
+  item's outcome, as for Word, and the held files are deleted once the approved run has recorded
+  any outcome. It never goes back to `awaiting_review`; trying again is a forced run, held and
+  reviewed again. Held files whose sha256 doesn't match fail the item.
+
+### 14.4a A held item and other runs of its source
+
+- `awaiting_review` counts as **running**: like `delivering`, it blocks a forced run, a re-delivery
+  or a detach of the same item until it is approved or rejected. **[call]**
+- A hold also records the register entry it was decided against (its id and content sha256, or
+  none). At approval the worker compares: if the entry has changed since (another run of the same
+  source delivered in between), the item fails with "the target's document changed after this was
+  reviewed; run it again", and nothing is sent. **[call]** So an older reading never overwrites a
+  newer one.
+
+### 14.5 The review page
+
+A page of its own, opened from the row's **Review** button. **[call]**
+
+- **Left:** the page image, with the thumbnail strip and dots on pages that have flags (the
+  extraction review's page viewer, reused).
+- **Right:** the decomposed document as it would be delivered: the heading outline as a tree,
+  each section's blocks beneath its heading, tables drawn as their grid with merges, figures as
+  their crops, and each flag beside the element it is on.
+- Choosing a heading, block or flag shows its first page on the left.
+- **A decision bar:** Approve, and Reject with its note.
+
+The page is read-only. It shows the item's file name, its target, and the count of flags by kind.
+
+### 14.6 On the Conversion tab
+
+- The file picker and drop zone take `.docx` and `.pdf`; the copy says "Word or PDF".
+- Two new outcomes: **Awaiting review** (it needs attention, so the "Needs attention" filter shows
+  it) and **Rejected** (final; it counts with the failed ones).
+- A batch with items awaiting review isn't finished.
+- Each row shows its flag count (§4.9), for Word files too.
+
+### 14.7 The layout service
+
+- The `layout` service leaves the `pdf` compose profile and starts with the stack, since the tab
+  now takes PDFs. **[call]**
+- The worker builds its layout client from `LAYOUT_URL`. Without one, a PDF item fails at once:
+  "this CT Studio has no layout service (LAYOUT_URL)".
+- An unreachable layout service is retried as the converter is. On the job's last attempt the
+  item fails, saying the layout service couldn't be reached.
+
+### 14.8 The decomposer version of a PDF
+
+The contract's `decomposerVersion` is an integer and stays one. For a PDF it is
+`DECOMPOSER_VERSION × 1000 + PDF_READER_VERSION`; a Word file's stays `DECOMPOSER_VERSION`.
+**[call]** So a new reader version changes the idempotency key and the provenance of a PDF, and
+not of Word files. The reader's version stays below 1000.
+
+### 14.9 Done when
+
+- The API integration test with Postgres takes a PDF through the API, the worker (with a fake
+  layout analyser), a review approval and the bridge to the fake sink. It also takes a rejected
+  PDF through, and a Word file in the same batch straight through.
+- In the owner's run, a real PDF is reviewed and delivered to the real sink.

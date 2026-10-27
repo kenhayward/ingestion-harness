@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react';
-import { DOCX_MIME, type BatchDetail, type Item, type ItemOutcome } from '@ih/shared';
+import { type BatchDetail, type Item, type ItemOutcome } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { SOURCE_ACCEPT } from '../documents.js';
 import { Dialog } from '../ui/Dialog.js';
 import { AcceptDialog, ChangedNote } from './AcceptDialog.js';
 import { OUTCOME } from './outcomes.js';
@@ -19,8 +20,11 @@ export interface ActionResult {
 /** A row action that asks first, in a dialog the batch view keeps open across its refreshes. */
 export type DialogKind = 'redeliver' | 'detach' | 'accept' | 'reload';
 
-/** Force-load (§8): an already loaded document is updated, a duplicate created on its own. */
-const FORCEABLE: readonly ItemOutcome[] = ['already_loaded', 'duplicate'];
+/**
+ * Force-load (§8): an already loaded document is updated, a duplicate created on its own, and a
+ * rejected one decomposed (and held) again.
+ */
+const FORCEABLE: readonly ItemOutcome[] = ['already_loaded', 'duplicate', 'rejected'];
 
 /**
  * Redeliver (R6): a delivered or refused document that has a register entry. A duplicate's entry
@@ -339,7 +343,7 @@ function RedeliverDialog({
       <input
         id={fileId}
         type="file"
-        accept={['.docx', DOCX_MIME].join(',')}
+        accept={SOURCE_ACCEPT}
         disabled={busy}
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />

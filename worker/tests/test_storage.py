@@ -55,3 +55,15 @@ def test_decomposition_keys_mirror_the_typescript_helpers() -> None:
 
     assert decomposition_source_key("b1", "i1", "docx") == "decompositions/b1/i1.docx"
     assert decomposition_report_key("b1", "i1") == "decompositions/b1/i1.report.json"
+
+
+def test_held_decomposition_keys_mirror_the_typescript_helpers() -> None:
+    from ingest_worker.storage import (
+        decomposition_held_image_key,
+        decomposition_held_manifest_key,
+        decomposition_held_page_key,
+    )
+
+    assert decomposition_held_manifest_key("b1", "i1") == "decompositions/b1/i1.held/manifest.json"
+    assert decomposition_held_image_key("b1", "i1", 3) == "decompositions/b1/i1.held/images/3"
+    assert decomposition_held_page_key("b1", "i1", 2) == "decompositions/b1/i1.held/pages/2.jpg"

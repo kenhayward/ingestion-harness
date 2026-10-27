@@ -9,6 +9,10 @@ an event may arrive before the worker's write, so every worker write moves only 
 still `queued` or `decomposing` (or, for a retry resuming its delivery, records `delivering` over
 `delivering`): it never overwrites an outcome the API already settled.
 
+A converted PDF is held for review instead (`hold`, migration 202610271200): `awaiting_review`,
+with the sha-256 of the held files and the register entry it would write on approval. Holding,
+like deciding, moves only an undecided item. `rejected` is the reviewer's, written by the API.
+
 An item records when it started (`started_at`, migration 202610261331: its first move to
 `decomposing`, kept on a retry) and finished (`finished_at`: a final outcome the worker decides;
 the API's settle sets it for a delivered or refused one).
@@ -22,6 +26,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+from psycopg.types.json import Jsonb
 
 if TYPE_CHECKING:
     import psycopg
@@ -40,6 +46,8 @@ ItemOutcome = Literal[
     "read_back_mismatch",
     "unresolved",
     "failed",
+    "awaiting_review",
+    "rejected",
 ]
 
 #: The outcomes the worker may still move an item from: nothing decided yet.
@@ -75,6 +83,11 @@ class ConversionItem:
     report_key: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    #: A held PDF: the sha-256 of its held files, and the register entry approval would write.
+    held_sha256: str | None = None
+    held_entry: dict[str, Any] | None = None
+    #: How many flags the report holds.
+    flag_count: int | None = None
 
 
 class ItemStore(Protocol):
@@ -83,8 +96,14 @@ class ItemStore(Protocol):
         `queued` or `decomposing`, recording when it started unless a try already did."""
         ...
 
-    def set_report(self, item_id: str, report_key: str) -> None:
-        """Record where the item's report was written."""
+    def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
+        """Record where the item's report was written, and how many flags it holds."""
+        ...
+
+    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        """Hold the item for review: `awaiting_review`, recording the held files' sha-256 and the
+        register entry approval would write. Only while the item is still `queued` or
+        `decomposing`; False when it had moved on. A held item is not finished."""
         ...
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
@@ -115,11 +134,21 @@ class MemoryItemStore:
                 )
             return item
 
-    def set_report(self, item_id: str, report_key: str) -> None:
+    def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
         with self._lock:
             item = self.items.get(item_id)
             if item is not None:  # as on Postgres: a missing item is no error
-                self.items[item_id] = replace(item, report_key=report_key)
+                self.items[item_id] = replace(item, report_key=report_key, flag_count=flag_count)
+
+    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        with self._lock:
+            item = self.items.get(item_id)
+            if item is None or item.outcome not in UNDECIDED:
+                return False
+            self.items[item_id] = replace(
+                item, outcome="awaiting_review", held_sha256=held_sha256, held_entry=held_entry
+            )
+            return True
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         with self._lock:
@@ -149,7 +178,8 @@ class PgItemStore:
         with self._conn.transaction():
             row = self._conn.execute(
                 """SELECT id::text, batch_id::text, source_key, object_key, outcome, detail,
-                          register_entry_id::text, report_key, started_at, finished_at
+                          register_entry_id::text, report_key, started_at, finished_at,
+                          held_sha256, held_entry, flag_count
                      FROM decomposition_items WHERE id = %s FOR UPDATE""",
                 (item_id,),
             ).fetchone()
@@ -165,12 +195,24 @@ class PgItemStore:
                 )
             return item
 
-    def set_report(self, item_id: str, report_key: str) -> None:
+    def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
         if not _is_uuid(item_id):
             return
         self._conn.execute(
-            "UPDATE decomposition_items SET report_key = %s WHERE id = %s", (report_key, item_id)
+            "UPDATE decomposition_items SET report_key = %s, flag_count = %s WHERE id = %s",
+            (report_key, flag_count, item_id),
         )
+
+    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        if not _is_uuid(item_id):
+            return False
+        cur = self._conn.execute(
+            """UPDATE decomposition_items
+                  SET outcome = 'awaiting_review', held_sha256 = %s, held_entry = %s
+                WHERE id = %s AND outcome IN ('queued', 'decomposing')""",
+            (held_sha256, Jsonb(held_entry) if held_entry is not None else None, item_id),
+        )
+        return cur.rowcount > 0
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         if not _is_uuid(item_id):

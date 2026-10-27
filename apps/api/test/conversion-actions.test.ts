@@ -13,6 +13,10 @@ import {
   AcceptPreviewSchema,
   BatchDetailSchema,
   BatchSchema,
+  ConversionReviewSchema,
+  decompositionHeldImageKey,
+  decompositionHeldManifestKey,
+  decompositionHeldPageKey,
   decompositionSourceKey,
   DecomposeParamsSchema,
   DOCX_MIME,
@@ -24,7 +28,7 @@ import { applyRegisterEvent } from '../src/bridge/register.js';
 import type { RegisterEntry } from '../src/repositories/types.js';
 import { docx, para } from './docx-fixtures.js';
 import { FAKE_DOCUMENT_SINK, FAKE_SINK } from './fake-sink.js';
-import { accessApp, multipart, signInNewUser, testApp } from './helpers.js';
+import { accessApp, fakePdf, multipart, signInNewUser, testApp } from './helpers.js';
 import { takeViolations } from './openapi-conformance.js';
 
 type Ctx = Awaited<ReturnType<typeof testApp>>;
@@ -235,6 +239,27 @@ describe('force-load', () => {
     expect((jobOf(c, items[0]!)!.params as { force: boolean }).force).toBe(true);
   });
 
+  it('force-load decomposes a rejected item again, in a new batch of one', async () => {
+    const c = await setup();
+    const item = await startedItem(c, 'scans/audit.pdf');
+    Object.assign(c.repo.conversionItems.get(item.id)!, {
+      outcome: 'rejected',
+      reviewNote: 'wrong table',
+    });
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/force`);
+
+    expect(res.statusCode).toBe(201);
+    const { batch, items } = BatchDetailSchema.parse(res.json());
+    expect(batch).toMatchObject({ force: true, state: 'started' });
+    expect(items[0]).toMatchObject({
+      sourceKey: item.sourceKey,
+      objectKey: item.objectKey,
+      redeliverOf: item.id,
+      outcome: 'queued',
+    });
+  });
+
   it('a second force-load while the first is unfinished is refused', async () => {
     const c = await setup();
     const item = await startedItem(c);
@@ -307,6 +332,27 @@ describe('redeliver', () => {
     // The original's file stays: its row still has a report and a source.
     expect(await c.store.get('runs', item.objectKey)).not.toBeNull();
     expect(jobOf(c, rerun)!.params).toMatchObject({ sourceKey: item.sourceKey, force: true });
+  });
+
+  it('takes a PDF as the replacement, stored as a .pdf', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    settle(c, item, 'created', { state: 'delivered' });
+
+    const res = await redeliver(c, item, fakePdf);
+
+    expect(res.statusCode).toBe(201);
+    const { batch, items } = BatchDetailSchema.parse(res.json());
+    const [rerun] = items as [Item];
+    expect(rerun.objectKey).toBe(decompositionSourceKey(batch.id, rerun.id, 'pdf'));
+    expect(rerun).toMatchObject({ sourceKey: item.sourceKey, redeliverOf: item.id });
+    expect(c.store.objects.get(`runs/${rerun.objectKey}`)).toMatchObject({
+      contentType: 'application/pdf',
+    });
+    // The download sends the stored type.
+    const source = await c.app.inject(`/api/conversions/items/${rerun.id}/source`);
+    expect(source.headers['content-type']).toBe('application/pdf');
+    expect(source.rawPayload.equals(fakePdf)).toBe(true);
   });
 
   it('redelivers the stored file when no replacement is sent', async () => {
@@ -382,7 +428,7 @@ describe('redeliver', () => {
     expect(runsObjects(c)).toEqual(objects);
   });
 
-  it('needs a register entry, and a Word file as the replacement', async () => {
+  it('needs a register entry, and a Word or PDF file as the replacement', async () => {
     const c = await setup();
     const item = await startedItem(c);
     c.repo.conversionItems.get(item.id)!.outcome = 'failed';
@@ -392,8 +438,9 @@ describe('redeliver', () => {
 
     settle(c, item, 'created', { state: 'delivered' });
     const objects = runsObjects(c);
-    const notWord = await redeliver(c, item, Buffer.from('%PDF-1.7 not a word file'));
+    const notWord = await redeliver(c, item, Buffer.from('plain text, not a document'));
     expect(notWord.statusCode).toBe(415);
+    expect(notWord.json().error).toBe('Word or PDF files only');
     expect(runsObjects(c)).toEqual(objects);
     expect(c.repo.conversionBatches.size).toBe(1);
   });
@@ -1427,3 +1474,284 @@ async function redeliverItem(c: Ctx, item: Item): Promise<Item> {
   expect(res.statusCode).toBe(201);
   return BatchDetailSchema.parse(res.json()).items[0]!;
 }
+
+describe('reviewing a held PDF', () => {
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 4, 5, 6]);
+  const EMPTY_DOCUMENT = {
+    blocks: [],
+    sections: [],
+    images: [],
+    equations: [],
+    notes: [],
+    properties: [],
+    report: [],
+  };
+
+  /**
+   * A started PDF item held for review, with the worker's held files in the runs bucket.
+   * `manifest` changes what the stored manifest says.
+   */
+  async function heldItem(
+    c: Ctx,
+    cookie?: string,
+    manifest: (m: Record<string, unknown>, item: Item) => void = () => {},
+  ) {
+    const item = await startedItem(c, 'policies/leave.pdf', fakePdf, cookie);
+    Object.assign(c.repo.conversionItems.get(item.id)!, {
+      outcome: 'awaiting_review',
+      held: true,
+      flagCount: 1,
+    });
+    const image = {
+      id: 'img-1',
+      key: decompositionHeldImageKey(item.batchId, item.id, 0),
+      sha256: 'a',
+      contentType: 'image/png',
+    };
+    const stored: Record<string, unknown> = {
+      version: 1,
+      sourceSha256: item.contentSha256,
+      decomposerVersion: 2001,
+      startedBy: { userId: null, name: null },
+      entry: null,
+      document: EMPTY_DOCUMENT,
+      images: [image],
+      pageCount: 2,
+      pageMap: { s1: [1, 2] },
+    };
+    manifest(stored, item);
+    const put = (key: string, body: Buffer, type: string) => c.store.put('runs', key, body, type);
+    const manifestKey = decompositionHeldManifestKey(item.batchId, item.id);
+    await put(manifestKey, Buffer.from(JSON.stringify(stored)), 'application/json');
+    await put(image.key, PNG, 'image/png');
+    await put(decompositionHeldPageKey(item.batchId, item.id, 1), JPEG, 'image/jpeg');
+    await put(decompositionHeldPageKey(item.batchId, item.id, 2), JPEG, 'image/jpeg');
+    return item;
+  }
+
+  const heldObjects = (c: Ctx) => runsObjects(c).filter((k) => k.includes('.held/'));
+  const get = (c: Ctx, item: Item, tail: string, cookie?: string) =>
+    c.app.inject({ url: `/api/conversions/items/${item.id}/${tail}`, headers: headers(cookie) });
+  const approvedJobs = (c: Ctx) =>
+    c.repo.backgroundJobs.filter((j) => (j.params as { approved?: boolean }).approved);
+
+  it('approve queues the held run approved, as the reviewer, and answers 202', async () => {
+    const c = await accessApp();
+    await withTargets(c, c.adminCookie);
+    const { cookie, user } = await signInNewUser(c.app, c.access, 'Olu', 'operator');
+    const item = await heldItem(c, cookie);
+
+    const res = await post(
+      c.app,
+      `/api/conversions/items/${item.id}/approve`,
+      { note: 'ok' },
+      cookie,
+    );
+
+    expect(res.statusCode).toBe(202);
+    const { jobId } = res.json<{ jobId: string }>();
+    const jobs = approvedJobs(c);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ id: jobId, task: 'decompose', createdBy: 'Olu' });
+    expect(DecomposeParamsSchema.parse(jobs[0]!.params)).toEqual({
+      batchId: item.batchId,
+      itemId: item.id,
+      targetId: 'manuals',
+      sourceKey: 'policies/leave.pdf',
+      force: false,
+      approved: true,
+    });
+    expect(await c.repo.getItem(item.id)).toMatchObject({
+      outcome: 'queued',
+      jobId,
+      reviewedBy: { id: user.id, name: 'Olu' },
+      reviewNote: 'ok',
+    });
+    // The held files stay until the approved run has recorded an outcome (the worker deletes them).
+    expect(heldObjects(c)).toHaveLength(4);
+  });
+
+  it('approving twice is refused and queues one job', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/approve`)).statusCode).toBe(202);
+
+    const again = await post(c.app, `/api/conversions/items/${item.id}/approve`);
+
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ code: 'NOT_AWAITING_REVIEW' });
+    expect(approvedJobs(c)).toHaveLength(1);
+    const reject = await post(c.app, `/api/conversions/items/${item.id}/reject`, { note: 'no' });
+    expect(reject.statusCode).toBe(409);
+  });
+
+  it('refuses an approval of an item not awaiting review, one not found, or a bad body', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const none = await post(c.app, `/api/conversions/items/${item.id}/approve`);
+    expect(none.statusCode).toBe(409);
+    expect(none.json()).toMatchObject({ code: 'NOT_AWAITING_REVIEW' });
+    const missing = await post(c.app, `/api/conversions/items/${randomUUID()}/approve`);
+    expect(missing.statusCode).toBe(404);
+    const notId = await post(c.app, '/api/conversions/items/nope/reject', { note: 'x' });
+    expect(notId.statusCode).toBe(404);
+    const held = await heldItem(c);
+    const bad = await post(c.app, `/api/conversions/items/${held.id}/approve`, { nope: 1 });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('reject needs a note', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+    for (const payload of [undefined, {}, { note: '' }, { note: '   ' }]) {
+      const res = await post(c.app, `/api/conversions/items/${item.id}/reject`, payload);
+      expect(res.statusCode).toBe(400);
+    }
+    expect(await c.repo.getItem(item.id)).toMatchObject({ outcome: 'awaiting_review' });
+    expect(heldObjects(c)).toHaveLength(4);
+  });
+
+  it('reject records who and why, and deletes the manifest, images and pages', async () => {
+    const c = await accessApp();
+    await withTargets(c, c.adminCookie);
+    const { cookie, user } = await signInNewUser(c.app, c.access, 'Olu', 'operator');
+    const item = await heldItem(c, cookie);
+    // A page the render never made is no error.
+    await c.store.delete('runs', decompositionHeldPageKey(item.batchId, item.id, 2));
+    const source = runsObjects(c).filter((k) => !k.includes('.held/'));
+
+    const res = await post(
+      c.app,
+      `/api/conversions/items/${item.id}/reject`,
+      { note: 'wrong table' },
+      cookie,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(ItemSchema.parse(res.json())).toMatchObject({
+      outcome: 'rejected',
+      reviewedBy: { id: user.id, name: 'Olu' },
+      reviewNote: 'wrong table',
+    });
+    expect(heldObjects(c)).toEqual([]);
+    // The source stays: a forced run decomposes it again.
+    expect(runsObjects(c)).toEqual(source);
+  });
+
+  it('reject of an item whose held files are already gone still rejects', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+    for (const k of heldObjects(c)) await c.store.delete('runs', k.slice('runs/'.length));
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reject`, { note: 'no' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ outcome: 'rejected' });
+  });
+
+  it('review reads the manifest: the document, the pages and the images by type', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+
+    const res = await get(c, item, 'review');
+
+    expect(res.statusCode).toBe(200);
+    expect(ConversionReviewSchema.parse(res.json())).toEqual({
+      item: expect.objectContaining({ id: item.id, outcome: 'awaiting_review', held: true }),
+      document: EMPTY_DOCUMENT,
+      pageCount: 2,
+      pageMap: { s1: [1, 2] },
+      images: [{ id: 'img-1', contentType: 'image/png' }],
+    });
+  });
+
+  it('review refuses a manifest with more pages than a page can be asked for', async () => {
+    const c = await setup();
+    const item = await heldItem(c, undefined, (m) => Object.assign(m, { pageCount: 5001 }));
+
+    const res = await get(c, item, 'review');
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: 'the held document is not readable' });
+  });
+
+  it('review is refused unless the item awaits review, and 404 for none or no files', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const created = await get(c, item, 'review');
+    expect(created.statusCode).toBe(409);
+    expect(created.json()).toMatchObject({ code: 'NOT_AWAITING_REVIEW' });
+    const none = await c.app.inject(`/api/conversions/items/${randomUUID()}/review`);
+    expect(none.statusCode).toBe(404);
+
+    const held = await heldItem(c);
+    await c.store.delete('runs', decompositionHeldManifestKey(held.batchId, held.id));
+    expect((await get(c, held, 'review')).statusCode).toBe(404);
+  });
+
+  it('serves a held page as the stored JPEG, and an image with its type', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+
+    const page = await get(c, item, 'pages/2');
+    expect(page.statusCode).toBe(200);
+    expect(page.headers['content-type']).toBe('image/jpeg');
+    expect(page.rawPayload.equals(JPEG)).toBe(true);
+    const image = await get(c, item, 'images/0');
+    expect(image.statusCode).toBe(200);
+    expect(image.headers['content-type']).toBe('image/png');
+    expect(image.headers['x-content-type-options']).toBe('nosniff');
+    expect(image.rawPayload.equals(PNG)).toBe(true);
+  });
+
+  it('serves an image only as PNG or JPEG, under a policy that runs nothing', async () => {
+    const c = await setup();
+    const item = await heldItem(c, undefined, (m) => {
+      const [png] = m.images as { contentType: string }[];
+      m.images = [png, { ...png, id: 'img-2', contentType: 'image/svg+xml' }];
+    });
+
+    const png = await get(c, item, 'images/0');
+    expect(png.statusCode).toBe(200);
+    expect(png.headers['content-security-policy']).toBe("default-src 'none'; sandbox");
+    expect((await get(c, item, 'images/1')).statusCode).toBe(404);
+  });
+
+  it("never serves or deletes a file outside the item's held files", async () => {
+    const c = await setup();
+    const foreign = 'decompositions/elsewhere/other.held/images/0';
+    await c.store.put('runs', foreign, PNG, 'image/png');
+    const item = await heldItem(c, undefined, (m) => {
+      m.images = [{ id: 'img-1', key: foreign, sha256: 'a', contentType: 'image/png' }];
+    });
+
+    expect((await get(c, item, 'images/0')).statusCode).toBe(404);
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reject`, { note: 'no' });
+    expect(res.statusCode).toBe(200);
+    expect(runsObjects(c)).toContain(`runs/${foreign}`);
+  });
+
+  it('refuses a page or image that is not there, or an item not held', async () => {
+    const c = await setup();
+    const item = await heldItem(c);
+    expect((await get(c, item, 'pages/3')).statusCode).toBe(404);
+    expect((await get(c, item, 'pages/0')).statusCode).toBe(400);
+    expect((await get(c, item, 'pages/x')).statusCode).toBe(400);
+    expect((await get(c, item, 'images/1')).statusCode).toBe(404);
+    expect((await get(c, item, 'images/x')).statusCode).toBe(400);
+    const word = await startedItem(c);
+    expect((await get(c, word, 'pages/1')).statusCode).toBe(409);
+    expect((await get(c, word, 'images/0')).statusCode).toBe(409);
+  });
+
+  it('operators may review', async () => {
+    const c = await accessApp();
+    await withTargets(c, c.adminCookie);
+    const { cookie } = await signInNewUser(c.app, c.access, 'Olu', 'operator');
+    const item = await heldItem(c, cookie);
+    expect((await get(c, item, 'review', cookie)).statusCode).toBe(200);
+    expect((await get(c, item, 'pages/1', cookie)).statusCode).toBe(200);
+    expect((await get(c, item, 'images/0', cookie)).statusCode).toBe(200);
+  });
+});

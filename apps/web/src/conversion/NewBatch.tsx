@@ -1,16 +1,11 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
-import { DOCX_MIME, sourceKeyProblem, type ConversionTarget } from '@ih/shared';
+import { sourceKeyProblem, type ConversionTarget } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { SOURCE_ACCEPT, isSourceFile } from '../documents.js';
 import { readDrop, type Dropped } from '../jobs/folder-drop.js';
 import { navigate } from '../router.js';
 import { Icon } from '../ui/Icon.js';
 import { Meter } from '../ui/Meter.js';
-
-/** Only Word documents are converted for now (phase 3). */
-const WORD_ACCEPT = ['.docx', DOCX_MIME].join(',');
-
-/** A .docx by type or name (browsers often send no type for .docx). */
-const isWordFile = (f: File) => f.type === DOCX_MIME || /\.docx$/i.test(f.name);
 
 /** Hidden files and folders, and Office lock files (`~$report.docx` while report.docx is open). */
 const hiddenOrLock = (path: string) =>
@@ -44,7 +39,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const byPath = (a: Picked, b: Picked) => a.path.localeCompare(b.path, undefined, { numeric: true });
 
 /**
- * The Conversion tab's new batch (decomposition phase 3): a target, Word files or a folder, and
+ * The Conversion tab's new batch (decomposition phase 3): a target, Word or PDF files or a folder, and
  * Start. Start opens a batch, sends the files one per request (ruling R8), starts the batch and
  * opens its view. A file refused on upload says why on its row while the others carry on; then
  * the started batch is a link away, so the reasons stay in view.
@@ -57,7 +52,7 @@ export function NewBatch({ api }: { api: Api }) {
   const [target, setTarget] = useState('');
   const [force, setForce] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
-  /** Files left out of what was picked: not Word documents, hidden or lock files. */
+  /** Files left out of what was picked: not Word or PDF, hidden or lock files. */
   const [leftOut, setLeftOut] = useState(0);
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -95,7 +90,7 @@ export function NewBatch({ api }: { api: Api }) {
     const fresh = started !== null;
     setStarted(null);
     setError(null);
-    const taken = picked.filter((p) => isWordFile(p.file) && !hiddenOrLock(p.path));
+    const taken = picked.filter((p) => isSourceFile(p.file) && !hiddenOrLock(p.path));
     setLeftOut((n) => (fresh ? 0 : n) + skipped + picked.length - taken.length);
     const added = taken.map<Row>(({ file, path }) => {
       const problem = sourceKeyProblem(path);
@@ -261,13 +256,13 @@ export function NewBatch({ api }: { api: Api }) {
           </select>
           {chosen && (
             <p className="muted new-batch-note">
-              <span className="sink-tag">{chosen.sinkName}</span> takes Word documents
+              <span className="sink-tag">{chosen.sinkName}</span> takes Word or PDF documents
             </p>
           )}
           {noTargets && (
             <p className="muted new-batch-note">
-              No target takes Word documents yet. An administrator sets one up under Administration
-              &gt; Publishing targets.
+              No target takes Word or PDF documents yet. An administrator sets one up under
+              Administration &gt; Publishing targets.
             </p>
           )}
           {targetsError && <p role="alert">The targets could not be read: {targetsError}</p>}
@@ -340,7 +335,7 @@ export function NewBatch({ api }: { api: Api }) {
 
       <div className="new-batch-files">
         <h2 className="new-batch-step-title" id={`${filesId}-heading`}>
-          <span className="step-no">2</span> Word files
+          <span className="step-no">2</span> Word or PDF files
         </h2>
         <div
           className={over ? 'drop-zone conversion-drop over' : 'drop-zone conversion-drop'}
@@ -355,15 +350,17 @@ export function NewBatch({ api }: { api: Api }) {
             <Icon name="upload" size={20} />
           </span>
           <span className="drop-text">
-            <strong>Drop Word files or a folder here</strong>
-            <small>Each .docx becomes a document of its own · folders keep their paths</small>
+            <strong>Drop Word or PDF files or a folder here</strong>
+            <small>
+              Each .docx or .pdf becomes a document of its own · folders keep their paths
+            </small>
           </span>
           <span className="conversion-choose">
             <input
               id={filesId}
               className="visually-hidden"
               type="file"
-              accept={WORD_ACCEPT}
+              accept={SOURCE_ACCEPT}
               multiple
               disabled={busy}
               onChange={(e) => {
@@ -408,10 +405,10 @@ export function NewBatch({ api }: { api: Api }) {
               {leftOut > 0 && (
                 <span
                   className="muted"
-                  title="Only Word documents (.docx) are converted, and hidden and lock files are skipped."
+                  title="Only Word (.docx) and PDF files are converted, and hidden and lock files are skipped."
                 >
                   {' '}
-                  · {plural(leftOut, 'file')} left out (not .docx, hidden or lock files)
+                  · {plural(leftOut, 'file')} left out (not Word or PDF, hidden or lock files)
                 </span>
               )}
               {!busy && (
@@ -433,7 +430,7 @@ export function NewBatch({ api }: { api: Api }) {
                 {rows.map((r) => (
                   <li key={r.key} className={ROW_CLASS[r.status]}>
                     <span className="file-tag" aria-hidden="true">
-                      DOCX
+                      {/\.pdf$/i.test(r.sourceKey) ? 'PDF' : 'DOCX'}
                     </span>
                     <span className="mono">{r.sourceKey}</span>
                     <span className="conversion-row-end">

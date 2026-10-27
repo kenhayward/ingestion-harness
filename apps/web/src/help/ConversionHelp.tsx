@@ -1,25 +1,28 @@
-/** Help topic `conversion`: the Conversion tab, Word documents converted in batches. */
+/** Help topic `conversion`: the Conversion tab, Word or PDF documents converted in batches. */
 export function ConversionHelp() {
   return (
     <>
       <p>
-        The Conversion tab turns Word documents into documents in a target that takes them. Each
-        file is converted and delivered as a document of its own. Everyone can use it: operators,
-        designers and administrators.
+        The Conversion tab turns Word or PDF documents into documents in a target that takes them.
+        Each file is converted and delivered as a document of its own. Everyone can use it:
+        operators, designers and administrators.
       </p>
 
       <h3>Starting a batch</h3>
-      <p>A new batch is one card in three steps: the target, the Word files, and the options.</p>
+      <p>
+        A new batch is one card in three steps: the target, the Word or PDF files, and the options.
+      </p>
       <ul>
         <li>
           <strong>1 Target</strong> lists only the targets that take documents. If there is none, an
           administrator sets one up under Administration &gt; Publishing targets.
         </li>
         <li>
-          <strong>2 Word files</strong>: <strong>Choose files</strong> or{' '}
-          <strong>Choose folder</strong>, or drop files or a folder on the box. Only Word documents
-          (<code>.docx</code>) are converted for now. Hidden files are skipped, and so are the lock
-          files Word leaves beside an open document, such as <code>~$report.docx</code>.
+          <strong>2 Word or PDF files</strong>: <strong>Choose files</strong> or{' '}
+          <strong>Choose folder</strong>, or drop files or a folder on the box. Word (
+          <code>.docx</code>) and PDF (<code>.pdf</code>) files are converted; others are left out.
+          Hidden files are skipped, and so are the lock files Word leaves beside an open document,
+          such as <code>~$report.docx</code>.
         </li>
         <li>
           Each file is listed by the name that identifies its document: its file name, or for a
@@ -40,9 +43,9 @@ export function ConversionHelp() {
       <p>
         <strong>Convert N documents</strong> sends the files one at a time, with a bar showing how
         far it has got, then starts the batch and opens it. A file that is refused, because it
-        isn&apos;t a Word document, is damaged or has tracked changes, says why on its row, and the
-        others carry on. The batch then starts without it, and <strong>Open the batch</strong> takes
-        you there.
+        isn&apos;t a Word or PDF document, is damaged or has tracked changes, says why on its row,
+        and the others carry on. The batch then starts without it, and{' '}
+        <strong>Open the batch</strong> takes you there.
       </p>
       <p>
         <strong>Cancel</strong>, while the files are going up, throws the unfinished batch away.
@@ -98,7 +101,30 @@ export function ConversionHelp() {
         <li>
           <strong>Failed</strong>: the file could not be converted or delivered; the line says why.
         </li>
+        <li>
+          <strong>Awaiting review</strong>: a PDF is held for review before delivery, because
+          reading a PDF is less certain than reading Word. Nothing is delivered until someone
+          approves it: <strong>Review</strong> opens it. <strong>Rejected</strong>: a reviewer
+          turned it down, and the panel says why. It counts with the failed ones, but is not re-run
+          with them; <strong>Force-load</strong> on its line reads the PDF again, and holds it for
+          review again.
+        </li>
       </ul>
+      <p>
+        Each line also says how many flags the conversion raised, the places it wants someone to
+        check, for Word files too. A Word document goes straight through; a PDF waits for review.
+      </p>
+
+      <h3>Reviewing a PDF</h3>
+      <p>
+        <strong>Review</strong> opens the PDF's pages on the left and, on the right, the document as
+        it would be delivered: its headings as an outline, each section's text, tables and figures,
+        and each flag beside the part it is on. Choosing a heading, a part's page number or a flag
+        shows that page; pages with flags carry a dot. Nothing can be edited here.{' '}
+        <strong>Approve</strong> delivers it as shown (the note is optional);{' '}
+        <strong>Reject</strong> needs a note saying why, and is final. If someone else decided it
+        first, the page says so.
+      </p>
 
       <h3>Re-running failed documents</h3>
       <p>
@@ -116,15 +142,16 @@ export function ConversionHelp() {
       </p>
       <p>
         <strong>Download original</strong>, on the panel and in the <strong>⋯</strong> menu, saves
-        the Word file as it was uploaded.
+        the file as it was uploaded.
       </p>
 
       <h3>Acting on a document</h3>
       <p>The panel and a line&apos;s menu offer these where they apply:</p>
       <ul>
         <li>
-          <strong>Force-load</strong>, on a document already loaded or a duplicate, delivers it
-          again as an update, or as a document of its own.
+          <strong>Force-load</strong>, on a document already loaded, a duplicate or a rejected one,
+          delivers it again as an update, or as a document of its own. A PDF is read again and held
+          for review first.
         </li>
         <li>
           <strong>Redeliver</strong> updates the document, from the stored file or a replacement you

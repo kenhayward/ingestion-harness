@@ -39,6 +39,8 @@ export interface ConversionFacts {
   entry(seed: EntrySeed): Promise<string>;
   /** Links an item to an entry with an outcome, as the worker or an event does. */
   settleItem(itemId: string, outcome: Item['outcome'], entryId: string | null): Promise<void>;
+  /** Holds an item for review, as the worker does: `awaiting_review`, with its held files. */
+  hold(itemId: string): Promise<void>;
   /** The register actions recorded on an entry, oldest first. */
   actions(entryId: string): Promise<RegisterAction[]>;
   /** Removes an entry, as the worker does when a create replaces a detached tombstone. */
@@ -141,6 +143,11 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        flagCount: null,
+        held: false,
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
       });
       expect(await repo.getItem(a.id)).toEqual(items[0]);
       expect(await repo.getItem(randomUUID())).toBeNull();
@@ -269,7 +276,7 @@ export function conversionsContract(
       expect(listed[1]).toMatchObject({ ...first, itemCount: 2 });
       expect(listed[1]!.counts.queued).toBe(2);
       expect(listed[1]!.counts.created).toBe(0);
-      expect(Object.keys(listed[1]!.counts)).toHaveLength(12);
+      expect(Object.keys(listed[1]!.counts)).toHaveLength(14);
       expect(listed[0]).toMatchObject({ itemCount: 0 });
       expect(await repo.listBatches(1)).toHaveLength(1);
     });
@@ -345,6 +352,11 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        flagCount: null,
+        held: false,
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
       expect(await repo.getItem(of.id)).toMatchObject({
@@ -443,6 +455,11 @@ export function conversionsContract(
           rerunAt: null,
           startedAt: null,
           finishedAt: null,
+          flagCount: null,
+          held: false,
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNote: null,
         })),
       );
       expect(await repo.listItems(asked.batchId)).toEqual(done.items);
@@ -530,6 +547,172 @@ export function conversionsContract(
       const again = { ...rerunOf(other), force: false };
       expect(await repo.rerunItem(again)).toEqual({ ok: false, reason: 'running' });
       expect(await repo.getBatch(again.batchId)).toBeNull();
+    });
+
+    it('holds a rerun for review like one under way', async () => {
+      const { repo, facts, item: of } = await finished();
+      const first = await repo.rerunItem(rerunOf(of));
+      if (!first.ok) throw new Error(first.reason);
+      await facts.settleItem(first.item.id, 'awaiting_review', null);
+
+      const second = rerunOf(of);
+      expect(await repo.rerunItem(second)).toEqual({ ok: false, reason: 'running' });
+      expect(await repo.getBatch(second.batchId)).toBeNull();
+      expect(ItemSchema.parse(await repo.getItem(first.item.id)).outcome).toBe('awaiting_review');
+      // Rejected is final: the item may be run again.
+      await facts.settleItem(first.item.id, 'rejected', null);
+      expect((await repo.rerunItem(rerunOf(of))).ok).toBe(true);
+    });
+
+    it('detaches no entry whose source awaits review', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'awaiting_review', entryId);
+      const detach = { itemId: a.id, entryId, targetIds: ['manuals'], by: ADA, detail: () => 'x' };
+
+      expect(await repo.detachRegisterEntry(detach)).toEqual({ ok: false, reason: 'pending' });
+      expect((await repo.registerEntry(entryId))?.state).toBe('changed');
+      expect(await facts.actions(entryId)).toEqual([]);
+    });
+
+    it('re-runs a failed item but leaves a rejected one out', async () => {
+      const { repo, facts, items } = await failedPair();
+      const [rejected, failed] = items as [Item, Item];
+      await facts.settleItem(rejected.id, 'rejected', null);
+      const asked = retryOf([(await repo.getItem(rejected.id))!, failed]);
+
+      const done = await repo.retryItems(asked);
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.items.map((i) => i.redeliverOf)).toEqual([failed.id]);
+      expect(await repo.getItem(rejected.id)).toMatchObject({ rerunIn: null });
+      expect(await repo.getItem(failed.id)).toMatchObject({ rerunIn: asked.batchId });
+    });
+
+    /** A started, forced batch of one item held for review. */
+    const held = async (force = true) => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force, createdBy: ADA });
+      const a = item(batch.id, 'manuals/a.pdf');
+      await repo.addItem(a);
+      await repo.startBatch(batch.id, null);
+      await facts.hold(a.id);
+      return { repo, facts, batch, item: (await repo.getItem(a.id))! };
+    };
+    const REVIEWER = { name: 'Rae', userId: '5b9d2f60-7c1e-4a38-9f4d-0c6e1a2b3d44' };
+
+    it('approves a held item: reviewer recorded, queued, one decompose job approved', async () => {
+      const { repo, facts, item: a } = await held();
+
+      const done = await repo.approveItem({ id: a.id, by: REVIEWER, note: 'looks right' });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      const after = ItemSchema.parse(await repo.getItem(a.id));
+      expect(after).toMatchObject({
+        outcome: 'queued',
+        jobId: done.jobId,
+        reviewedBy: { id: REVIEWER.userId, name: 'Rae' },
+        reviewNote: 'looks right',
+      });
+      expect(after.reviewedAt).not.toBeNull();
+      const job = await facts.job(done.jobId);
+      expect(job).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        // The held run's force (its batch's) is what the approved run delivers with.
+        params: {
+          batchId: a.batchId,
+          itemId: a.id,
+          targetId: 'manuals',
+          sourceKey: a.sourceKey,
+          force: true,
+          approved: true,
+        },
+        createdBy: 'Rae',
+        createdByUser: REVIEWER.userId,
+      });
+      DecomposeParamsSchema.parse(job!.params);
+    });
+
+    it('says an item is held only while it awaits review', async () => {
+      const { repo, facts, item: a } = await held();
+      expect(a).toMatchObject({ outcome: 'awaiting_review', held: true });
+
+      const done = await repo.approveItem({ id: a.id, by: REVIEWER, note: null });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'queued', held: false });
+      // The approved run delivered it (the worker then deletes the held files).
+      await facts.settleItem(a.id, 'created', null);
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'created', held: false });
+    });
+
+    it('approves with the batch not forced as not forced, and no note as none', async () => {
+      const { repo, facts, item: a } = await held(false);
+
+      const done = await repo.approveItem({ id: a.id, by: null, note: null });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      expect((await facts.job(done.jobId))!.params).toMatchObject({ force: false, approved: true });
+      expect(await repo.getItem(a.id)).toMatchObject({
+        reviewedBy: { id: null, name: null },
+        reviewNote: null,
+      });
+    });
+
+    it('approves a held item once: the second is refused and queues nothing', async () => {
+      const { repo, facts, item: a } = await held();
+      const first = await repo.approveItem({ id: a.id, by: REVIEWER, note: null });
+      if (first.kind !== 'approved') throw new Error(first.kind);
+
+      expect(await repo.approveItem({ id: a.id, by: REVIEWER, note: null })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.rejectItem({ id: a.id, by: REVIEWER, note: 'no' })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect((await repo.getItem(a.id))!.jobId).toBe(first.jobId);
+      expect(await facts.job(first.jobId)).not.toBeNull();
+    });
+
+    it('approves or rejects only an item awaiting review', async () => {
+      const { repo, item: a } = await finished();
+
+      expect(await repo.approveItem({ id: a.id, by: null, note: null })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.rejectItem({ id: a.id, by: null, note: 'no' })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'created', reviewedBy: null });
+      const missing = randomUUID();
+      expect(await repo.approveItem({ id: missing, by: null, note: null })).toEqual({
+        kind: 'not_found',
+      });
+      expect(await repo.rejectItem({ id: missing, by: null, note: 'no' })).toEqual({
+        kind: 'not_found',
+      });
+    });
+
+    it('rejects a held item: final, with who, when and the note, and no new job', async () => {
+      const { repo, item: a } = await held();
+      const before = (await repo.getItem(a.id))!.jobId;
+
+      const done = await repo.rejectItem({ id: a.id, by: REVIEWER, note: 'a table is wrong' });
+
+      if (done.kind !== 'rejected') throw new Error(done.kind);
+      expect(ItemSchema.parse(done.item)).toMatchObject({
+        outcome: 'rejected',
+        reviewedBy: { id: REVIEWER.userId, name: 'Rae' },
+        reviewNote: 'a table is wrong',
+        jobId: before,
+        // Its held files are deleted, and rejected is final: it finished now.
+        held: false,
+      });
+      expect(done.item.reviewedAt).not.toBeNull();
+      expect(done.item.finishedAt).toBe(done.item.reviewedAt);
+      expect(await repo.getItem(a.id)).toEqual(done.item);
     });
 
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {

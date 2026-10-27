@@ -54,6 +54,19 @@ export interface ConversionRepo {
    * re-run from its own batch.
    */
   retryItems(retry: Retry): Promise<RetryResult>;
+  /**
+   * Approve a held PDF (spec §14.4): with the item locked, only while its outcome is
+   * `awaiting_review` (`not_awaiting` otherwise), records who, when and the note, sets the outcome
+   * `queued` and queues a `decompose` job with the item's params, its batch's `force` (what the
+   * held run used) and `approved: true`, linked to the item, all at once. Two reviewers cannot
+   * both approve: the second finds the outcome moved on.
+   */
+  approveItem(review: ReviewInput): Promise<ApproveResult>;
+  /**
+   * Reject a held PDF: with the item locked, only while it is `awaiting_review`, records who,
+   * when and the note and sets the outcome `rejected` (final). The caller deletes the held files.
+   */
+  rejectItem(review: ReviewInput): Promise<RejectResult>;
   /** A decomposition register entry by id. */
   registerEntry(id: string): Promise<RegisterEntry | null>;
   /**
@@ -75,6 +88,19 @@ export interface ConversionRepo {
    */
   acceptTargetState(accept: Accept): Promise<AcceptResult>;
 }
+
+export interface ReviewInput {
+  id: string;
+  /** The acting user; recorded as a batch records its creator. */
+  by: Creator | null;
+  note: string | null;
+}
+
+export type ApproveResult =
+  { kind: 'approved'; jobId: string } | { kind: 'not_awaiting' } | { kind: 'not_found' };
+
+export type RejectResult =
+  { kind: 'rejected'; item: Item } | { kind: 'not_awaiting' } | { kind: 'not_found' };
 
 export interface Detach {
   itemId: string;
@@ -204,8 +230,13 @@ export const isUnconfirmed = (
 export const isReloadable = (gone: boolean, detached: boolean, resolution: Item['resolution']) =>
   (gone || detached) && resolution !== 'superseded';
 
-/** The item outcomes of a run not finished yet. */
-export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];
+/** The item outcomes of a run not finished yet (a held PDF waits for a person's decision). */
+export const RUNNING_OUTCOMES: readonly Item['outcome'][] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'awaiting_review',
+];
 
 /** One row of `register_actions`: what a person did to a register entry. */
 export type RegisterAction =

@@ -12,6 +12,7 @@
  *   runs bucket:    ontologies/{ontologyId}/v{version}/normalized.nt   (ontology task)
  *   runs bucket:    decompositions/{batchId}/{itemId}.{ext}   (a batch item's uploaded file)
  *   runs bucket:    decompositions/{batchId}/{itemId}.report.json   (decompose task)
+ *   runs bucket:    decompositions/{batchId}/{itemId}.held/...   (a PDF held for review)
  */
 export function inboxKey(
   specId: string,
@@ -127,4 +128,19 @@ export function decompositionSourceKey(batchId: string, itemId: string, ext: str
 /** A batch item's decomposition report flags (runs bucket, decompose task). */
 export function decompositionReportKey(batchId: string, itemId: string): string {
   return `decompositions/${batchId}/${itemId}.report.json`;
+}
+
+/** A held PDF's manifest (runs bucket): the converted document waiting for review. */
+export function decompositionHeldManifestKey(batchId: string, itemId: string): string {
+  return `decompositions/${batchId}/${itemId}.held/manifest.json`;
+}
+
+/** One of a held PDF's extracted images (runs bucket). */
+export function decompositionHeldImageKey(batchId: string, itemId: string, index: number): string {
+  return `decompositions/${batchId}/${itemId}.held/images/${index}`;
+}
+
+/** One of a held PDF's rendered pages (runs bucket). */
+export function decompositionHeldPageKey(batchId: string, itemId: string, page: number): string {
+  return `decompositions/${batchId}/${itemId}.held/pages/${page}.jpg`;
 }

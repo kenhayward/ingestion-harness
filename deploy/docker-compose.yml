@@ -124,10 +124,10 @@ services:
     # section 4.1): Docling 2.142.1 with its layout and table-structure weights baked in at pinned
     # revisions (deploy/layout/README.md), OCR off. It parses untrusted PDFs, so it sits on an
     # internal network shared only with the worker, publishes no ports, has a read-only root and
-    # fetches nothing at run time (HF_HUB_OFFLINE=1). Opt-in, as nothing uses it yet:
-    # `docker compose --profile pdf up -d layout` (or COMPOSE_PROFILES=pdf in deploy/.env). The
-    # worker treats a missing layout service as retryable, so it does not depend on it.
-    profiles: [pdf]
+    # fetches nothing at run time (HF_HUB_OFFLINE=1). It is in no profile, since the Conversion
+    # tab takes PDFs (the pdf-reader design, section 14.7): deploy/scripts/deploy.* build and
+    # start it with the stack. The worker does not depend on it: only PDFs need it, and an
+    # unreachable layout service is retried as the converter is.
     image: ${IMAGE_PREFIX:-ingestion-harness}/layout:${IMAGE_TAG:-dev}
     build:
       context: ./layout

@@ -69,6 +69,8 @@ export const OUTCOME_LABELS: Record<ItemOutcome, string> = {
   read_back_mismatch: 'read-back mismatch',
   unresolved: 'unresolved',
   failed: 'failed',
+  awaiting_review: 'awaiting review',
+  rejected: 'rejected',
 };
 
 /** An outcome and its detail as one event message, e.g. `changed in target: …`. */

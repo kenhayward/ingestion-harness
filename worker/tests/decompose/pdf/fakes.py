@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PIL import Image
@@ -36,3 +38,12 @@ class FakeCropper:
         out = io.BytesIO()
         Image.new("RGB", (10, 10), "white").save(out, format="PNG")
         return out.getvalue()
+
+
+PDF_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def two_pages() -> tuple[bytes, FakeLayout]:
+    """The two-page fixture PDF and a layout service answering with its saved Docling output."""
+    raw = json.loads((PDF_FIXTURES / "two-pages.docling.json").read_text("utf-8"))
+    return (PDF_FIXTURES / "two-pages.pdf").read_bytes(), FakeLayout(lambda first, last: raw)

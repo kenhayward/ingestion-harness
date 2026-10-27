@@ -14,7 +14,7 @@ import { OUTCOME, batchState } from './outcomes.js';
 export const BATCHES_PER_PAGE = 10;
 
 /**
- * The Conversion tab (decomposition phase 3): Word documents converted in batches and delivered
+ * The Conversion tab (decomposition phase 3): Word or PDF documents converted in batches and delivered
  * to a target that takes documents. Operators, designers and admins all use it (ruling R1).
  * `#/conversion` starts a new batch and lists the earlier ones; `#/conversion/<batchId>` shows
  * one, under its own header ([handoff](docs/design/conversion-redesign/CONVERSION-HANDOFF.md)).
@@ -31,7 +31,9 @@ export function ConversionPage({ api, batchId }: { api: Api; batchId?: string })
       <div className="page-header conversion-header">
         <div>
           <h1>Conversion</h1>
-          <p className="muted">Convert Word documents and deliver each as a document of its own.</p>
+          <p className="muted">
+            Convert Word or PDF documents and deliver each as a document of its own.
+          </p>
         </div>
         <div className="page-header-actions">
           <HelpButton topic="conversion" />

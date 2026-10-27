@@ -61,7 +61,7 @@ Invoke-Compose up -d postgres seaweedfs
 Invoke-Compose run --rm init-buckets
 Invoke-Compose run --rm migrate
 Invoke-Compose run --rm migrate-bridge
-Invoke-Compose up -d --remove-orphans bridge api worker app
+Invoke-Compose up -d --remove-orphans layout bridge api worker app
 
 $appPort = (Select-String -Path $EnvFile -Pattern '^APP_PORT=(.+)$').Matches.Groups[1].Value
 if (-not $appPort) { $appPort = '8081' }

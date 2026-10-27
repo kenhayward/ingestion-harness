@@ -849,6 +849,19 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     detachConversionItem: vi.fn(async () => {
       throw new Error('detachConversionItem not stubbed');
     }),
+    conversionReview: vi.fn(async () => {
+      throw new Error('conversionReview not stubbed');
+    }),
+    conversionPageUrl: (itemId: string, page: number) =>
+      `/api/conversions/items/${itemId}/pages/${page}`,
+    conversionImageUrl: (itemId: string, index: number) =>
+      `/api/conversions/items/${itemId}/images/${index}`,
+    approveConversionItem: vi.fn(async () => {
+      throw new Error('approveConversionItem not stubbed');
+    }),
+    rejectConversionItem: vi.fn(async () => {
+      throw new Error('rejectConversionItem not stubbed');
+    }),
     reloadConversionItem: vi.fn(async () => {
       throw new Error('reloadConversionItem not stubbed');
     }),
@@ -906,6 +919,11 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     rerunAt: null,
     startedAt: null,
     finishedAt: null,
+    flagCount: null,
+    held: false,
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewNote: null,
     ...o,
   };
 }

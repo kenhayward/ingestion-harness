@@ -29,9 +29,11 @@ import {
 } from '@ih/shared';
 import { acceptedReceipt } from '../conversions/accept.js';
 import {
+  batchCreator,
   emptyCounts,
   type AcceptResult,
   type AddItemResult,
+  type ApproveResult,
   type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
@@ -39,6 +41,8 @@ import {
   type Accept,
   type Detach,
   type RegisterAction,
+  type RejectResult,
+  type ReviewInput,
   type Rerun,
   type RerunResult,
   type Retry,
@@ -96,6 +100,15 @@ type StoredItem = Omit<
   Item,
   'resolution' | 'unversioned' | 'gone' | 'unconfirmed' | 'reloadable' | 'rerunIn' | 'rerunAt'
 >;
+
+/** A conversion item's review columns before any report, hold or decision. */
+const NOT_REVIEWED = {
+  flagCount: null,
+  held: false,
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewNote: null,
+} as const;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1331,6 +1344,8 @@ export class MemoryRepo implements IngestionRepo {
     const rerunBatch = rerun && this.conversionBatches.get(rerun.batchId);
     return structuredClone({
       ...item,
+      // Held files exist only while the item awaits review (pg's `held`).
+      held: item.held && item.outcome === 'awaiting_review',
       resolution,
       unversioned,
       gone,
@@ -1411,6 +1426,7 @@ export class MemoryRepo implements IngestionRepo {
       redeliverOf: null,
       startedAt: null,
       finishedAt: null,
+      ...NOT_REVIEWED,
     };
     this.conversionItems.set(row.id, row);
     return { ok: true, item: this.withResolution(row) };
@@ -1493,6 +1509,7 @@ export class MemoryRepo implements IngestionRepo {
       redeliverOf: of.id,
       startedAt: null,
       finishedAt: null,
+      ...NOT_REVIEWED,
     };
     item.jobId = this.queueBackground(
       'decompose',
@@ -1505,14 +1522,59 @@ export class MemoryRepo implements IngestionRepo {
     return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
   }
 
+  async approveItem({ id, by, note }: ReviewInput): Promise<ApproveResult> {
+    const item = this.conversionItems.get(id);
+    if (!item) return { kind: 'not_found' };
+    if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+    const batch = this.conversionBatches.get(item.batchId)!;
+    const jobId = this.queueBackground(
+      'decompose',
+      {
+        batchId: item.batchId,
+        itemId: id,
+        targetId: batch.targetId,
+        sourceKey: item.sourceKey,
+        force: batch.force,
+        approved: true,
+      },
+      by?.name ?? null,
+      by?.userId ?? null,
+    );
+    Object.assign(item, {
+      outcome: 'queued',
+      jobId,
+      reviewedBy: batchCreator(by),
+      reviewedAt: new Date().toISOString(),
+      reviewNote: note,
+    });
+    return { kind: 'approved', jobId };
+  }
+
+  async rejectItem({ id, by, note }: ReviewInput): Promise<RejectResult> {
+    const item = this.conversionItems.get(id);
+    if (!item) return { kind: 'not_found' };
+    if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+    const now = new Date().toISOString();
+    Object.assign(item, {
+      outcome: 'rejected',
+      reviewedBy: batchCreator(by),
+      reviewedAt: now,
+      reviewNote: note,
+      finishedAt: now,
+    });
+    return { kind: 'rejected', item: this.withResolution(item) };
+  }
+
   async retryItems({
     batchId,
-    items,
+    items: asked,
     targetId,
     force,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
+    // A rejected document was decided on: only a failed one is run again.
+    const items = asked.filter((i) => i.of.outcome !== 'rejected');
     const busy = items.find(({ of }) =>
       [...this.conversionItems.values()].some(
         (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
@@ -1552,6 +1614,7 @@ export class MemoryRepo implements IngestionRepo {
         redeliverOf: of.id,
         startedAt: null,
         finishedAt: null,
+        ...NOT_REVIEWED,
       };
       item.jobId = this.queueBackground(
         'decompose',

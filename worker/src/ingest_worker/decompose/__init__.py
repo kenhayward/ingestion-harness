@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.fidelity import check
@@ -41,17 +42,30 @@ from ingest_worker.decompose.properties import properties_of
 from ingest_worker.decompose.references import notes_of, resolve_references
 from ingest_worker.decompose.render import Renderer
 
+if TYPE_CHECKING:
+    from ingest_worker.decompose.pdf.layout import LayoutAnalyser
+
 __all__ = [
     "DECOMPOSER_VERSION",
+    "NO_LAYOUT",
     "Decomposition",
     "DecompositionFailed",
     "DecompositionRejected",
+    "SourceKind",
     "decompose_docx",
+    "decompose_source",
+    "decomposer_version",
+    "source_kind",
 ]
 
 #: The decomposer's version, sent with a delivered document. It never feeds ids, so an improved
 #: decomposer updates the same sections.
 DECOMPOSER_VERSION = 1
+
+#: Why a PDF can't be read by a worker without a layout service.
+NO_LAYOUT = "this CT Studio has no layout service (LAYOUT_URL)"
+
+SourceKind = Literal["docx", "pdf"]
 
 _ID_PARENT = re.compile(r"^(.*)[#/][^#/]*$")
 
@@ -64,6 +78,38 @@ class Decomposition:
     document: DecomposedDocument
     image_bytes: dict[str, bytes]
     originals: dict[str, bytes]
+    #: A PDF's: the 1-based pages each section and block came from, by id (a Word file's is
+    #: empty).
+    page_map: dict[str, list[int]] = field(default_factory=dict)
+
+
+def source_kind(data: bytes) -> SourceKind:
+    """A PDF has `%PDF-` within its first 1024 bytes; anything else is read as a Word file."""
+    return "pdf" if b"%PDF-" in data[:1024] else "docx"
+
+
+def decomposer_version(kind: SourceKind) -> int:
+    """The version sent with a document of this kind: the PDF reader's version is part of a
+    PDF's, so improving it updates its documents without touching Word's."""
+    if kind == "docx":
+        return DECOMPOSER_VERSION
+    from ingest_worker.decompose.pdf import PDF_READER_VERSION  # the reader imports this module
+
+    return DECOMPOSER_VERSION * 1000 + PDF_READER_VERSION
+
+
+def decompose_source(
+    data: bytes, *, renderer: Renderer, layout: LayoutAnalyser | None
+) -> Decomposition:
+    """Decompose a Word file or a PDF, by what `data` is. A PDF needs `layout`; without it the
+    document fails. A layout service that can't answer raises `LayoutUnavailable`."""
+    if source_kind(data) == "docx":
+        return decompose_docx(data, renderer=renderer)
+    from ingest_worker.decompose.pdf import decompose_pdf
+
+    if layout is None:
+        raise DecompositionFailed(NO_LAYOUT)
+    return decompose_pdf(data, layout=layout)
 
 
 def decompose_docx(data: bytes, *, renderer: Renderer) -> Decomposition:

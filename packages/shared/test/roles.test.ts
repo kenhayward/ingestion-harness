@@ -82,6 +82,7 @@ describe('roles', () => {
     ['results', true],
     ['result', true],
     ['conversion', true],
+    ['conversionReview', true],
     ['review', true],
     ['profile', true],
     ['password', true],

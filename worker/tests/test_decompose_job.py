@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -28,19 +29,24 @@ from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
+from ingest_worker.decompose.pdf.layout import LayoutUnavailable
 from ingest_worker.decompose.register import MemoryRegisterStore
 from ingest_worker.errors import DocumentError
 from ingest_worker.main import TASKS
+from ingest_worker.ocr import render_preview_jpeg
 from ingest_worker.outcomes import Complete, Delivering
 from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetNotSynced
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.storage import (
     MemoryObjectStore,
+    decomposition_held_manifest_key,
+    decomposition_held_page_key,
     decomposition_report_key,
     decomposition_source_key,
 )
 from tests.decompose.fakes import FakeRenderer
+from tests.decompose.pdf.fakes import FakeLayout, two_pages
 from tests.decompose.test_deliver import REFUSAL, FakeBridge, report_docx
 from tests.fakes import FakeQueue
 
@@ -65,6 +71,8 @@ class World:
         self.bridge = bridge if bridge is not None else FakeBridge()
         self.queue = FakeQueue()
         self.renderer = FakeRenderer()
+        self.layout: FakeLayout | None = None
+        self.render_preview: Callable[[bytes, int], bytes] = render_preview_jpeg
         self._n = 0
 
     def deps(self) -> DecomposeDeps:
@@ -73,6 +81,8 @@ class World:
             runs_bucket="runs",
             items=self.items,
             queue=self.queue,
+            layout=self.layout,
+            render_preview=self.render_preview,
             deliver=DeliverDeps(
                 renderer=self.renderer,
                 register=self.register,
@@ -89,7 +99,7 @@ class World:
         """An item uploaded to `batch` and its queued job, as the API's start writes them."""
         self._n += 1
         item_id = f"00000000-0000-4000-8000-{self._n:012d}"
-        key = decomposition_source_key(batch, item_id, "docx")
+        key = decomposition_source_key(batch, item_id, source_key.rsplit(".", 1)[-1])
         self.store.put("runs", key, data, "application/octet-stream")
         self.items.add(ConversionItem(item_id, batch, source_key, key, "queued"))
         job = ClaimedJob(
@@ -158,6 +168,468 @@ def test_decomposes_and_delivers_a_new_file_as_delivering() -> None:
     assert world.messages(job) == ["decomposing", "decomposed", "report written", "delivering"]
 
 
+def _held(world: World, job: ClaimedJob) -> list[str]:
+    """The keys of the item's held files."""
+    item = world.item(job)
+    prefix = f"decompositions/{item.batch_id}/{item.id}.held/"
+    return sorted(key for _bucket, key in world.store.objects if key.startswith(prefix))
+
+
+def _manifest(world: World, job: ClaimedJob) -> dict[str, Any]:
+    item = world.item(job)
+    raw = world.store.get("runs", decomposition_held_manifest_key(item.batch_id, item.id))
+    assert item.held_sha256 == hashlib.sha256(raw).hexdigest()
+    manifest: dict[str, Any] = json.loads(raw)
+    return manifest
+
+
+def _registered(world: World, data: bytes, source_key: str, *, receipt: bool = True) -> str:
+    """`data` already delivered under `source_key` as DOC-1, as an earlier run leaves it; without
+    `receipt`, its versions were never recorded."""
+    with world.register.transaction() as tx:
+        entry = tx.put_pending(
+            replacing=None,
+            sink_id="documents",
+            instance_id="tenant-1",
+            source_key=source_key,
+            content_sha256=hashlib.sha256(data).hexdigest(),
+            idempotency_key="earlier",
+            batch_id=BATCH_D,
+        )
+    last = Receipt(
+        written=[],
+        document=DocumentReceipt(
+            persistent_id="DOC-1",
+            components=COMPONENTS,
+            read_back=ReadBack(ok=True, at=None, detail=None),
+        ),
+    )
+    world.register.settle(
+        entry.id, state="delivered", persistent_id="DOC-1", last_receipt=last if receipt else None
+    )
+    return entry.id
+
+
+def test_pdf_that_would_create_is_held() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "reports/two-pages.pdf")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Complete(note="held for review")
+    item = world.item(job)
+    assert item.outcome == "awaiting_review" and item.held_sha256 is not None
+    assert item.held_entry is None  # a new source
+    assert world.bridge.requests == [] and world.register.entries() == []
+    manifest = _manifest(world, job)
+    assert manifest["pageCount"] == 2
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 1
+    assert manifest["startedBy"] == USER.model_dump(by_alias=True)
+    assert manifest["document"]["sections"]
+    for page in (1, 2):
+        body, content_type = world.store.objects[
+            ("runs", decomposition_held_page_key(item.batch_id, item.id, page))
+        ]
+        assert content_type == "image/jpeg" and body[:2] == b"\xff\xd8"
+    assert world.messages(job)[-1] == "held for review"
+
+
+def test_pdf_already_loaded_is_not_held() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    entry_id = _registered(world, data, "two-pages.pdf")
+    job = world.upload(data, "two-pages.pdf")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: already_loaded")
+    item = world.item(job)
+    assert (item.outcome, item.register_entry_id) == ("already_loaded", entry_id)
+    assert item.held_sha256 is None and _held(world, job) == []
+    assert world.bridge.requests == []
+
+
+def test_forced_pdf_is_held() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    entry_id = _registered(world, data, "two-pages.pdf")
+    job = world.upload(data, "two-pages.pdf", force=True)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Complete(note="held for review")
+    item = world.item(job)
+    assert item.outcome == "awaiting_review"
+    assert item.held_entry == {"id": entry_id, "contentSha256": hashlib.sha256(data).hexdigest()}
+    assert world.bridge.requests == []
+    [entry] = world.register.entries()
+    assert entry.state == "delivered"  # nothing was written to the register
+
+
+def test_hold_records_the_register_entry() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    earlier = b"%PDF-1.7 an earlier version"
+    entry_id = _registered(world, earlier, "two-pages.pdf")
+    job = world.upload(data, "two-pages.pdf")
+
+    run_decompose(job, world.deps())
+
+    item = world.item(job)
+    held_entry = {"id": entry_id, "contentSha256": hashlib.sha256(earlier).hexdigest()}
+    assert (item.outcome, item.held_entry) == ("awaiting_review", held_entry)
+    assert _manifest(world, job)["entry"] == held_entry
+
+
+def test_a_pdf_whose_update_has_no_versions_is_unresolved_not_held() -> None:
+    """An update the register could never send (no versions recorded) is unresolved at once,
+    as its delivery would be: there is nothing a reviewer could approve."""
+    world = World()
+    data, world.layout = two_pages()
+    entry_id = _registered(world, b"%PDF-1.7 an earlier version", "two-pages.pdf", receipt=False)
+    job = world.upload(data, "two-pages.pdf")
+
+    run_decompose(job, world.deps())
+
+    item = world.item(job)
+    assert (item.outcome, item.register_entry_id) == ("unresolved", entry_id)
+    assert _held(world, job) == []
+
+
+def test_page_render_failure_is_not_held() -> None:
+    world = World()
+    data, world.layout = two_pages()
+
+    def broken(pdf: bytes, index: int) -> bytes:
+        raise RuntimeError("pdfium could not render the page")
+
+    world.render_preview = broken
+    job = world.upload(data, "two-pages.pdf")
+
+    with pytest.raises(RuntimeError):
+        run_decompose(job, world.deps())
+    assert world.item(job).outcome == "decomposing"  # retried
+
+    with pytest.raises(RuntimeError):
+        run_decompose(replace(job, attempts=job.max_attempts), world.deps())
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert "pdfium could not render the page" in item.detail
+    assert _held(world, job) == []
+
+
+def test_a_hold_for_an_item_that_moved_on_is_deleted(monkeypatch: pytest.MonkeyPatch) -> None:
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "two-pages.pdf")
+    monkeypatch.setattr(world.items, "hold", lambda *_args: False)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: had moved on; held for review not recorded")
+    assert _held(world, job) == []
+    assert world.item(job).outcome == "decomposing"
+
+
+def test_word_is_never_held() -> None:
+    world = World()
+    data = report_docx()
+    _registered(world, data, "r1.docx")
+    job = world.upload(data, "r1.docx", force=True)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    item = world.item(job)
+    assert item.outcome == "delivering" and item.held_sha256 is None
+    assert _held(world, job) == []
+
+
+REVIEWER = ActingUser(id="u2", name="Reviewer", email=None)
+STALE_HOLD = "the target's document changed after this was reviewed; run it again"
+
+
+def _approve(world: World, job: ClaimedJob) -> ClaimedJob:
+    """The API's approval of `job`'s held item: the reviewer recorded, the item `queued` again
+    with its hold, and a `decompose` job marked approved, queued by the reviewer."""
+    item = world.item(job)
+    assert item.outcome == "awaiting_review"
+    world.items.items[item.id] = replace(item, outcome="queued")
+    assert job.params is not None
+    world._n += 1
+    approved = replace(job, id=f"job-{world._n}", params={**job.params, "approved": True})
+    world.queue.uploaders[approved.id] = REVIEWER
+    return approved
+
+
+def _held_pdf(world: World) -> ClaimedJob:
+    data, world.layout = two_pages()
+    job = world.upload(data, "two-pages.pdf")
+    assert run_decompose(job, world.deps()) == Complete(note="held for review")
+    return job
+
+
+def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    world = World()
+    job = _held_pdf(world)
+    held_document = _manifest(world, job)["document"]
+    monkeypatch.setattr("ingest_worker.decompose.pdf.PDF_READER_VERSION", 2)  # the reader moved on
+
+    def unreadable(first: int, last: int) -> dict[str, Any]:
+        raise AssertionError("the PDF was read again")
+
+    world.layout = FakeLayout(unreadable)
+    approved = _approve(world, job)
+
+    outcome = run_decompose(approved, world.deps())
+
+    assert outcome == Delivering([], [(TARGET, "d1")], note="handed two-pages.pdf to the bridge")
+    [request] = world.bridge.requests
+    package = request.package
+    assert package.document is not None
+    assert package.document.model_dump(mode="json", by_alias=True) == held_document
+    assert package.provenance.decomposer_version == 1001  # type: ignore[union-attr]
+    [entry] = world.register.entries()
+    item = world.item(job)
+    assert (item.outcome, item.register_entry_id) == ("delivering", entry.id)
+    assert entry.content_sha256 == hashlib.sha256(two_pages()[0]).hexdigest()
+    assert world.layout.calls == []
+    assert _held(world, job) == []
+
+
+def test_approved_delivery_acts_as_batch_starter() -> None:
+    world = World()
+    job = _held_pdf(world)
+
+    run_decompose(_approve(world, job), world.deps())
+
+    [request] = world.bridge.requests
+    assert request.acting_user == USER  # who started the batch, not the reviewer
+
+
+def test_stale_hold_fails() -> None:
+    world = World()
+    job = _held_pdf(world)
+    # Another run of the same source delivered while this one waited for review.
+    _registered(world, b"%PDF-1.7 a newer version", "two-pages.pdf")
+
+    outcome = run_decompose(_approve(world, job), world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: failed")
+    item = world.item(job)
+    assert (item.outcome, item.detail) == ("failed", STALE_HOLD)
+    assert world.bridge.requests == []
+    assert _held(world, job) == []
+
+
+def test_a_hold_whose_entry_changed_content_is_stale() -> None:
+    """The entry the hold was decided against, written again with other content since (another
+    run of the same source), is stale too."""
+    world = World()
+    data, world.layout = two_pages()
+    entry_id = _registered(world, b"%PDF-1.7 an earlier version", "two-pages.pdf")
+    job = world.upload(data, "two-pages.pdf")
+    run_decompose(job, world.deps())
+    [entry] = world.register.entries()
+    with world.register.transaction() as tx:
+        tx.put_pending(
+            replacing=entry,
+            sink_id="documents",
+            instance_id="tenant-1",
+            source_key="two-pages.pdf",
+            content_sha256=hashlib.sha256(b"%PDF-1.7 a newer version").hexdigest(),
+            idempotency_key="newer",
+            batch_id=BATCH_C,
+        )
+    [current] = world.register.entries()
+    assert current.id == entry_id
+
+    run_decompose(_approve(world, job), world.deps())
+
+    item = world.item(job)
+    assert (item.outcome, item.detail) == ("failed", STALE_HOLD)
+    assert world.bridge.requests == [] and _held(world, job) == []
+
+
+def test_tampered_hold_fails() -> None:
+    world = World()
+    job = _held_pdf(world)
+    item = world.item(job)
+    key = decomposition_held_manifest_key(item.batch_id, item.id)
+    raw, content_type = world.store.objects[("runs", key)]
+    world.store.put("runs", key, raw + b" ", content_type)
+
+    outcome = run_decompose(_approve(world, job), world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: failed")
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert "not the reviewed one" in item.detail
+    assert world.bridge.requests == [] and world.register.entries() == []
+    assert _held(world, job) == []
+
+
+def test_an_approved_run_whose_source_changed_fails() -> None:
+    world = World()
+    job = _held_pdf(world)
+    item = world.item(job)
+    world.store.put("runs", item.object_key, b"%PDF-1.7 another file", "application/pdf")
+
+    run_decompose(_approve(world, job), world.deps())
+
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert "not the reviewed one" in item.detail
+    assert world.bridge.requests == [] and _held(world, job) == []
+
+
+def test_an_approved_job_for_an_item_not_held_fails_it() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "two-pages.pdf")
+    assert job.params is not None
+    approved = replace(job, params={**job.params, "approved": True})
+
+    outcome = run_decompose(approved, world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: failed")
+    item = world.item(job)
+    assert (item.outcome, item.detail) == (
+        "failed",
+        "approved, but nothing of two-pages.pdf is held for review",
+    )
+    assert world.bridge.requests == [] and world.layout.calls == []
+
+
+def test_approved_run_bridge_unreachable_is_final() -> None:
+    world = World(bridge=FakeBridge(raise_after_accepting=True))
+    job = _held_pdf(world)
+
+    outcome = run_decompose(_approve(world, job), world.deps())
+
+    assert outcome == Complete(note="two-pages.pdf: failed")
+    item = world.item(job)
+    [entry] = world.register.entries()
+    assert (item.outcome, item.register_entry_id) == ("failed", entry.id)
+    assert item.detail is not None and item.detail.startswith("the bridge did not take it")
+    assert entry.state == "pending"  # as for Word: it may have been taken
+    assert _held(world, job) == []
+
+
+def test_a_retried_approved_run_resumes_its_delivery() -> None:
+    """The worker stopped after recording `delivering`, before the held files were deleted: the
+    retry finds its own pending entry (not a stale hold), waits for its delivery and deletes
+    them."""
+    world = World()
+    job = _held_pdf(world)
+    approved = _approve(world, job)
+    kept = dict(world.store.objects)
+    run_decompose(approved, world.deps())
+    world.store.objects.update(kept)  # as if the deletion never happened
+    assert _held(world, job) != []
+
+    outcome = run_decompose(replace(approved, attempts=2), world.deps())
+
+    assert outcome == Delivering([], [(TARGET, "d1")], note="handed two-pages.pdf to the bridge")
+    assert len(world.bridge.requests) == 1  # resumed, not sent again
+    assert world.item(job).outcome == "delivering"
+    assert _held(world, job) == []
+
+
+def test_a_retried_approved_run_after_the_hand_off_leaves_it_to_the_bridge() -> None:
+    world = World()
+    job = _held_pdf(world)
+    approved = _approve(world, job)
+    run_decompose(approved, world.deps())
+    assert world.item(job).outcome == "delivering" and _held(world, job) == []
+
+    outcome = run_decompose(replace(approved, attempts=2), world.deps())
+
+    assert outcome == Complete(note="delivery already handed over")
+    assert len(world.bridge.requests) == 1
+    assert world.item(job).outcome == "delivering"
+
+
+def test_a_cancelled_approved_run_fails_its_item_and_deletes_the_hold() -> None:
+    world = World()
+    job = _held_pdf(world)
+    world.queue.cancel_when = lambda: True
+
+    with pytest.raises(JobCancelled):
+        run_decompose(_approve(world, job), world.deps())
+
+    assert world.bridge.requests == []
+    assert world.item(job).outcome == "failed"
+    assert _held(world, job) == []
+
+
+def test_an_approved_run_retried_on_an_error_keeps_the_hold_until_its_last_attempt() -> None:
+    world = World()
+    job = _held_pdf(world)
+    approved = _approve(world, job)
+    item = world.item(job)
+    del world.store.objects[("runs", item.object_key)]  # the source can't be read
+
+    with pytest.raises(KeyError):
+        run_decompose(approved, world.deps())
+    assert world.item(job).outcome == "decomposing" and _held(world, job) != []
+
+    with pytest.raises(KeyError):
+        run_decompose(replace(approved, attempts=approved.max_attempts), world.deps())
+    assert world.item(job).outcome == "failed" and _held(world, job) == []
+
+
+def test_pdf_without_layout_fails_the_item() -> None:
+    world = World()
+    data, _ = two_pages()
+    job = world.upload(data, "two-pages.pdf")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed"
+    assert item.detail is not None
+    assert "this CT Studio has no layout service (LAYOUT_URL)" in item.detail
+    assert world.bridge.requests == []
+
+
+def test_layout_unavailable_is_retried_then_fails() -> None:
+    world = World()
+    data, _ = two_pages()
+
+    def down(first: int, last: int) -> dict[str, Any]:
+        raise LayoutUnavailable("connection refused")
+
+    world.layout = FakeLayout(down)
+    job = world.upload(data, "two-pages.pdf")
+
+    with pytest.raises(LayoutUnavailable):
+        run_decompose(job, world.deps())
+    assert world.item(job).outcome == "decomposing"  # retried: nothing decided
+
+    last = replace(job, attempts=job.max_attempts)
+    outcome = run_decompose(last, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed"
+    assert item.detail is not None
+    assert item.detail.startswith("the layout service could not be reached: connection refused")
+    assert world.bridge.requests == []
+
+
+def test_word_version_unchanged() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+
+    run_decompose(job, world.deps())
+
+    [request] = world.bridge.requests
+    assert request.package.provenance.decomposer_version == 1  # type: ignore[union-attr]
+
+
 def test_an_item_records_when_it_started_and_finished() -> None:
     """How long a document took (the Conversion tab's row): started when it goes to
     `decomposing`, finished at a final outcome the worker decides; `delivering` is not final
@@ -216,9 +688,6 @@ def test_a_create_again_under_the_earlier_key_says_so_plainly() -> None:
 
 def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """The delivery takes the job's decomposition rather than rendering everything again."""
-    import ingest_worker.decompose.deliver as deliver_module
-    import ingest_worker.decompose.job as job_module
-
     calls: list[bytes] = []
     real = decompose_module.decompose_docx
 
@@ -226,8 +695,7 @@ def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append(data)
         return real(data, renderer=renderer)
 
-    monkeypatch.setattr(job_module, "decompose_docx", counted)
-    monkeypatch.setattr(deliver_module, "decompose_docx", counted)
+    monkeypatch.setattr(decompose_module, "decompose_docx", counted)
     world = World()
 
     run_decompose(world.upload(report_docx(), "r1.docx"), world.deps())
@@ -827,8 +1295,36 @@ def test_a_source_key_unlike_the_items_fails_the_item() -> None:
 
 def test_the_memory_store_ignores_a_missing_item_like_postgres() -> None:
     items = MemoryItemStore()
-    items.set_report("nope", "k")
+    items.set_report("nope", "k", 0)
     assert items.decide("nope", "failed", "x", None) is False
+
+
+def test_the_memory_store_holds_an_undecided_item_for_review() -> None:
+    items = MemoryItemStore(clock=lambda: AT)
+    items.add(ConversionItem("i1", "b1", "a.pdf", "k", "queued"))
+    items.add(ConversionItem("i2", "b1", "b.pdf", "k", "created"))
+    items.start("i1")
+
+    assert items.hold("i1", "f" * 64, {"id": "e1"})
+    held = items.items["i1"]
+    assert (held.outcome, held.held_sha256, held.held_entry) == (
+        "awaiting_review",
+        "f" * 64,
+        {"id": "e1"},
+    )
+    assert held.finished_at is None  # waiting for a decision, not finished
+    assert not items.hold("i1", "f" * 64, None)  # held already: only an undecided item is held
+    assert not items.hold("i2", "f" * 64, None)  # settled already
+    assert not items.hold("nope", "f" * 64, None)
+    assert items.items["i2"].outcome == "created"
+
+
+def test_the_memory_store_records_the_flag_count_with_the_report() -> None:
+    items = MemoryItemStore()
+    items.add(ConversionItem("i1", "b1", "a.docx", "k", "queued"))
+    items.set_report("i1", "decompositions/b1/i1.report.json", 3)
+    assert items.items["i1"].flag_count == 3
+    assert items.items["i1"].report_key == "decompositions/b1/i1.report.json"
 
 
 def test_writes_the_report_beside_the_source() -> None:
@@ -845,6 +1341,7 @@ def test_writes_the_report_beside_the_source() -> None:
     assert request.package.document is not None
     flags = [f.model_dump(mode="json", by_alias=True) for f in request.package.document.report]
     assert report == {"flags": flags}
+    assert item.flag_count == len(flags)
 
 
 def test_an_item_already_decided_is_left_alone() -> None:

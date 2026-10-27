@@ -642,8 +642,14 @@ Phases 1 and 4's capture work need nothing from each other and can run side by s
 **Phase 5a status.** Step 5a (born-digital PDFs) is implemented: a layout service, the PDF
 reader, its fidelity checks, a dev tool (`worker/scripts/decompose.py` takes a PDF) and a Word/PDF
 twin scorer (`worker/scripts/pdf_twins.py`). Its scores, and what is weakest, are in the PDF
-reader design's §13. PDFs are not yet accepted on the Conversion tab (step 5b), and the owner's
-decision on review waits on the scores.
+reader design's §13.
+
+**Phase 5b status.** Step 5b (PDFs in CT Studio, with review) is implemented (2026-10-27): the
+Conversion tab takes Word or PDF files, and a PDF is held for review until someone approves or
+rejects it (PDF reader design §14). The layout service starts with the stack. It is tested end
+to end (`apps/api/test/integration/conversion-e2e-pg.test.ts`): two PDFs and a Word file in one
+batch, the Word file created at once, one PDF approved through to the fake sink and the other
+rejected. The owner's run of a real PDF against the real sink is pending.
 
 **Phase 3 status.** Phase 3 is implemented. It covers:
 

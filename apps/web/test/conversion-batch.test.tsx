@@ -6,7 +6,7 @@ import { ITEM_OUTCOMES, type BatchSummary, type Item, type ItemOutcome } from '@
 import { App } from '../src/App.js';
 import { ApiError } from '../src/api/client.js';
 import { ConversionPage } from '../src/conversion/ConversionPage.js';
-import { spokenDuration } from '../src/conversion/outcomes.js';
+import { batchState, spokenDuration } from '../src/conversion/outcomes.js';
 import { conversionBatch, conversionItem, fakeApi } from './fake-api.js';
 
 const BATCH_ID = '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11';
@@ -61,6 +61,41 @@ function summary(o: Partial<BatchSummary>, counts: Partial<Record<ItemOutcome, n
   return { ...conversionBatch({ ...STARTED, ...o }), itemCount, counts: all };
 }
 
+describe('a batch with documents held for review', () => {
+  it('is not finished while one awaits review, and rejected counts as failed', () => {
+    const held = batchState(summary({}, { created: 1, awaiting_review: 1 }));
+    expect(held).toMatchObject({ icon: 'review', label: 'Awaiting review', tone: 'warn' });
+    expect(batchState(summary({}, { created: 1 })).label).toBe('Done');
+    expect(batchState(summary({}, { created: 1, rejected: 1 })).label).toBe('Some failed');
+    // A failure does not hide that a document still awaits review.
+    const both = batchState(summary({}, { failed: 1, awaiting_review: 1 }));
+    expect(both).toMatchObject({ label: 'Awaiting review', tone: 'warn' });
+  });
+
+  it('counts a document awaiting review as not done, and reads the batch once', async () => {
+    vi.useFakeTimers();
+    try {
+      const getConversionBatch = vi.fn(async () =>
+        detailOf([
+          item('ok.pdf', 'created'),
+          item('bad.pdf', 'failed'),
+          item('held.pdf', 'awaiting_review', { held: true }),
+        ]),
+      );
+      const page = view(batchApi([], { getConversionBatch }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      const text = '2 of 3 documents done; 1 awaiting review; 1 needs attention';
+      expect(screen.getByRole('status', { name: 'Progress' })).toHaveTextContent(text);
+      expect(screen.getByText(text, { selector: '.batch-bar-text' })).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(getConversionBatch).toHaveBeenCalledTimes(1);
+      page.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the Conversion tab: the batch view', () => {
   afterEach(() => {
     window.location.hash = '';
@@ -83,6 +118,90 @@ describe('the Conversion tab: the batch view', () => {
     expect(rowOf('c.docx')).toHaveTextContent('2 components changed in the target');
     expect(within(rowOf('d.docx')).getByText('Read-back mismatch')).toHaveClass('pill');
     expect(api.getConversionBatch).toHaveBeenCalledWith(BATCH_ID);
+  });
+
+  it('shows a held document as awaiting review, needing attention', async () => {
+    view(
+      batchApi([item('ok.pdf', 'created'), item('held.pdf', 'awaiting_review', { held: true })]),
+    );
+    await findRow('held.pdf');
+    expect(within(rowOf('held.pdf')).getByText('Awaiting review')).toHaveClass('pill', 'tone-warn');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('1');
+    await userEvent.click(show.getByRole('button', { name: /^Needs attention/ }));
+    expect(listedKeys()).toEqual(['held.pdf']);
+  });
+
+  it('shows each flag count, and a Review link on a held row', async () => {
+    const held = item('held.pdf', 'awaiting_review', { held: true, flagCount: 12 });
+    view(
+      batchApi([
+        held,
+        item('word.docx', 'created', { flagCount: 1 }),
+        item('clean.docx', 'created', { flagCount: 0 }),
+        item('old.docx', 'created'),
+      ]),
+    );
+    await findRow('held.pdf');
+    expect(rowOf('held.pdf')).toHaveTextContent('12 flags');
+    expect(rowOf('word.docx')).toHaveTextContent('1 flag');
+    expect(rowOf('word.docx')).not.toHaveTextContent('1 flags');
+    expect(rowOf('clean.docx')).toHaveTextContent('No flags');
+    expect(rowOf('old.docx')).not.toHaveTextContent(/flag/i);
+    const review = within(rowOf('held.pdf')).getByRole('link', { name: 'Review held.pdf' });
+    expect(review).toHaveAttribute('href', `#/conversion/items/${held.id}/review`);
+    expect(within(rowOf('word.docx')).queryByRole('link', { name: /^Review/ })).toBeNull();
+    expect(panelFor('held.pdf').getByRole('link', { name: 'Review held.pdf' })).toHaveAttribute(
+      'href',
+      `#/conversion/items/${held.id}/review`,
+    );
+  });
+
+  it('offers a forced run on a rejected row, which says why it was rejected', async () => {
+    const api = batchApi([item('no.pdf', 'rejected', { reviewNote: 'misread tables' })], {
+      forceConversionItem: vi.fn(async () => ({
+        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
+        items: [],
+      })),
+    });
+    view(api);
+    await findRow('no.pdf');
+    const panel = panelFor('no.pdf');
+    expect(panel.getByText('Why it was rejected')).toBeVisible();
+    expect(panel.queryByText('Why it failed')).toBeNull();
+    expect(panel.getByText('misread tables')).toBeVisible();
+    await userEvent.click(panel.getByRole('button', { name: 'Force-load no.pdf' }));
+    await waitFor(() => expect(api.forceConversionItem).toHaveBeenCalled());
+  });
+
+  it('takes a PDF or a Word file as the replacement', async () => {
+    view(batchApi([item('created.docx', 'created', { registerEntryId: 'r1' })]));
+    await findRow('created.docx');
+    fireEvent.click(
+      panelFor('created.docx').getByRole('button', { name: 'Redeliver created.docx' }),
+    );
+    const dialog = within(await screen.findByRole('dialog', { name: 'Redeliver created.docx' }));
+    const accept = dialog
+      .getByLabelText(/Replacement file/)
+      .getAttribute('accept')!
+      .split(',');
+    expect(accept).toEqual(expect.arrayContaining(['.pdf', '.docx']));
+  });
+
+  it('counts a rejected document with the failed ones, and never re-runs it', async () => {
+    const rejected = item('no.pdf', 'rejected', { reviewNote: 'misread tables' });
+    view(batchApi([item('ok.pdf', 'created'), rejected, item('broke.docx', 'failed')]));
+    await findRow('no.pdf');
+    expect(within(rowOf('no.pdf')).getByText('Rejected')).toHaveClass('pill', 'tone-danger');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    await userEvent.click(show.getByRole('button', { name: /^Failed/ }));
+    expect(listedKeys()).toEqual(['no.pdf', 'broke.docx']);
+    expect(
+      within(screen.getByRole('group', { name: 'Totals' })).getByText('failed').previousSibling,
+    ).toHaveTextContent('2');
+    // Re-running takes the failed document only.
+    const panel = panelFor('no.pdf');
+    expect(panel.queryByRole('button', { name: /re-run/i })).toBeNull();
   });
 
   it('says how long each document took, and how long an unfinished one has run', async () => {

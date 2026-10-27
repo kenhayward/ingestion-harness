@@ -92,6 +92,21 @@ def decomposition_report_key(batch_id: str, item_id: str) -> str:
     return f"decompositions/{batch_id}/{item_id}.report.json"
 
 
+def decomposition_held_manifest_key(batch_id: str, item_id: str) -> str:
+    """A held PDF's manifest (runs bucket; TS decompositionHeldManifestKey)."""
+    return f"decompositions/{batch_id}/{item_id}.held/manifest.json"
+
+
+def decomposition_held_image_key(batch_id: str, item_id: str, index: int) -> str:
+    """One of a held PDF's extracted images (runs bucket; TS decompositionHeldImageKey)."""
+    return f"decompositions/{batch_id}/{item_id}.held/images/{index}"
+
+
+def decomposition_held_page_key(batch_id: str, item_id: str, page: int) -> str:
+    """One of a held PDF's rendered pages (runs bucket; TS decompositionHeldPageKey)."""
+    return f"decompositions/{batch_id}/{item_id}.held/pages/{page}.jpg"
+
+
 def ontology_suggestions_key(project_id: str, job_id: str) -> str:
     """A survey's or refresh's ontology suggestions (runs bucket; TS ontologySuggestionsKey)."""
     return f"ontology-suggestions/{project_id}/{job_id}.json"

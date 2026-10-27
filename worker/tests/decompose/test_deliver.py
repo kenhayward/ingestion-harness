@@ -40,6 +40,7 @@ from ingest_worker.decompose.register import (
 )
 from tests.decompose.docx import build_docx
 from tests.decompose.fakes import FakeRenderer
+from tests.decompose.pdf.fakes import two_pages
 from tests.decompose.test_media import PNG, picture
 
 AT = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
@@ -736,3 +737,29 @@ def test_cli_prints_one_json_line(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert [json.loads(line)["outcome"] for line in lines] == ["created", "in_flight"]
     assert json.loads(lines[0])["deliveryId"] == "d1"
     assert bridge.requests[0].package.provenance.source_key == "r1.docx"  # type: ignore[union-attr]
+
+
+def test_a_pdf_delivered_without_a_decomposition_is_read_by_the_pdf_reader() -> None:
+    data, layout = two_pages()
+    bridge = FakeBridge()
+    deps = replace(make_deps(bridge), layout=layout)
+
+    out = deliver_decomposition(
+        deps, data=data, source_key="two-pages.pdf", target_id=TARGET, started_by=USER
+    )
+
+    assert out.outcome == "created"
+    [request] = bridge.requests
+    assert request.package.idempotency_key == decomposition_idempotency_key(
+        hashlib.sha256(data).hexdigest(), None, 1001, None
+    )
+    assert request.package.provenance.decomposer_version == 1001  # type: ignore[union-attr]
+
+
+def test_a_pdf_without_a_layout_service_fails_when_delivered() -> None:
+    data, _ = two_pages()
+    out = deliver_decomposition(
+        make_deps(FakeBridge()), data=data, source_key="a.pdf", target_id=TARGET, started_by=USER
+    )
+
+    assert out.outcome == "failed" and "no layout service (LAYOUT_URL)" in (out.detail or "")
