@@ -21,13 +21,14 @@ from difflib import SequenceMatcher
 from ingest_worker.decompose.forms import _Forms, grid_forms, text_form
 from ingest_worker.decompose.model import DecomposedDocument, Section
 from ingest_worker.decompose.pdf.fidelity import words
-from ingest_worker.decompose.tables import NOTE_PREFIX
 
 #: A truth table is paired with the best of this many next unpaired PDF tables.
 PAIRING_WINDOW = 4
 #: The least cell-text overlap (Jaccard) that pairs two tables.
 PAIRING_MIN_JACCARD = 0.3
 
+#: A note row's text: a marker, then a separator or just whitespace, then the note.
+_NOTE_ROW = re.compile(r"^\s*([a-z]|\d{1,2}|[*†‡§])(\s*[:.)]\s*|\s+)\S")
 _TOKEN = re.compile(r"⟦[^⟧]*⟧")
 
 
@@ -90,10 +91,17 @@ def _cells(grid: list[list[str]]) -> dict[tuple[int, int], str]:
     return cells
 
 
+def _is_note_row(row: list[str]) -> bool:
+    """A row of one text across its slots (a cell spanning the width, or the rest empty) that
+    starts with a note marker, a separator after it or just whitespace."""
+    texts = {slot.partition("|")[2] for slot in row if slot.partition("|")[2]}
+    return len(row) > 1 and len(texts) == 1 and _NOTE_ROW.match(next(iter(texts))) is not None
+
+
 def _without_notes(grid: list[list[str]]) -> list[list[str]]:
     """The grid without its last rows that read as notes."""
     rows = list(grid)
-    while rows and rows[-1] and NOTE_PREFIX.match(rows[-1][0].partition("|")[2]) is not None:
+    while rows and _is_note_row(rows[-1]):
         rows.pop()
     return rows
 

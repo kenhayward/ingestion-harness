@@ -204,3 +204,29 @@ def test_undefined_rates_are_none() -> None:
     assert s.words_recall == 0.0
     assert s.words_precision is None
     assert score(doc(), doc(blocks=[para("p", "alpha")])).words_recall is None
+
+
+def test_full_width_note_row_without_separator_is_stripped() -> None:
+    note = Table(
+        id="t",
+        column_widths=[1.0, 1.0],
+        header_rows=1,
+        rows=[
+            Row(cells=[Cell(blocks=[para("h1", "Id")]), Cell(blocks=[para("h2", "Name")])]),
+            Row(cells=[Cell(blocks=[para("d1", "1")]), Cell(blocks=[para("d2", "Alpha")])]),
+            Row(cells=[Cell(col_span=2, blocks=[para("n", "a Light source: lamp")])]),
+        ],
+    )
+    truth = doc([section("s", "T", [note])])
+    pdf = doc([section("s", "T", [table("p", [["Id", "Name"], ["1", "Alpha"]])])])
+    s = score(truth, pdf)
+    assert (s.tables_found, s.shape_right) == (1, 1)
+    assert (s.cells_total, s.cells_right) == (4, 4)
+
+
+def test_data_row_starting_with_a_letter_is_not_stripped() -> None:
+    truth = doc([section("s", "T", [table("t", [["Id", "Name"], ["1", "Alpha"], ["a b", "Zed"]])])])
+    pdf = doc([section("s", "T", [table("p", [["Id", "Name"], ["1", "Alpha"]])])])
+    s = score(truth, pdf)
+    assert (s.tables_found, s.shape_right) == (1, 0)
+    assert s.cells_total == 6
