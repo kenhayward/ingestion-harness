@@ -52,12 +52,14 @@ export const canResolve = (item: Item) =>
 export const canReload = (item: Item) => item.reloadable;
 /**
  * Detach: as `canResolve`, an unresolved document whose versions were never recorded (§8),
- * which no update can be checked against, so there is nothing to accept, or one gone from the
- * target.
+ * which no update can be checked against, so there is nothing to accept, one gone from the
+ * target, or a failed create the target may have taken (`unconfirmed`), which is only ever sent
+ * again under its old key.
  */
 export const canDetach = (item: Item) =>
   canResolve(item) ||
   (item.gone && item.registerEntryId !== null && !item.resolution) ||
+  (item.unconfirmed && item.registerEntryId !== null && !item.resolution) ||
   (item.outcome === 'unresolved' &&
     item.unversioned &&
     item.registerEntryId !== null &&
@@ -89,8 +91,8 @@ function changedNote(kind: DialogKind, item: Item): string | null {
  * (optionally from a replacement file), and for a document changed in the target, detach or
  * accept the target's state (§8, "Resolving a refused document"); for an unresolved document
  * whose versions were never recorded, detach only; for one gone from the target, load as a new
- * document, or detach. Once one of those is done the item's
- * `resolution` says so, and neither is offered again. Each button names its document.
+ * document, or detach; for a failed create the target may have taken, detach only. Once one of
+ * those is done the item's `resolution` says so, and neither is offered again. Each button names its document.
  */
 export function ItemActions({
   api,
@@ -463,6 +465,13 @@ function DetachDialog({
         <p>
           CT Studio forgets this document, which the target no longer has. The next run of{' '}
           <span className="mono">{item.sourceKey}</span> creates a new document of its own.
+        </p>
+      ) : item.unconfirmed ? (
+        <p>
+          CT Studio forgets this document&apos;s last delivery, which failed part-way and may have
+          left a partial document in the target. Check the target and remove anything it left first.
+          The next run of <span className="mono">{item.sourceKey}</span> creates a new document of
+          its own.
         </p>
       ) : (
         <p>

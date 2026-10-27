@@ -396,6 +396,30 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.detachConversionItem).toHaveBeenCalledWith(unversioned.id);
   });
 
+  it('a failed create the target may have taken offers detach, saying to check the target first', async () => {
+    const stuck = item('stuck.docx', 'failed', {
+      registerEntryId: crypto.randomUUID(),
+      unconfirmed: true,
+      detail: 'the bridge refused it: an earlier delivery stopped part-way',
+    });
+    const broke = item('broke.docx', 'failed', { registerEntryId: crypto.randomUUID() });
+    const detached = { ...stuck, resolution: 'detached' as const, unconfirmed: false };
+    const api = batchApi([stuck, broke], {
+      detachConversionItem: vi.fn(async () => detached),
+    });
+    view(api);
+    await findRow('stuck.docx');
+
+    expect(panelFor('broke.docx').queryByRole('button', { name: /^Detach/ })).toBeNull();
+    await userEvent.click(
+      panelFor('stuck.docx').getByRole('button', { name: 'Detach stuck.docx' }),
+    );
+    const dialog = within(await screen.findByRole('dialog', { name: 'Detach stuck.docx?' }));
+    expect(dialog.getByText(/may have left a partial document in the target/)).toBeVisible();
+    await userEvent.click(dialog.getByRole('button', { name: 'Detach' }));
+    expect(api.detachConversionItem).toHaveBeenCalledWith(stuck.id);
+  });
+
   it('a document gone from the target loads as a new document, after a confirmation', async () => {
     const gone = item('gone.docx', 'unresolved', {
       registerEntryId: crypto.randomUUID(),
