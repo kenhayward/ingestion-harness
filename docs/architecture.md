@@ -12,6 +12,7 @@
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`, internal publishing targets' buckets, and the bridge's package staging bucket (`ingest-bridge`). |
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the bridge writes, as the `rdf-default` target ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md), [ADR 0017](adr/0017-delivery-bridge.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
+| `layout` | Docling, pinned weights ([deploy/layout/README.md](../deploy/layout/README.md)) | PDF layout analysis for the worker's PDF reader (`LAYOUT_URL`), on an internal network shared only with the worker, with no route out. It starts with the stack and the worker waits for it ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §14.7); a worker without `LAYOUT_URL` fails a PDF item at once. |
 
 ## Job lifecycle
 
@@ -252,6 +253,12 @@ or review step.
   its outcome, its link in the target and its report. Each row offers force-load, redeliver,
   detach or accept the target's state where they apply. Earlier batches are listed newest first.
   The view polls while anything is unfinished.
+- **End to end.** `apps/api/test/integration/conversion-e2e-pg.test.ts` runs batches from the
+  API's routes through the worker (`worker/tests/conversion_e2e_worker.py`, with a layout
+  analyser answering the PDF fixtures with their saved Docling output) and the bridge to the fake
+  document sink. A batch of two PDFs and a Word file holds both PDFs and creates the Word
+  document; one PDF is then approved (created, decomposer version 1001, its held files gone) and
+  the other rejected (its held files gone, nothing sent).
 
 ## Access
 

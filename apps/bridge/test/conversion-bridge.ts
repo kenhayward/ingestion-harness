@@ -5,7 +5,14 @@
  * with `/_edit` and `/_delete`), and its event dispatcher posting signed events to CT Studio's events route. The
  * bridge's stores are its memory ones (their Pg twins have their own tests).
  */
-import { MemoryNonceStore, textForm } from '@ih/bridge-contract';
+import {
+  isDecompositionProvenance,
+  MemoryNonceStore,
+  textForm,
+  type DecompositionProvenance,
+  type SinkDeliverRequest,
+  type SinkDeliverResult,
+} from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { buildBridge } from '../src/app.js';
 import { Credentials } from '../src/connections/credential.js';
@@ -24,6 +31,20 @@ import { SECRETS, TEST_CONFIG } from './helpers.js';
 /** The fake sink's own key (the bridge holds it; nothing else needs it). */
 const SINK_KEY = 's'.repeat(32);
 
+/** The fake document sink, keeping the provenance each document's last write carried. */
+class RecordingDocumentSink extends FakeDocumentSink {
+  readonly provenance = new Map<string, DecompositionProvenance>();
+
+  override async deliver(req: SinkDeliverRequest): Promise<SinkDeliverResult> {
+    const result = await super.deliver(req);
+    const pid = result.status === 'succeeded' ? result.receipt.document?.persistentId : undefined;
+    if (pid && isDecompositionProvenance(req.package.provenance)) {
+      this.provenance.set(pid, req.package.provenance);
+    }
+    return result;
+  }
+}
+
 export interface ConversionBridge {
   /** Where the worker reaches the bridge (`BRIDGE_URL`). */
   url: string;
@@ -35,6 +56,8 @@ export interface ConversionBridge {
   documents(): string[];
   /** The text the fake sink holds for a document (its comparison form), or null if none. */
   text(persistentId: string): string | null;
+  /** The provenance of the last write of a document the fake sink holds, or null if none. */
+  provenance(persistentId: string): DecompositionProvenance | null;
   /** Runs every due delivery and sends every due event, until nothing is left to do. */
   settle(): Promise<void>;
   close(): Promise<void>;
@@ -48,7 +71,7 @@ export async function startConversionBridge(opts: {
   target: { id: string; label: string; sinkId: string; destination: Record<string, string> };
 }): Promise<ConversionBridge> {
   const open: FastifyInstance[] = [];
-  const documents = new FakeDocumentSink();
+  const documents = new RecordingDocumentSink();
   const sinkServer = await buildDocumentServer(SINK_KEY, false, documents);
   open.push(sinkServer);
   const sinkUrl = await sinkServer.listen({ host: '127.0.0.1', port: 0 });
@@ -102,6 +125,10 @@ export async function startConversionBridge(opts: {
       const stored = documents.documents.get(persistentId);
       return stored ? textForm(stored.document).join('\n') : null;
     },
+    provenance: (persistentId) =>
+      documents.documents.has(persistentId)
+        ? (documents.provenance.get(persistentId) ?? null)
+        : null,
     async settle() {
       for (;;) {
         let worked = false;

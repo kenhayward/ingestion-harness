@@ -1,17 +1,17 @@
-﻿# The PDF reader: decomposing PDFs
+# The PDF reader: decomposing PDFs
 
-**Status:** design, for review Â· 2026-10-26 Â· agreed with the owner in conversation. **5a
-implemented (2026-10-27)**; results in Â§13. **5b designed (2026-10-27)**: PDFs in CT Studio, with
-review, in Â§14.
+**Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
+implemented (2026-10-27)**; results in §13. **5b implemented (2026-10-27)**: PDFs in CT Studio,
+with review, in §14; the owner's run against the real sink is pending.
 
-- Start the layout service: `docker compose -f deploy/docker-compose.yml --profile pdf up -d --build layout`
-  (opt-in; see `deploy/layout/README.md`).
+- The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
+  `docker compose -f deploy/docker-compose.yml up -d --build layout`.
 - Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
 - Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
 
 This is phase 5 of document decomposition
 ([2026-10-23-document-decomposition-design.md](2026-10-23-document-decomposition-design.md), "the
-decomposition spec"). It says how a PDF becomes the same decomposed document (Â§5 there) that a
+decomposition spec"). It says how a PDF becomes the same decomposed document (§5 there) that a
 Word file does. Everything after the reader is unchanged: the fidelity checks' place in the flow,
 the register, the bridge, the contract and the sink.
 
@@ -25,13 +25,13 @@ A PDF mostly doesn't. It holds positioned glyphs, lines and images, and the stru
 inferred from layout. So the PDF route is **less deterministic** than Word's, and the owner wants
 to try it anyway. **[owner]**
 
-The anti-goal stays: **content is never silently changed, lost or moved** (decomposition spec Â§2).
+The anti-goal stays: **content is never silently changed, lost or moved** (decomposition spec §2).
 What changes is what can be proven:
 
 - **Text can still be proven** on pages with a text layer: every word on the page is accounted
-  for exactly once (Â§6).
+  for exactly once (§6).
 - **Structure can't be proven** (heading levels, table grids, merges), so it is flagged as
-  inferred wherever it was inferred, and its quality is measured instead (Â§7).
+  inferred wherever it was inferred, and its quality is measured instead (§7).
 
 ## 2. What the spike found
 
@@ -49,9 +49,9 @@ no Word source, were read by eye. The samples:
 |---|---|---|---|
 | **Bookmarks:** headings and levels right | 32/32 | 31/31 | 13/13 |
 | **Tag tree:** headings | 32/32 | reader crashed | 12/13 |
-| **Tag tree:** table cells right | 94% | â€“ | 36% |
+| **Tag tree:** table cells right | 94% | – | 36% |
 | **Docling:** headings found | 30/32 | 9/31 | 13/13 |
-| **Docling:** levels right, from the typed numbering | 27/30 | â€“ | 13/13 |
+| **Docling:** levels right, from the typed numbering | 27/30 | – | 13/13 |
 | **Docling:** table cells right, before any clean-up | 56% | 73% | 65% |
 | **Docling:** words found | 99.8% | 98.3% | 88.1% |
 
@@ -72,10 +72,10 @@ What it showed:
   - note rows that Word keeps as a table's last row and the PDF reading puts after the table (35
     of 71 tables in doc2);
   - tables split at page breaks, with their header rows repeated on each page;
-  - merges guessed visually in borderless blocks ("5 Â°C" merged down over cells that Word holds as
+  - merges guessed visually in borderless blocks ("5 °C" merged down over cells that Word holds as
     separate, empty cells);
   - a column lost in some 11-column tables;
-  - symbol-font characters (Â° as U+F0B0) and superscript note markers read as separate text
+  - symbol-font characters (° as U+F0B0) and superscript note markers read as separate text
     ("3 b").
 - **Speed:** about 2.4 s a page on CPU (16 threads); about 1.1 s a page on the simpler real PDFs.
   Scanned pages were not tried; the OCR benchmark ([ocr-engines.md](../../design/ocr-engines.md))
@@ -87,9 +87,9 @@ A PDF is a mixture of born-digital and scanned pages, so each page is classified
 **[owner]** (a mixture, decided per page)
 
 - **Born-digital:** the page has a visible text layer. Read from the text layer and its layout
-  (Â§4).
+  (§4).
 - **Scanned:** the page has no text layer, or only an invisible one over a page-sized image (an
-  earlier OCR's). It goes to the vision model CT Studio already uses for OCR (Â§5), and is flagged
+  earlier OCR's). It goes to the vision model CT Studio already uses for OCR (§5), and is flagged
   `page_recognised`. An invisible text layer is not trusted, because nothing shows it was right.
   **[call]**
 
@@ -111,7 +111,7 @@ and do worse.
 
 Docling's OCR is off: born-digital pages don't need it, and scanned pages use the vision model.
 
-CT Studio does its own work on top of Docling's output (Â§4.2 to Â§4.8). That is where most of the
+CT Studio does its own work on top of Docling's output (§4.2 to §4.8). That is where most of the
 accuracy comes from, and it is plain code that can be tested without Docling, from saved Docling
 output.
 
@@ -120,22 +120,22 @@ output.
 The text layer is read independently of Docling, with each character's font name, size, position
 and baseline. It is used for:
 
-- **text accounting** (Â§6);
+- **text accounting** (§6);
 - **character formatting:** bold and italic from the font (its name or weight), superscript and
   subscript from a raised or lowered baseline and a smaller size. Underline is not in the text
   layer (it is a drawn line) and is dropped for PDFs. **[call]**
 - **symbols:** characters in a symbol font's private-use range are mapped to Unicode with the Word
-  reader's symbol table (Â°, Â±, Âµ, â‰¤, â‰¥), and flagged `symbol_unmapped` when they can't be;
+  reader's symbol table (°, ±, µ, ≤, ≥), and flagged `symbol_unmapped` when they can't be;
 - **superscript note markers**, so "3 b" is read as "3" with a superscript "b" note reference.
 
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
 
-**Text Docling missed.** Text-layer lines inside no Docling item (and not furniture, Â§4.3) are
+**Text Docling missed.** Text-layer lines inside no Docling item (and not furniture, §4.3) are
 not lost. They become paragraphs at their place: after the last item above them in the same
 column on that page. Each is flagged `structure_inferred` ("text the layout analysis missed").
-**[call]** Text accounting (Â§6) can't see such a gap, because it compares the text layer with
+**[call]** Text accounting (§6) can't see such a gap, because it compares the text layer with
 itself. It checks what CT Studio's own mapping does: dropping, joining, moving into tables and
 notes. So this rule is what keeps missed text from going quietly.
 
@@ -148,7 +148,7 @@ Dropped, as for Word:
 - tables of contents and lists of tables and figures: Docling's document index, plus headings such
   as "Table of contents" with the dot-leader lines under them.
 
-Each counts as dropped text in text accounting (Â§6). Header and footer fields still become
+Each counts as dropped text in text accounting (§6). Header and footer fields still become
 `header-field` properties where they are name and value pairs, as for Word. **[call]**
 
 Dropping is where body text could go silently, so it is guarded: **[call]**
@@ -230,8 +230,8 @@ pages, notes. **[call]**
 
 - **Footnotes** at a page's foot are matched to their superscript markers in that page's body and
   become notes. A footnote with no marker found stays a paragraph where it was, flagged. A
-  superscript right after a digit, a closing bracket, a lone letter or a unit ("10Â²", "(a+b)Â²",
-  "RÂ²", "kg/mÂ²") is a power, never a marker. When more than one superscript could be a
+  superscript right after a digit, a closing bracket, a lone letter or a unit ("10²", "(a+b)²",
+  "R²", "kg/m²") is a power, never a marker. When more than one superscript could be a
   footnote's marker, none is taken: the footnote stays a paragraph, flagged "Footnote marker
   ambiguous". **[call]** (2026-10-27)
 - **Links** come from the PDF's link annotations over the text.
@@ -244,7 +244,7 @@ The flag codes stay those of contract version 2, so the contract and the sink do
 **[call]** Every inference is a `structure_inferred` flag at the element, and its message says
 which: an inferred heading level, a table's grid, a join across pages, notes moved out of a grid,
 text the layout analysis missed, a footnote with no marker or an ambiguous one, a bookmark left
-out. The dropped-text summary (Â§4.3) is a `structure_inferred` flag too, at no element, with
+out. The dropped-text summary (§4.3) is a `structure_inferred` flag too, at no element, with
 severity `info`, and so is a count of the visible glyphs on a page that the text layer gives no
 text (or no box) and that are therefore left out. (2026-10-27)
 
@@ -256,7 +256,7 @@ reviewer sees at a glance which documents have the most.
 A scanned page is rendered and sent to the OCR vision model, as the extraction pipeline does
 (olmOCR 2 by default; [ocr-engines.md](../../design/ocr-engines.md)). It returns the page's text,
 with headings and HTML tables, merged cells kept. CT Studio maps that onto the decomposed document:
-headings by the same rules as Â§4.4, tables from the HTML grid, figures cropped from the page image
+headings by the same rules as §4.4, tables from the HTML grid, figures cropped from the page image
 using the layout model's picture regions.
 
 Every scanned page is flagged `page_recognised`. Its tables are flagged `structure_inferred`, too.
@@ -268,7 +268,7 @@ Paragraphs and tables are not joined across a boundary between a born-digital an
 
 ## 6. Fidelity checks for PDFs
 
-The decomposition spec's Â§7 checks apply, adapted to what a PDF can prove. **[call]**
+The decomposition spec's §7 checks apply, adapted to what a PDF can prove. **[call]**
 
 - **Text accounting, per page.** The words of each born-digital page's text layer, minus what is
   dropped on purpose (furniture, contents and lists, typed heading numbers, list bullets and
@@ -276,11 +276,11 @@ The decomposition spec's Â§7 checks apply, adapted to what a PDF can prove. **
   page. They are compared as **counts, not in order**: the text layer's order is the order the
   content was drawn in, not reading order. (The spike found a heading whose words were drawn out
   of order.) A missing, extra or duplicated word fails the document, naming the page and the word.
-  The normalisation is the Word check's, plus ligatures split (ï¬ to fi) and the non-breaking
+  The normalisation is the Word check's, plus ligatures split (ﬁ to fi) and the non-breaking
   hyphen read as a hyphen.
 - **Tables, per table.** The words inside each table's region of the page must be exactly the
   words in its cells, so a cell's text can't move out of its table, or into another. The grid's
-  shape and merges can't be checked against the PDF; they are flagged instead (Â§4.6).
+  shape and merges can't be checked against the PDF; they are flagged instead (§4.6).
 - **Dropped on purpose, as well** (added in 5a): note separators after a table note's marker, and
   footnote markers, which become note references. **[call]** (2026-10-27)
 - **An image-only equation's text** is accounted to its image, as for Word. **[call]**
@@ -291,7 +291,7 @@ The decomposition spec's Â§7 checks apply, adapted to what a PDF can prove. **
 - **Scanned pages** have no independent text to compare with, so they are flagged, not checked.
 
 The PDF checks are their own module beside the Word one. They share its normalisation and the
-contract's text and grid forms (decomposition spec Â§9). **[call]**
+contract's text and grid forms (decomposition spec §9). **[call]**
 
 Read-back in the sink is unchanged: it compares with what it was sent.
 
@@ -307,7 +307,7 @@ PDF reader can be scored against it:
 - for real PDFs with no Word source: text accounting only.
 
 A dev tool scores a folder of Word documents this way, and prints one row per document and a
-total. The owner runs it over the private corpus (decomposition spec Â§7). It is also how a change
+total. The owner runs it over the private corpus (decomposition spec §7). It is also how a change
 to Docling, its models or the mapping is judged before release: the scores mustn't fall.
 
 Twins made by LibreOffice are not the only PDFs there are. Word's own "Save as PDF" and "Print to
@@ -319,7 +319,7 @@ were "Print to PDF".
 The decomposition spec runs every document straight through, with review in the target. **[owner]**
 Whether inferred PDF structure should instead stop for a person to check the heading outline
 against the page images, before delivery, is **left open until the owner has seen the twin scores
-after the clean-up of Â§4**. **[owner]** (2026-10-26)
+after the clean-up of §4**. **[owner]** (2026-10-26)
 
 So PDFs don't reach CT Studio's Conversion tab until then. Step 5a builds the reader and the twin
 scores, and its dev tool decomposes PDFs outside CT Studio. Step 5b, which lets the tab take PDFs,
@@ -327,13 +327,13 @@ follows the owner's decision, with or without a review step. **[call]** No score
 in advance: the owner judges the scores.
 
 **Decided (2026-10-27): PDF decompositions are reviewed in CT Studio before delivery.** **[owner]**
-The owner saw the scores of Â§13, where headings and text are reliable but about 3 tables in 10
-have the wrong shape. Word documents still go straight through. How the review works is Â§14.
+The owner saw the scores of §13, where headings and text are reliable but about 3 tables in 10
+have the wrong shape. Word documents still go straight through. How the review works is §14.
 
 ## 9. Repeatable runs
 
 The same PDF must give the same decomposed document, so that re-runs update in place (decomposition
-spec Â§8):
+spec §8):
 
 - Docling, its model weights and the OCR model are pinned to exact versions, and the weights are
   baked into the image: nothing is downloaded at run time;
@@ -342,7 +342,7 @@ spec Â§8):
 
 A new reader version can infer headings differently, and so change section ids, which come from
 heading paths. A re-run is then an ordinary update behind the version check (decomposition spec
-Â§8). The twin scores, and the reader's tests on saved Docling output, are what catch such a change
+§8). The twin scores, and the reader's tests on saved Docling output, are what catch such a change
 before release.
 
 ## 10. Where it lives
@@ -352,10 +352,10 @@ before release.
   (PyTorch, about 1 GB) out of the worker image. And it parses untrusted PDFs, so, like the
   converter, it sits on an internal network with no route out and publishes no ports.
   - The worker sends the whole PDF with a page range, in chunks of pages, so a long report never
-    meets one long timeout. The joins of Â§4 happen in the worker, across chunks.
+    meets one long timeout. The joins of §4 happen in the worker, across chunks.
   - Above a page limit (500 pages to start), the document fails with a clear reason. **[call]**
-- **The worker:** page classification, the text layer, the mapping of Â§4 and Â§5, the fidelity
-  checks of Â§6, and the scanned-page route through the existing OCR client. A decomposition job
+- **The worker:** page classification, the text layer, the mapping of §4 and §5, the fidelity
+  checks of §6, and the scanned-page route through the existing OCR client. A decomposition job
   takes a `.docx` or a `.pdf`, by its bytes.
 - **The API and the Conversion tab** accept PDFs beside Word files.
 - **The contract** doesn't change: the decomposed document, the flag codes (`structure_inferred`,
@@ -366,15 +366,15 @@ before release.
 | # | Work | Done when |
 |---|---|---|
 | 5a | **Born-digital PDFs:** the layout service, the text layer, the mapping, the fidelity checks, a dev tool, the twin scorer | Twins and the owner's real PDFs decompose with no text-accounting failure, and the twin scores are reported to the owner |
-| â€” | **The owner's decision** on review (Â§8) | â€” |
-| 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (Â§14) | A PDF goes through to the fake sink, and to the real sink in the owner's run |
+| — | **The owner's decision** on review (§8) | — |
+| 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (§14). **Implemented (2026-10-27)**; the owner's run is pending | A PDF goes through to the fake sink, and to the real sink in the owner's run |
 | 5c | **Scanned pages** through the OCR model | A scanned sample decomposes with every scanned page flagged |
 
 ## 12. Left to the builder
 
 - The text-layer library (pypdfium2 is already in the worker; pdfplumber worked in the spike), and
   how characters are matched to Docling's items.
-- The layout service's request and response shape, chunk size and timeouts, within Â§10.
+- The layout service's request and response shape, chunk size and timeouts, within §10.
 - Thresholds for the paragraph joins, baseline shifts and repeated-line detection, as long as the
   twin scores show them.
 - **Licences.** Docling and its packages are MIT. The layout weights are Apache-2.0, and the
@@ -417,7 +417,7 @@ case-sensitive. The other 6 are "Table" and ":" of three captions whose Word par
 with the heading's text, so the Word reading keeps "Table N:" in the caption, where the PDF
 reading drops it as the caption's number. (2026-10-27)
 
-The owner's decision on review (Â§8) waits on these scores.
+The owner's decision on review (§8) waits on these scores.
 
 ## 14. Step 5b: PDFs in CT Studio, with review
 
@@ -437,7 +437,7 @@ Rejecting needs a note, so the row says why. **[call]** Approving takes an optio
 
 ### 14.2 When a PDF is held
 
-- After the PDF is decomposed and passes its fidelity checks (Â§6). A PDF that fails them fails, as
+- After the PDF is decomposed and passes its fidelity checks (§6). A PDF that fails them fails, as
   before; there is nothing to review.
 - Only when the delivery would send something. The worker first asks the register what it would
   decide, without recording anything. If the answer is `already_loaded`, `duplicate`, `in_flight`,
@@ -518,7 +518,7 @@ The page is read-only. It shows the item's file name, its target, and the count 
 - Two new outcomes: **Awaiting review** (it needs attention, so the "Needs attention" filter shows
   it) and **Rejected** (final; it counts with the failed ones).
 - A batch with items awaiting review isn't finished.
-- Each row shows its flag count (Â§4.9), for Word files too.
+- Each row shows its flag count (§4.9), for Word files too.
 
 ### 14.7 The layout service
 
@@ -532,7 +532,7 @@ The page is read-only. It shows the item's file name, its target, and the count 
 ### 14.8 The decomposer version of a PDF
 
 The contract's `decomposerVersion` is an integer and stays one. For a PDF it is
-`DECOMPOSER_VERSION Ã— 1000 + PDF_READER_VERSION`; a Word file's stays `DECOMPOSER_VERSION`.
+`DECOMPOSER_VERSION × 1000 + PDF_READER_VERSION`; a Word file's stays `DECOMPOSER_VERSION`.
 **[call]** So a new reader version changes the idempotency key and the provenance of a PDF, and
 not of Word files. The reader's version stays below 1000.
 

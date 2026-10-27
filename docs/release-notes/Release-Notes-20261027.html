@@ -160,7 +160,8 @@
     <main>
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
-        Tuesday 27 October 2026: PDFs read for the first time, on the command line. PR #338.
+        Tuesday 27 October 2026: PDFs read for the first time, on the command line (PR #338), and
+        then converted on the Conversion tab, each reviewed before it is delivered.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -171,8 +172,38 @@
             <a href="#pdf-reader-5a">PDF reader, step 5a</a>
             <span>— born-digital PDFs decompose like Word files, from the command line</span>
           </li>
+          <li>
+            <a href="#pdf-reader-5b">PDFs on the Conversion tab, with review</a>
+            <span
+              >— a PDF is held until someone approves it; a Word file goes straight through</span
+            >
+          </li>
         </ul>
       </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            The layout service now starts with the stack: <code>docker compose build</code> and
+            <code>up</code> build and start it with the rest, and the worker waits for it to be
+            healthy. Its image is large (about 5.6 GB) and it may use up to 6 GB of memory. The
+            compose profile <code>pdf</code> is gone; remove it from
+            <code>COMPOSE_PROFILES</code> if you added it. With <code>LAYOUT_URL</code> empty, a PDF
+            fails at once: "this CT Studio has no layout service (LAYOUT_URL)".
+          </li>
+          <li>
+            A database migration (<code>202610271200_decomposition_review</code>) adds the two new
+            outcomes, Awaiting review and Rejected, each document's flag count, and the columns that
+            record a held PDF and its review. It runs on its own when the API starts.
+          </li>
+          <li>
+            A PDF's decomposer version is 1001 (the decomposer's version times 1000, plus the PDF
+            reader's), so a newer PDF reader changes the version of PDFs without touching Word
+            files, whose version stays 1.
+          </li>
+        </ul>
+      </div>
 
       <h2 id="minor">Minor changes</h2>
 
@@ -201,6 +232,32 @@
       <p>
         PDFs are not yet accepted on the Conversion tab. That comes in a later step, after the owner
         decides whether PDFs need review.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-reader-5b">PDFs on the Conversion tab, with review</h3>
+      <p>
+        The Conversion tab now takes Word or PDF files. A PDF is decomposed and checked as above,
+        then held for review: nothing is delivered until someone approves it. A Word file goes
+        straight through as before. Each line now shows how many flags its conversion raised, for
+        Word files too.
+      </p>
+      <p>
+        A held PDF reads <strong>Awaiting review</strong>, and the Needs attention filter shows it.
+        <strong>Review</strong> opens a page with the PDF's pages on the left and the document as it
+        would be delivered on the right: its headings as an outline, each section's text, tables and
+        figures, and each flag beside the part it is on. Choosing a heading, a part or a flag shows
+        its page. <strong>Approve</strong> delivers exactly what was reviewed, with an optional
+        note; <strong>Reject</strong> needs a note saying why, and is final. Anyone who may convert
+        can review, including the person who started the batch.
+      </p>
+      <p>
+        A PDF is held only when its delivery would send something: one already loaded, a duplicate
+        or one changed in the target gets that outcome at once, as a Word file does. If the target's
+        document changes between the review and the approval, the approval sends nothing and says:
+        "the target's document changed after this was reviewed; run it again". A rejected PDF is
+        left out of Re-run failed; Force-load on its line reads it again and holds it for review
+        again.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

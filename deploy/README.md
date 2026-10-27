@@ -368,8 +368,9 @@ errors, and the Zscaler root CA will need adding to the images.
   with its layout and table weights baked into the image at pinned revisions (nothing is
   downloaded at run time), on the internal `layout` network that only the worker shares (no route
   out, no published ports). The worker reaches it at `LAYOUT_URL` (default `http://layout:8000`).
-  Opt-in via the compose profile `pdf` (`docker compose --profile pdf up -d layout`); the worker
-  does not depend on it. The image is large (about 5.6 GB) and the service is limited to 6 GB of
+  It starts with the stack, since the Conversion tab takes PDFs, and the worker waits for it to be
+  healthy; set `LAYOUT_URL` empty to refuse PDFs ("this CT Studio has no layout service
+  (LAYOUT_URL)"). The image is large (about 5.6 GB) and the service is limited to 6 GB of
   memory.
 - **Publishing targets:** the bridge writes published outputs to the recipe's targets and the API
   reads them back through it for the Results page. `TARGET_S3_*` only seed the `default` target on

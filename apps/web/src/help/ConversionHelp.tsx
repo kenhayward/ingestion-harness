@@ -149,8 +149,9 @@ export function ConversionHelp() {
       <p>The panel and a line&apos;s menu offer these where they apply:</p>
       <ul>
         <li>
-          <strong>Force-load</strong>, on a document already loaded or a duplicate, delivers it
-          again as an update, or as a document of its own.
+          <strong>Force-load</strong>, on a document already loaded, a duplicate or a rejected one,
+          delivers it again as an update, or as a document of its own. A PDF is read again and held
+          for review first.
         </li>
         <li>
           <strong>Redeliver</strong> updates the document, from the stored file or a replacement you

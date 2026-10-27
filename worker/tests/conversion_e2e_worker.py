@@ -3,20 +3,26 @@ runs `python -m tests.conversion_e2e_worker` for each run): the worker's own `ru
 and runs every queued `decompose` job on the shared Postgres, with its Pg item and register
 stores and its HTTP bridge client, until none is left.
 
-Faked: the object store (a MemoryObjectStore filled from the files the test lists) and the
-target cache (the one target, as the test names it). Only `decompose` jobs are claimed, so
-another suite's rows left in the throwaway database are never run.
+Faked: the object store (a MemoryObjectStore filled from the files the test lists, and written
+back when the run ends, so a hold's files reach the API and an approved run finds them), the
+target cache (the one target, as the test names it) and the layout analyser (each PDF fixture in
+tests/decompose/pdf/fixtures answered with its saved Docling output). Only `decompose` jobs are
+claimed, so another suite's rows left in the throwaway database are never run.
 
 Environment: E2E_DATABASE_URL, E2E_BRIDGE_URL, E2E_BRIDGE_KEY, E2E_OBJECTS (a JSON list of
-{bucket, key, path}) and E2E_TARGET ({id, sinkId}).
+{bucket, key, path}), E2E_OBJECTS_AFTER (where the store is written back, a JSON list of
+{bucket, key, contentType, body} with the body in base64) and E2E_TARGET ({id, sinkId}).
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
@@ -29,6 +35,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetMissing
 from ingest_worker.queue import CLAIM_SQL, ClaimedJob, PgJobQueue
 from ingest_worker.storage import MemoryObjectStore
+from tests.decompose.pdf.fakes import PDF_FIXTURES
 
 #: The worker's claim, of `decompose` jobs only.
 DECOMPOSE_CLAIM = CLAIM_SQL.replace(
@@ -56,6 +63,35 @@ class OneTarget:
         return None
 
 
+class FixtureLayout:
+    """The layout service for the PDF fixtures: each answered with its saved Docling output."""
+
+    def __init__(self) -> None:
+        self._answers: dict[str, dict[str, Any]] = {}
+        for pdf in PDF_FIXTURES.glob("*.pdf"):
+            saved = pdf.with_suffix(".docling.json").read_text("utf-8")
+            self._answers[hashlib.sha256(pdf.read_bytes()).hexdigest()] = json.loads(saved)
+
+    def analyse(self, pdf: bytes, first: int, last: int) -> dict[str, Any]:
+        return self._answers[hashlib.sha256(pdf).hexdigest()]
+
+    def fingerprint(self) -> str:
+        return "fixtures"
+
+
+def write_back(store: MemoryObjectStore, path: Path) -> None:
+    objects = [
+        {
+            "bucket": bucket,
+            "key": key,
+            "contentType": content_type,
+            "body": base64.b64encode(body).decode("ascii"),
+        }
+        for (bucket, key), (body, content_type) in store.objects.items()
+    ]
+    path.write_text(json.dumps(objects), encoding="utf-8")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)
     database_url = os.environ["E2E_DATABASE_URL"]
@@ -73,6 +109,7 @@ def main() -> None:
             buckets=Buckets("inbox", "outputs", "runs"),
             targets=OneTarget(target["id"], target["sinkId"]),
             bridge=HttpBridgeClient(os.environ["E2E_BRIDGE_URL"], os.environ["E2E_BRIDGE_KEY"]),
+            layout=FixtureLayout(),
             decomposition=DecompositionStores(
                 register=PgRegisterStore.for_url(database_url),
                 items=PgItemStore(items_conn),
@@ -80,6 +117,7 @@ def main() -> None:
         )
         while run_once(queue, deps, "conversion-e2e"):
             pass
+    write_back(store, Path(os.environ["E2E_OBJECTS_AFTER"]))
 
 
 if __name__ == "__main__":

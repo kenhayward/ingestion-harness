@@ -9,27 +9,32 @@
  * - real: the API (`buildApp` on PgRepo: batch, upload, start, accept, detach and the signed
  *   `/api/bridge/events` route, listening on a port); the worker's `run_once` claiming the
  *   `decompose` jobs from the same Postgres with its Pg item and register stores and its HTTP
- *   bridge client (`worker/tests/conversion_e2e_worker.py`, one process per run); the bridge's
+ *   bridge client (`worker/tests/conversion_e2e_worker.py`, one process per run), and the PDF
+ *   reader with its holds for review, approved and rejected through the API; the bridge's
  *   routes, runner and event dispatcher over HTTP, delivering through `HttpSink` to the fake
  *   document sink's server (`FAKE_SINK_MODE=documents`, with `/_edit`)
  *   (`apps/bridge/test/conversion-bridge.ts`);
- * - faked: object storage (the API's MemoryObjectStore, copied to the worker's for each run),
+ * - faked: object storage (the API's MemoryObjectStore, copied to the worker's for each run and
+ *   back), the worker's layout analyser (answering the PDF fixtures with their saved Docling output),
  *   the bridge's own stores (memory), the API's view of the bridge's catalog and targets
  *   (FakeBridgeApi) and the worker's target cache (a fixed lookup). Each is proven by its own
  *   tests (S3 stores, the bridge's Pg repos, the target sync).
  */
 import { execFile } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import type { DecompositionProvenance } from '@ih/bridge-contract';
 import {
-  DOCX_MIME,
   AcceptPreviewSchema,
   BatchDetailSchema,
   BatchSchema,
+  decompositionHeldManifestKey,
   GONE_DETAIL,
+  ItemSchema,
+  sourceContentType,
   type Item,
 } from '@ih/shared';
 import pg from 'pg';
@@ -56,6 +61,7 @@ interface ConversionBridge {
   remove(persistentId: string): Promise<boolean>;
   documents(): string[];
   text(persistentId: string): string | null;
+  provenance(persistentId: string): DecompositionProvenance | null;
   settle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -67,6 +73,10 @@ type StartBridge = (opts: {
 
 /** The sink id the target delivers through, on the bridge, the worker and the register. */
 const SINK = FAKE_DOCUMENT_SINK.id;
+
+/** The worker's PDF fixtures, which its fake layout analyser answers with their saved Docling output. */
+const PDF_FIXTURES = join(workerDir, 'tests', 'decompose', 'pdf', 'fixtures');
+const pdf = (name: string) => readFileSync(join(PDF_FIXTURES, name));
 
 /** A Word file of one heading and a paragraph: `text` makes it this file and no other. */
 const word = (text: string) =>
@@ -134,7 +144,8 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
 
   /**
    * The worker's run: every queued `decompose` job, claimed and run by the worker's own loop. Run
-   * asynchronously: the bridge it calls is served from this process.
+   * asynchronously: the bridge it calls is served from this process. What the worker's store
+   * holds at the end (a hold's files written, or deleted) becomes the API's store.
    */
   async function runWorker(): Promise<void> {
     const listed: Array<{ bucket: string; key: string; path: string }> = [];
@@ -147,6 +158,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     }
     const manifest = join(objects, 'objects.json');
     writeFileSync(manifest, JSON.stringify(listed));
+    const after = join(objects, 'objects-after.json');
     try {
       await run(
         'uv',
@@ -159,6 +171,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
             E2E_BRIDGE_URL: bridge.url,
             E2E_BRIDGE_KEY: TEST_BRIDGE_KEY,
             E2E_OBJECTS: manifest,
+            E2E_OBJECTS_AFTER: after,
             E2E_TARGET: JSON.stringify({ id: targetId, sinkId: SINK }),
           },
         },
@@ -166,6 +179,16 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     } catch (err) {
       const { stderr = '' } = err as { stderr?: string };
       throw new Error(`the worker failed: ${String(err)}\n${stderr}`);
+    }
+    const stored = JSON.parse(readFileSync(after, 'utf8')) as Array<{
+      bucket: string;
+      key: string;
+      contentType: string;
+      body: string;
+    }>;
+    c.store.objects.clear();
+    for (const o of stored) {
+      await c.store.put(o.bucket, o.key, Buffer.from(o.body, 'base64'), o.contentType);
     }
   }
 
@@ -183,7 +206,11 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     for (const [sourceKey, content] of Object.entries(files)) {
       const form = multipart(
         { sourceKey },
-        { filename: sourceKey.split('/').pop()!, content, contentType: DOCX_MIME },
+        {
+          filename: sourceKey.split('/').pop()!,
+          content,
+          contentType: sourceContentType(sourceKey),
+        },
       );
       const res = await c.app.inject({
         method: 'POST',
@@ -366,6 +393,79 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     ]);
     expect(new Set(rows.map((r) => r.persistent_id)).size).toBe(4);
     expect(rows.find((r) => r.source_key === 'manual/a.docx')?.persistent_id).toBe(aNew);
+  });
+
+  /** The item, as its batch's detail shows it now. */
+  async function itemNow(item: Item): Promise<Item> {
+    const detail = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${item.batchId}`)).json(),
+    );
+    return detail.items.find((i) => i.id === item.id)!;
+  }
+
+  /** The keys of the item's held files in the API's store. */
+  const heldFiles = (item: Item) => {
+    const prefix = decompositionHeldManifestKey(item.batchId, item.id).replace(
+      /manifest\.json$/,
+      '',
+    );
+    return [...c.store.objects.keys()].filter((name) => name.includes(`/${prefix}`));
+  };
+
+  it('PDFs are held for review: one approved to the fake sink, one rejected, a Word file straight through', async () => {
+    const before = bridge.documents().length;
+    const files = {
+      'pdf/two-pages.pdf': pdf('two-pages.pdf'),
+      'pdf/rotated-table.pdf': pdf('rotated-table.pdf'),
+      'pdf/beside.docx': word('Beside the PDFs'),
+    };
+    const held = await convert(files);
+    expect(outcomes(held)).toEqual({
+      'pdf/two-pages.pdf': 'awaiting_review',
+      'pdf/rotated-table.pdf': 'awaiting_review',
+      'pdf/beside.docx': 'created',
+    });
+    // Only the Word file reached the target; each PDF waits with its held files.
+    expect(bridge.documents()).toHaveLength(before + 1);
+    const approve = held['pdf/two-pages.pdf']!;
+    const reject = held['pdf/rotated-table.pdf']!;
+    expect(heldFiles(approve)).not.toHaveLength(0);
+    expect(heldFiles(reject)).not.toHaveLength(0);
+
+    // Approved: the held decomposition is delivered, under the PDF's decomposer version.
+    const approved = await c.app.inject({
+      method: 'POST',
+      url: `/api/conversions/items/${approve.id}/approve`,
+      payload: { note: 'reads well' },
+    });
+    expect(approved.statusCode, approved.body).toBe(202);
+    await runWorker();
+    await bridge.settle();
+    const delivered = await itemNow(approve);
+    expect(delivered.outcome, delivered.detail ?? '').toBe('created');
+    const { persistentId } = await documentOf(delivered);
+    expect(bridge.provenance(persistentId)).toMatchObject({
+      sourceKey: 'pdf/two-pages.pdf',
+      decomposerVersion: 1001,
+    });
+    expect(bridge.documents()).toHaveLength(before + 2);
+    expect(heldFiles(approve)).toEqual([]);
+
+    // Rejected: final, its held files gone, nothing sent.
+    const rejected = await c.app.inject({
+      method: 'POST',
+      url: `/api/conversions/items/${reject.id}/reject`,
+      payload: { note: 'the table is misread' },
+    });
+    expect(rejected.statusCode, rejected.body).toBe(200);
+    expect(ItemSchema.parse(rejected.json()).outcome).toBe('rejected');
+    await runWorker();
+    await bridge.settle();
+    expect((await itemNow(reject)).outcome).toBe('rejected');
+    expect(heldFiles(reject)).toEqual([]);
+    expect(bridge.documents()).toHaveLength(before + 2);
+    const sent = bridge.documents().map((pid) => bridge.provenance(pid)?.sourceKey);
+    expect(sent).not.toContain('pdf/rotated-table.pdf');
   });
 
   it('a document deleted in the target is gone, and loads again as a new document', async () => {
