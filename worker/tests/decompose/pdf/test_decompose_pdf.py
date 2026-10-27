@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import ingest_worker.decompose.pdf as pdf_reader
+from ingest_worker.decompose.forms import tables_of
 from ingest_worker.decompose.model import Paragraph, Table, TableNote, Text
 from ingest_worker.decompose.package import DecompositionFailed
 from ingest_worker.decompose.pdf import decompose_pdf
@@ -97,6 +100,51 @@ def test_a_blank_on_a_cell_edge_keeps_its_word_gap() -> None:
     [built] = result.document.blocks
     assert isinstance(built, Table)
     assert built.rows[0].cells[0].blocks[0].inlines == [Text(text="Fresh mix")]
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_rotated_page_with_real_docling_output() -> None:
+    """`fixtures/rotated-table.pdf` is a `/Rotate 90` page (displayed 842 x 595) and
+    `fixtures/rotated-table.docling.json` the layout service's answer for it, captured (from
+    `worker/`, with `PYTHONPATH=.`) against `ingestion-harness/layout:dev` with these lines:
+
+        def grid(x0, y0, cw, rh, n=3):
+            out = []
+            for i in range(n + 1):
+                out.append((x0, y0 + i * rh, x0 + n * cw, y0 + i * rh))
+                out.append((x0 + i * cw, y0, x0 + i * cw, y0 + n * rh))
+            return out
+
+        rows = [("Check", "Value", "Result"), ("Speed", "12", "Pass"), ("Load", "40", "Fail")]
+        cells = [Run(t, 78 + c * 200, 185 + r * 40, 11, "Helvetica-Bold" if r == 0 else "Helvetica")
+                 for r, row in enumerate(rows) for c, t in enumerate(row)]
+        page = Page(runs=[Run("Results of the run", 72, 80, 16, "Helvetica-Bold"),
+                          Run("The table below lists the checks made on the line.", 72, 120),
+                          *cells, Run("The line was released after these checks.", 72, 320)],
+                    lines=grid(72, 160, 200, 40), rotate=90)
+        data = make_pdf([page])
+        # POST it to /layout with first=1, last=1; the response's "document", saved with
+        # json.dump(indent=1, sort_keys=True)
+
+    Docling found no table on a landscape page with a 4-column, 5-row grid of these glyphs
+    (rotated or not), so the grid is 3 x 3 with wide cells.
+    """
+    data = (FIXTURES / "rotated-table.pdf").read_bytes()
+    raw = json.loads((FIXTURES / "rotated-table.docling.json").read_text("utf-8"))
+    result = decompose_pdf(data, layout=FakeLayout(lambda first, last: raw), cropper=FakeCropper())
+    [table] = tables_of(result.document)
+    assert [[plain(c.blocks[0].inlines) for c in row.cells] for row in table.rows] == [
+        ["Check", "Value", "Result"],
+        ["Speed", "12", "Pass"],
+        ["Load", "40", "Fail"],
+    ]
+    assert table.wide
+
+
+def plain(inlines: list[Any]) -> str:
+    return "".join(i.text for i in inlines if isinstance(i, Text))
 
 
 def test_scanned_page_fails_for_now() -> None:
