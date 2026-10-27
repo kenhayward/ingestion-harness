@@ -129,7 +129,8 @@ export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; lab
   if (b.state === 'open') return { icon: 'cancelled', tone: 'neutral', label: 'Never started' };
   if (UNFINISHED.some((o) => n(o) > 0))
     return { icon: 'spinner', tone: 'info', label: 'Under way' };
-  if (n('failed') + n('rejected') > 0) return { icon: 'failed', tone: 'danger', label: 'Some failed' };
+  if (n('failed') + n('rejected') > 0)
+    return { icon: 'failed', tone: 'danger', label: 'Some failed' };
   if (NEEDS_ATTENTION.some((o) => n(o) > 0))
     return { icon: 'warning', tone: 'warn', label: 'Needs attention' };
   if (b.itemCount > 0 && n('created') + n('updated') === 0)

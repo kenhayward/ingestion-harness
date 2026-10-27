@@ -130,9 +130,12 @@ describe('the Conversion tab: a new batch', () => {
     render(<ConversionPage api={conversionApi()} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     const folder = droppedFolder('Policies', [word('a.docx'), ['sub', [word('b.docx')]]]);
-    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
-      dataTransfer: droppedItems([word('loose.docx'), folder]),
-    });
+    fireEvent.drop(
+      screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!,
+      {
+        dataTransfer: droppedItems([word('loose.docx'), folder]),
+      },
+    );
     await waitFor(() =>
       expect(listed()).toEqual(['loose.docx', 'Policies/a.docx', 'Policies/sub/b.docx']),
     );
@@ -221,9 +224,12 @@ describe('the Conversion tab: a new batch', () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
-    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
-      dataTransfer: droppedItems([word('a.docx'), word('a.docx')]),
-    });
+    fireEvent.drop(
+      screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!,
+      {
+        dataTransfer: droppedItems([word('a.docx'), word('a.docx')]),
+      },
+    );
     await waitFor(() => expect(rowsOf()).toHaveLength(2));
     expect(rowsOf()[0]![1]).toContain('Ready');
     expect(rowsOf()[1]![1]).toContain('Already in the list');
@@ -236,12 +242,15 @@ describe('the Conversion tab: a new batch', () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
-    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
-      dataTransfer: droppedItems([
-        droppedFolder('Policies', [word('a.docx'), word('b.docx')]),
-        droppedFolder('Policies', [word('a.docx')]),
-      ]),
-    });
+    fireEvent.drop(
+      screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!,
+      {
+        dataTransfer: droppedItems([
+          droppedFolder('Policies', [word('a.docx'), word('b.docx')]),
+          droppedFolder('Policies', [word('a.docx')]),
+        ]),
+      },
+    );
     await waitFor(() => expect(rowsOf()).toHaveLength(3));
     expect(rowsOf().map(([key, text]) => [key, text?.includes('Already in the list')])).toEqual([
       ['Policies/a.docx', false],

@@ -77,7 +77,9 @@ describe('review decisions', () => {
   });
 
   it('reject with a note', () => {
-    expect(RejectDecisionSchema.parse({ note: 'scanned twice' })).toEqual({ note: 'scanned twice' });
+    expect(RejectDecisionSchema.parse({ note: 'scanned twice' })).toEqual({
+      note: 'scanned twice',
+    });
     expect(() => RejectDecisionSchema.parse({})).toThrow();
     expect(() => RejectDecisionSchema.parse({ note: '' })).toThrow();
   });
