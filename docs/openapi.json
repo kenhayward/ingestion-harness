@@ -86975,6 +86975,55 @@
                                   "equations"
                                 ],
                                 "additionalProperties": false
+                              },
+                              "administration": {
+                                "type": "object",
+                                "properties": {
+                                  "instances": {
+                                    "type": "boolean"
+                                  },
+                                  "clients": {
+                                    "type": "boolean"
+                                  },
+                                  "instanceFields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+                                        },
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "required": {
+                                          "type": "boolean"
+                                        },
+                                        "hint": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "label",
+                                        "required",
+                                        "hint"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "instances",
+                                  "clients",
+                                  "instanceFields"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [
