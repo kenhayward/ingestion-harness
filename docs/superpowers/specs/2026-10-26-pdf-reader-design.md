@@ -1,6 +1,12 @@
 # The PDF reader: decomposing PDFs
 
-**Status:** design, for review · 2026-10-26 · agreed with the owner in conversation
+**Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
+implemented (2026-10-27)**; results in §13.
+
+- Start the layout service: `docker compose -f deploy/docker-compose.yml --profile pdf up -d --build layout`
+  (opt-in; see `deploy/layout/README.md`).
+- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
+- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
 
 This is phase 5 of document decomposition
 ([2026-10-23-document-decomposition-design.md](2026-10-23-document-decomposition-design.md), "the
@@ -263,6 +269,12 @@ The decomposition spec's §7 checks apply, adapted to what a PDF can prove. **[c
 - **Tables, per table.** The words inside each table's region of the page must be exactly the
   words in its cells, so a cell's text can't move out of its table, or into another. The grid's
   shape and merges can't be checked against the PDF; they are flagged instead (§4.6).
+- **Dropped on purpose, as well** (added in 5a): note separators after a table note's marker, and
+  footnote markers, which become note references. **[call]** (2026-10-27)
+- **An image-only equation's text** is accounted to its image, as for Word. **[call]**
+  (2026-10-27)
+- **Ownership is checked per top-level block.** A word moved within one list or table isn't
+  caught. **[call]** (2026-10-27)
 - **References** must resolve, as for Word.
 - **Scanned pages** have no independent text to compare with, so they are flagged, not checked.
 
@@ -352,3 +364,31 @@ before release.
 - **Licences.** Docling and its packages are MIT. The layout weights are Apache-2.0, and the
   table-structure weights are CDLA-Permissive-2.0. The builder confirms these at the pinned
   revisions before the image ships, since CT Studio must be able to redistribute them.
+
+## 13. Results of step 5a (2026-10-27)
+
+The twins are scored against the Word decomposition, using a CT Studio converter's PDF. The
+documents are described generically: doc1 is a 13-page validation report; doc2 a 102-page
+stability report, with doc4 a near-duplicate; doc3 a 16-page stability report with heavy vertical
+merges. The scores are after the step's fixes.
+
+| | doc1 | doc2 (and doc4) | doc3 | total (4 twins) |
+|---|---|---|---|---|
+| Headings found, level right | 32/32, 32 | 31/31, 31 | 13/13, 13 | 107/107, 107 |
+| Tables found | 7/7 | 68/72 | 12/15 | 155/166 |
+| Table shape right | 4/7 | 50/68 | 8/12 | 112/155 |
+| Extra PDF tables | 4 | 4 | 3 | 15 |
+| Cells right | 86/144 | 6727/7779 | 1222/1550 | 14762/17252 (86%) |
+| Words recall / precision | 0.993 / 0.991 | 0.999 / 0.994 | 0.897 / 0.995 | 0.991 / 0.994 |
+
+- Both real "Print to PDF" validation reports (no bookmarks) decompose and pass the text check.
+- Every document passes the fidelity check.
+- The fidelity check caught, and drove the fix of, three real reader defects during the step: a
+  header word split across overlapping cell boxes, a space given to the cell below so two words
+  merged, and typed heading numbers kept in titles when numbered chapters sat below unnumbered top
+  entries.
+
+**What is weakest.** Table shape and cells on small, borderless or heavily merged tables (doc1,
+doc3); extra tables; and doc3's word recall, which is not yet explained.
+
+The owner's decision on review (§8) waits on these scores.

@@ -639,6 +639,12 @@ model-driven extraction and no review step. **[call]**
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
 
+**Phase 5a status.** Step 5a (born-digital PDFs) is implemented: a layout service, the PDF
+reader, its fidelity checks, a dev tool (`worker/scripts/decompose.py` takes a PDF) and a Word/PDF
+twin scorer (`worker/scripts/pdf_twins.py`). Its scores, and what is weakest, are in the PDF
+reader design's §13. PDFs are not yet accepted on the Conversion tab (step 5b), and the owner's
+decision on review waits on the scores.
+
 **Phase 3 status.** Phase 3 is implemented. It covers:
 
 - conversion batches in the API, as one `decompose` job per file in the worker;
