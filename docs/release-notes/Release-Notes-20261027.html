@@ -187,8 +187,8 @@
         <ul>
           <li>
             The delivery contract package is now <code>0.9.0</code>, contract version 3. A sink may
-            declare <code>contractVersion: 3</code>; it is still sent version 2 packages, and version
-            1 and 2 sinks are unchanged. Three new error codes: <code>locked</code>,
+            declare <code>contractVersion: 3</code>; it is still sent version 2 packages, and
+            version 1 and 2 sinks are unchanged. Three new error codes: <code>locked</code>,
             <code>forbidden</code> and <code>not_configured</code>.
           </li>
         </ul>
@@ -234,8 +234,8 @@
         delivers to, and issue and revoke the access tokens its own callers use: each token limited
         to some tenants (or all), read-only or read/write, and expiring after 7, 30, 90 or 365 days
         or never. A token's secret is shown once, when it is issued. Tenants and tokens from the
-        sink's own configuration are listed as locked. Every change names the administrator who
-        made it, for the sink's audit log, which CT Studio can read back.
+        sink's own configuration are listed as locked. Every change names the administrator who made
+        it, for the sink's audit log, which CT Studio can read back.
       </p>
       <p>
         This is the contract and its conformance checks only; the administration page in CT Studio
