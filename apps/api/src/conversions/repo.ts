@@ -223,6 +223,39 @@ export const isUnconfirmed = (
   entry.lastError !== null &&
   entry.lastError.details?.[REFUSED_BEFORE_ACCEPTANCE] !== true;
 
+/** The most links an item carries from a bridge error (`Item.links`). */
+const MAX_LINKS = 5;
+/** The longest label an item's error link keeps. */
+const MAX_LINK_LABEL = 100;
+
+/**
+ * The web links in an untrusted value, as `Item.links` holds them: an array whose entries each
+ * have a string `label` and an http(s) `url`; anything else is dropped. At most `MAX_LINKS`,
+ * labels cut to `MAX_LINK_LABEL`.
+ */
+export function linksOf(value: unknown): Item['links'] {
+  if (!Array.isArray(value)) return [];
+  const links: Item['links'] = [];
+  for (const v of value as unknown[]) {
+    if (links.length === MAX_LINKS) break;
+    if (typeof v !== 'object' || v === null) continue;
+    const { label, url } = v as Record<string, unknown>;
+    if (typeof label !== 'string' || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      continue;
+    }
+    links.push({ label: label.slice(0, MAX_LINK_LABEL), url });
+  }
+  return links;
+}
+
+/** The links a bridge error gives (its `details.links`, through `linksOf`). */
+export const errorLinksOf = (
+  error: { details?: Record<string, unknown> | null } | null | undefined,
+): Item['links'] => linksOf(error?.details?.links);
+
+/** The states whose entry error an item shows its links from (`Item.links`). */
+export const LINKED_STATES: ReadonlySet<RegisterEntry['state']> = new Set(['changed', 'failed']);
+
 /**
  * Whether reload applies (`Item.reloadable`): the entry is gone or still the detached tombstone,
  * and the row is not superseded.

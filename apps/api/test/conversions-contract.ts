@@ -138,6 +138,7 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         unconfirmed: false,
+        links: [],
         reloadable: false,
         rerunIn: null,
         rerunAt: null,
@@ -347,6 +348,7 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         unconfirmed: false,
+        links: [],
         reloadable: false,
         rerunIn: null,
         rerunAt: null,
@@ -450,6 +452,7 @@ export function conversionsContract(
           unversioned: false,
           gone: false,
           unconfirmed: false,
+          links: [],
           reloadable: false,
           rerunIn: null,
           rerunAt: null,
@@ -1047,6 +1050,33 @@ export function conversionsContract(
       expect(await facts.actions(entryId)).toMatchObject([
         { action: 'detach', details: { persistentId: null, sourceKey: a.sourceKey } },
       ]);
+    });
+
+    it("a refused or failed item carries its entry's error links; any other state none", async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const links = [
+        { label: 'Open the document', url: 'https://t.test/doc' },
+        { label: 'Open the locked topic', url: 'https://t.test/topic' },
+      ];
+      const lastError = bridgeError('changed_in_target', 'locked', {
+        links: [...links, { label: 'bad', url: 'javascript:x' }],
+      });
+      expect((await repo.getItem(a.id))?.links).toEqual([]); // no entry
+      for (const [state, expected] of [
+        ['changed', links],
+        ['failed', links],
+        ['delivered', []],
+        ['pending', []],
+      ] as const) {
+        const entryId = await facts.entry({
+          ...changedSeed(`${a.sourceKey}#${state}`, batch.id),
+          state,
+          lastError,
+        });
+        await facts.settleItem(a.id, 'changed_in_target', entryId);
+        expect(ItemSchema.parse(await repo.getItem(a.id)).links, state).toEqual(expected);
+        expect((await repo.listItems(batch.id))[0]?.links, state).toEqual(expected);
+      }
     });
 
     it('a create refused before acceptance, with a document, or with no error, is not unconfirmed', async () => {

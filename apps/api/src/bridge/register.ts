@@ -1,5 +1,6 @@
 import { isDocumentMissing, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
 import { GONE_DETAIL, type ItemOutcome } from '@ih/shared';
+import { errorLinksOf } from '../conversions/repo.js';
 import {
   FINAL_DELIVERY,
   type IngestionRepo,
@@ -88,9 +89,11 @@ export function describeOutcome(outcome: ItemOutcome, detail: string | null): st
  * - failed with the sink's missing-document marker for the document it updated
  *   (`isDocumentMissing`): `unresolved`, the document gone from the target (deleted there,
  *   say), with `GONE_DETAIL` (owner's call, 2026-10-26). Any other `not_found` fails.
+ * The link is the receipt's (`linkOf`); without one, the first link the bridge error gives
+ * (`errorLinksOf`), so a refused or failed item still opens the document in the target.
  */
 export function itemSettlementOf(s: RegisterSettlement, before: RegisterEntry): ItemSettlement {
-  const link = linkOf(s.receipt);
+  const link = linkOf(s.receipt) ?? errorLinksOf(s.error)[0]?.url ?? null;
   const document = s.receipt?.document;
   if (s.state === 'delivered') {
     return {

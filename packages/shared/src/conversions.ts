@@ -105,6 +105,13 @@ export const ItemSchema = z
      */
     unconfirmed: z.boolean(),
     /**
+     * Links the target gave with the refusal or failure of the item's register entry (the bridge
+     * error's `details.links`, e.g. the document and the component that blocked it): web
+     * addresses only, at most five, labels cut to 100 characters. Read from the entry while it is
+     * `changed` or `failed`, like `gone`; empty otherwise.
+     */
+    links: z.array(z.object({ label: z.string(), url: z.string() })),
+    /**
      * Whether *Load as a new document* applies, exactly as the route decides: the entry is gone,
      * or is still the detached tombstone (no later create replaced it), and the row is not
      * `superseded`. A reload whose rerun failed after its detach can so be tried again.

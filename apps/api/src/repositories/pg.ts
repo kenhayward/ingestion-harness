@@ -52,6 +52,7 @@ import {
   isGone,
   isReloadable,
   isUnconfirmed,
+  linksOf,
   REFUSED_BEFORE_ACCEPTANCE,
   isUnversioned,
   type StartBatchResult,
@@ -293,6 +294,7 @@ interface ItemRow {
   unversioned: boolean;
   gone: boolean;
   unconfirmed: boolean;
+  links: unknown;
   entry_detached: boolean;
   rerun_in: string | null;
   rerun_at: Date | null;
@@ -350,6 +352,9 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
              AND (r.last_error->'details'->'${REFUSED_BEFORE_ACCEPTANCE}')
                IS DISTINCT FROM 'true'::jsonb)
     AS unconfirmed,
+  (SELECT r.last_error->'details'->'links' FROM decomposition_register r
+    WHERE r.id = decomposition_items.register_entry_id AND r.state IN ('changed', 'failed'))
+    AS links,
   EXISTS (SELECT 1 FROM decomposition_register r
            WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
     AS entry_detached,
@@ -380,6 +385,7 @@ const toItem = (r: ItemRow): Item => ({
   unversioned: r.unversioned,
   gone: r.gone,
   unconfirmed: r.unconfirmed,
+  links: linksOf(r.links),
   reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
   rerunIn: r.rerun_in ?? null,
   rerunAt: r.rerun_at?.toISOString() ?? null,

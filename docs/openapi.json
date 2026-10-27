@@ -12685,6 +12685,24 @@
                     "unconfirmed": {
                       "type": "boolean"
                     },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "url"
+                        ]
+                      }
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -12792,6 +12810,7 @@
                     "unversioned",
                     "gone",
                     "unconfirmed",
+                    "links",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
@@ -13870,6 +13889,24 @@
                           "unconfirmed": {
                             "type": "boolean"
                           },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -13977,6 +14014,7 @@
                           "unversioned",
                           "gone",
                           "unconfirmed",
+                          "links",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -14531,6 +14569,24 @@
                           "unconfirmed": {
                             "type": "boolean"
                           },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -14638,6 +14694,7 @@
                           "unversioned",
                           "gone",
                           "unconfirmed",
+                          "links",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -15262,6 +15319,24 @@
                         "unconfirmed": {
                           "type": "boolean"
                         },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "url"
+                            ]
+                          }
+                        },
                         "reloadable": {
                           "type": "boolean"
                         },
@@ -15369,6 +15444,7 @@
                         "unversioned",
                         "gone",
                         "unconfirmed",
+                        "links",
                         "reloadable",
                         "rerunIn",
                         "rerunAt",
@@ -16601,6 +16677,24 @@
                     "unconfirmed": {
                       "type": "boolean"
                     },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "url"
+                        ]
+                      }
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -16708,6 +16802,7 @@
                     "unversioned",
                     "gone",
                     "unconfirmed",
+                    "links",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
@@ -17158,6 +17253,24 @@
                           "unconfirmed": {
                             "type": "boolean"
                           },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -17265,6 +17378,7 @@
                           "unversioned",
                           "gone",
                           "unconfirmed",
+                          "links",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -17748,6 +17862,24 @@
                           "unconfirmed": {
                             "type": "boolean"
                           },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -17855,6 +17987,7 @@
                           "unversioned",
                           "gone",
                           "unconfirmed",
+                          "links",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -18344,6 +18477,24 @@
                     "unconfirmed": {
                       "type": "boolean"
                     },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "url"
+                        ]
+                      }
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -18451,6 +18602,7 @@
                     "unversioned",
                     "gone",
                     "unconfirmed",
+                    "links",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
@@ -18872,6 +19024,24 @@
                           "unconfirmed": {
                             "type": "boolean"
                           },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -18979,6 +19149,7 @@
                           "unversioned",
                           "gone",
                           "unconfirmed",
+                          "links",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -19606,6 +19777,24 @@
                         "unconfirmed": {
                           "type": "boolean"
                         },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "url"
+                            ]
+                          }
+                        },
                         "reloadable": {
                           "type": "boolean"
                         },
@@ -19713,6 +19902,7 @@
                         "unversioned",
                         "gone",
                         "unconfirmed",
+                        "links",
                         "reloadable",
                         "rerunIn",
                         "rerunAt",

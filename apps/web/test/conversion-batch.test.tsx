@@ -539,6 +539,31 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.detachConversionItem).toHaveBeenCalledWith(stuck.id);
   });
 
+  it("a refused document's panel links what the target names, web addresses only", async () => {
+    const locked = item('locked.docx', 'changed_in_target', {
+      registerEntryId: crypto.randomUUID(),
+      detail: 'a topic is locked by someone else',
+      links: [
+        { label: 'Open the document', url: 'https://t.test/doc' },
+        { label: 'Open the locked topic', url: 'https://t.test/topic' },
+        { label: 'Sneaky', url: 'javascript:alert(1)' },
+      ],
+    });
+    view(batchApi([locked]));
+    await findRow('locked.docx');
+    const panel = panelFor('locked.docx');
+    for (const [name, href] of [
+      ['Open the document', 'https://t.test/doc'],
+      ['Open the locked topic', 'https://t.test/topic'],
+    ]) {
+      const a = panel.getByRole('link', { name });
+      expect(a).toHaveAttribute('href', href);
+      expect(a).toHaveAttribute('target', '_blank');
+      expect(a).toHaveAttribute('rel', 'noopener noreferrer');
+    }
+    expect(panel.queryByRole('link', { name: 'Sneaky' })).toBeNull();
+  });
+
   it('a document gone from the target loads as a new document, after a confirmation', async () => {
     const gone = item('gone.docx', 'unresolved', {
       registerEntryId: crypto.randomUUID(),

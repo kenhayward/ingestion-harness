@@ -719,6 +719,23 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
   );
 }
 
+/** The links the target gave with a refusal or failure, web addresses only (as `webLink`). */
+function ErrorLinks({ item }: { item: Item }) {
+  const links = item.links.filter((l) => webLink(l.url));
+  if (!links.length) return null;
+  return (
+    <ul className="batch-panel-links">
+      {links.map((l) => (
+        <li key={l.url}>
+          <a href={l.url} target="_blank" rel="noopener noreferrer">
+            {l.label}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The picked document beside the list: why it stands where it does, its times, its actions. */
 function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: RowProps) {
   const link = webLink(item.link);
@@ -750,6 +767,7 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
         <div className={`batch-panel-why tone-${OUTCOME[item.outcome].tone}`}>
           <strong>{why}</strong>
           <p>{whyText}</p>
+          <ErrorLinks item={item} />
         </div>
       ) : (
         item.detail && <p className="batch-panel-detail">{item.detail}</p>

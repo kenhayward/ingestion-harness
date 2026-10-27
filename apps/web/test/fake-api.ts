@@ -914,6 +914,7 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     unversioned: false,
     gone: false,
     unconfirmed: false,
+    links: [],
     reloadable: false,
     rerunIn: null,
     rerunAt: null,
