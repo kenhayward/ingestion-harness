@@ -7,8 +7,8 @@ with review, in §14; the owner's run against the real sink is pending. **5c des
 
 - The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
   `docker compose -f deploy/docker-compose.yml up -d --build layout`.
-- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
-- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
+- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL [--ocr-url URL]` (scanned pages need the OCR model; its key from `OCR_API_KEY`)
+- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>] [--rasterise] [--ocr-url URL]` (`--rasterise` scores the OCR route, §15.5)
 
 This is phase 5 of document decomposition
 ([2026-10-23-document-decomposition-design.md](2026-10-23-document-decomposition-design.md), "the
