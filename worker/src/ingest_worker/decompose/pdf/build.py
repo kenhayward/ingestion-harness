@@ -7,10 +7,11 @@ leaves out the typed number, whose chars outline.py dropped, and keeps only supe
 subscript.
 
 A paragraph Docling split at a line or a page break is joined again; list items in one Docling
-group form a list, nested by their indentation, their bullets and numbers dropped. Tables are
-built by tables.py, taking their captions and notes. The ledger is renamed from piece refs to
-the ids the pieces became (a section's for a heading; the outermost list's for a list item),
-and so are the flags of the earlier stages. A piece with no visible text gives its chars to the
+group form a list, nested by their indentation, their bullets dropped, and their numbers too
+when they count from the start (else they stay as text: a list continued from a page before).
+Tables are built by tables.py, taking their captions and notes. The ledger is renamed from piece
+refs to the ids the pieces became (a section's for a heading; the outermost list's for a list
+item), and so are the flags of the earlier stages. A piece with no visible text gives its chars to the
 block before it.
 
 A picture is cropped from the page to an image: a figure when a caption is beside it (its number
@@ -74,8 +75,9 @@ _JOIN_GAP = 1.5
 _OVERLAP = 2.0
 #: A list item indented more than this many points past the one before it is nested.
 _LIST_STEP = 6.0
-#: An ordered list's marker.
+#: An ordered list's marker, its number or letter in group 1.
 _ORDERED = re.compile(r"^\(?(\d+|[a-z]|[ivx]+)[.)]")
+_ROMAN = {"i": 1, "v": 5, "x": 10}
 #: A marker that is removed: bullet glyphs, or an ordered marker followed by a space. A dash
 #: needs the space too, so "-5 °C" keeps its sign.
 _MARKER = re.compile(r"^(?:[•●○▪■]+|[–-]+(?=\s|$)|\(?(?:\d+|[a-z]|[ivx]+)[.)](?=\s|$))")  # noqa: RUF001
@@ -198,14 +200,25 @@ class _Para:
         return Paragraph(id=self.id, inlines=anchors.inlines(lines))
 
 
+@dataclass(frozen=True)
+class _Marker:
+    """An ordered list item's marker, not dropped yet: its number or letter, and its chars."""
+
+    value: str
+    page: int
+    chars: tuple[Char, ...]
+
+
 @dataclass
 class _List:
-    """A list being assembled; an item holds its paragraph, then any lists nested in it."""
+    """A list being assembled; an item holds its paragraph, then any lists nested in it.
+    `marked` holds each item's paragraph, its piece as it was, and its ordered marker if any."""
 
     id: str
     ordered: bool
     x0: float
     items: list[list[_Para | _List]] = field(default_factory=list)
+    marked: list[tuple[_Para, Piece, _Marker | None]] = field(default_factory=list)
 
     def build(self, anchors: _Anchors) -> ListBlock:
         return ListBlock(
@@ -304,6 +317,22 @@ class _MarkerRun:
     chars: tuple[Char, ...]
 
 
+def _roman(text: str) -> int:
+    values = [_ROMAN[c] for c in text]
+    return sum(-v if n + 1 < len(values) and v < values[n + 1] else v for n, v in enumerate(values))
+
+
+def _counts_from_the_start(values: list[str]) -> bool:
+    """Whether ordered markers run 1, 2, 3 ... (or a, b, c ..., or i, ii, iii ...) from the
+    first."""
+    wanted = list(range(1, len(values) + 1))
+    if all(v.isdigit() for v in values) and [int(v) for v in values] == wanted:
+        return True
+    if all(len(v) == 1 for v in values) and [ord(v) - ord("a") + 1 for v in values] == wanted:
+        return True
+    return all(set(v) <= set(_ROMAN) for v in values) and [_roman(v) for v in values] == wanted
+
+
 def _is_unit(word: str) -> bool:
     match = _UNIT_WORD.fullmatch(word)
     return match is not None and match.group(1) in _UNITS
@@ -368,6 +397,7 @@ class _Builder:
         self.stack: list[_Scope] = []  # the open sections, outermost first
         self.scope = self.root
         self.lists: list[_List] = []  # the open lists, outermost first
+        self.every_list: list[_List] = []  # every list made, for `settle_markers`
         self.group: str | None = None  # the Docling group of the open list
         self.para: _Para | None = None  # the paragraph just placed, if nothing came after it
         self.joinable = False  # whether the next text piece may continue `para`
@@ -554,9 +584,11 @@ class _Builder:
         self.para = None
         self.joinable = False
         x0 = _text_lines(piece)[0].bbox[0]
-        lines, ordered = self.strip_marker(piece)
+        lines, ordered, marker = self.strip_marker(piece)
         item = replace(piece, lines=lines)
         if not _has_text(item):
+            if marker is not None:
+                self.drop_marker(marker)
             self.give_away(piece)  # a marker alone: what is left is blank
             return
         if self.lists and piece.group != self.group:
@@ -564,6 +596,7 @@ class _Builder:
         if not self.lists:
             outer = _List(self.scope.take("list"), ordered, x0)
             self.scope.blocks.append(outer)
+            self.every_list.append(outer)
             self.lists = [outer]
             self.group = piece.group
         else:
@@ -573,24 +606,54 @@ class _Builder:
             if x0 > parent.x0 + _LIST_STEP and parent.items:
                 nested = _List(self.scope.take("list"), ordered, x0)
                 parent.items[-1].append(nested)
+                self.every_list.append(nested)
                 self.lists.append(nested)
-        self.lists[-1].items.append([_Para(self.scope.take("p"), [item])])
+        para = _Para(self.scope.take("p"), [item])
+        self.lists[-1].items.append([para])
+        self.lists[-1].marked.append((para, piece, marker))
         self.placed(piece, self.lists[0].id)
 
-    def strip_marker(self, piece: Piece) -> tuple[list[Line], bool]:
-        """The item's lines without its leading bullet or number, whose chars are dropped as
-        `list-marker`, and whether that marker is an ordered list's."""
+    def strip_marker(self, piece: Piece) -> tuple[list[Line], bool, _Marker | None]:
+        """The item's lines without its leading bullet or number, whether that marker is an
+        ordered list's, and the ordered marker. A bullet's chars are dropped as `list-marker`
+        here; an ordered marker's only once its list is known to count from the start
+        (`settle_markers`)."""
         lines = list(piece.lines)
         index = next(i for i, line in enumerate(lines) if line.text)
         first = lines[index]
         match = _MARKER.match(first.text)
         k = _lead(first, match.group(0)) if match is not None else None
         if match is None or k is None:
-            return lines, False
+            return lines, False, None
+        kept = [*lines[:index], *_without_lead(first, k), *lines[index + 1 :]]
+        ordered = _ORDERED.match(match.group(0))
+        if ordered is not None:
+            return kept, True, _Marker(ordered.group(1), first.page, first.chars[:k])
         for c in first.chars[:k]:
             self.ledger.drop(first.page, c.index, "list-marker")
-        kept = _without_lead(first, k)
-        return [*lines[:index], *kept, *lines[index + 1 :]], bool(_ORDERED.match(match.group(0)))
+        return kept, False, None
+
+    def drop_marker(self, marker: _Marker) -> None:
+        for c in marker.chars:
+            self.ledger.drop(marker.page, c.index, "list-marker")
+
+    def settle_markers(self) -> None:
+        """Each list's ordered markers are dropped when every item has one and they count from
+        the start (1, 2, 3 ...; a, b, c ...; i, ii, iii ...): the list's numbering stands for
+        them. Otherwise (a list continued from a page before, say) every marker stays as text
+        in its item, owned by the list."""
+        for lst in self.every_list:
+            markers = [m for _, _, m in lst.marked]
+            if markers and all(m is not None for m in markers):
+                values = [m.value for m in markers if m is not None]
+                if _counts_from_the_start(values):
+                    for m in markers:
+                        assert m is not None
+                        self.drop_marker(m)
+                    continue
+            for para, piece, marker in lst.marked:
+                if marker is not None:
+                    para.pieces = [piece]
 
     # -- tables --
 
@@ -837,6 +900,7 @@ class _Builder:
     # -- the result --
 
     def finish(self) -> tuple[list[Block], list[Section], list[Note], Provenance]:
+        self.settle_markers()
         for ref, before in self.blank.items():
             self.owner[ref] = self.owner[before]
         self.ledger.rename_all(self.owner)

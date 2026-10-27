@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from ingest_worker.decompose.model import (
     Block,
     DecomposedDocument,
@@ -16,6 +18,7 @@ from ingest_worker.decompose.model import (
     Text,
 )
 from ingest_worker.decompose.pdf.build import Provenance, build_document
+from ingest_worker.decompose.pdf.fidelity import check_pdf
 from ingest_worker.decompose.pdf.layout import parse_docling
 from ingest_worker.decompose.pdf.outline import assign_headings
 from ingest_worker.decompose.pdf.pieces import Ledger, Piece, attach_text
@@ -288,6 +291,55 @@ def test_ordered_list() -> None:
     assert [texts(i.blocks) for i in block.items] == [["Weigh the sample"], ["Dissolve it"]]
     assert owner_of(ledger, text, 0, "1") == ["dropped:list-marker"]
     assert owner_of(ledger, text, 0, ".") == ["dropped:list-marker"]
+
+
+def ordered_list(page: int, markers: list[str], top: float = 100) -> tuple[list[Run], Any]:
+    """Runs for list items "<marker> Step <n>", one a line, and their Docling group."""
+    runs = [Run(f"{m} Step {n}", 72, top + 14 * n) for n, m in enumerate(markers)]
+    group = docling.group([item("list_item", page, top + 14 * n) for n in range(len(markers))])
+    return runs, group
+
+
+def item_texts(block: Any) -> list[list[str]]:
+    assert isinstance(block, ListBlock)
+    return [texts(i.blocks) for i in block.items]
+
+
+def test_ordered_list_continuing_on_a_new_page_keeps_its_numbers() -> None:
+    first, first_group = ordered_list(1, ["1.", "2.", "3."])
+    second, second_group = ordered_list(2, ["4.", "5."])
+    pieces, text, ledger, _ = build(
+        [Page(runs=first), Page(runs=second)], [first_group, second_group]
+    )
+    doc, _, prov = document(pieces, text, ledger)
+    assert item_texts(doc.blocks[0]) == [["Step 0"], ["Step 1"], ["Step 2"]]
+    assert item_texts(doc.blocks[1]) == [["4. Step 0"], ["5. Step 1"]]
+    assert owner_of(ledger, text, 0, "1") == ["dropped:list-marker"]
+    assert owner_of(ledger, text, 1, "4") == ["s~lead#list-2"]
+    assert owner_of(ledger, text, 1, ".") == ["s~lead#list-2"]
+    check_pdf(doc, ledger, text, prov)
+
+
+@pytest.mark.parametrize(
+    ("markers", "dropped"),
+    [
+        (["a)", "b)", "c)"], True),
+        (["i.", "ii.", "iii.", "iv."], True),
+        (["(1)", "(2)"], True),
+        (["1.", "3."], False),
+        (["2.", "3."], False),
+        (["b)", "c)"], False),
+    ],
+)
+def test_ordered_markers_are_dropped_only_when_they_count_from_the_start(
+    markers: list[str], dropped: bool
+) -> None:
+    runs, group = ordered_list(1, markers)
+    pieces, text, ledger, _ = build([Page(runs=runs)], [group])
+    doc, _, prov = document(pieces, text, ledger)
+    expected = [[f"Step {n}" if dropped else f"{m} Step {n}"] for n, m in enumerate(markers)]
+    assert item_texts(doc.blocks[0]) == expected
+    check_pdf(doc, ledger, text, prov)
 
 
 # --- Orphans, empty pieces -------------------------------------------------------------------
