@@ -6,14 +6,20 @@ import importlib.util
 import json
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
 from ingest_worker.convert import ConverterUnavailable
 from ingest_worker.decompose import decompose_docx
+from ingest_worker.decompose.pdf import decompose_pdf
+from ingest_worker.decompose.pdf.layout import LayoutUnavailable
 from ingest_worker.decompose.render import RenderFragment
 from tests.decompose.docx import build_docx
 from tests.decompose.fakes import FakeRenderer
+from tests.decompose.pdf import docling
+from tests.decompose.pdf.fakes import FakeLayout
+from tests.decompose.pdf.make_pdf import Page, Run, make_pdf
 from tests.decompose.test_media import EMF, PNG, picture
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "decompose.py"
@@ -133,3 +139,50 @@ def test_file_names_are_sanitised_ids_that_never_collide() -> None:
     assert names == cli.file_names(["s-a/img-1", "s-b#img-1", "s-a#img-1"])
     for name in names.values():
         assert set(name) <= set("abcdefghijklmnopqrstuvwxyz0123456789._~-")
+
+
+def pdf_source() -> tuple[bytes, FakeLayout]:
+    data = make_pdf([Page(runs=[Run("Hello there, this is a short note.", 72, 80)])])
+    items = [docling.text("text", 1, (60, 842 - 68, 400, 842 - 84))]
+    return data, FakeLayout(lambda first, last: docling.doc([(595.0, 842.0)], items))
+
+
+def test_pdf_is_decomposed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    data, layout = pdf_source()
+    source = tmp_path / "in.pdf"  # the bytes decide, not the name
+    source.write_bytes(data)
+    out = tmp_path / "out"
+
+    assert cli.main([str(source), str(out)], layout=layout) == 0
+
+    expected = decompose_pdf(data, layout=layout)
+    document = json.loads((out / "document.json").read_text(encoding="utf-8"))
+    assert document == expected.document.model_dump(mode="json", by_alias=True)
+    assert (out / "report.json").exists()
+    assert (out / "images").is_dir()
+    assert "top-level sections" in capsys.readouterr().out
+
+
+def test_pdf_without_layout_url_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    data, _ = pdf_source()
+    source = tmp_path / "in.docx"  # a PDF under a .docx name is still a PDF
+    source.write_bytes(data)
+    out = tmp_path / "out"
+
+    assert cli.main([str(source), str(out)]) == 2
+    assert "a PDF needs --layout-url" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_layout_unavailable_exits_4(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    data, _ = pdf_source()
+    source = tmp_path / "in.pdf"
+    source.write_bytes(data)
+    out = tmp_path / "out"
+
+    def down(first: int, last: int) -> dict[str, Any]:
+        raise LayoutUnavailable("layout service unreachable: connection refused")
+
+    assert cli.main([str(source), str(out)], layout=FakeLayout(down)) == 4
+    assert "layout unavailable: layout service unreachable" in capsys.readouterr().err
+    assert not out.exists()
