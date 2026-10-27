@@ -197,6 +197,45 @@ def test_words_compare_as_counts_not_order() -> None:
     check_pdf(doc(para("p-1", "Hello world")), ledger, text, prov(p_1={0}))
 
 
+def passes(text: TextLayer, ledger: Ledger, said: str) -> bool:
+    """Whether a paragraph `p-1` saying `said` passes against the chars."""
+    try:
+        check_pdf(doc(para("p-1", said)), ledger, text, prov(p_1={0}))
+    except DecompositionFailed:
+        return False
+    return True
+
+
+def test_a_word_gap_pdfium_saw_cuts_a_word() -> None:
+    text, ledger = layer(R("ab", ["p-1"]), R("cd", ["p-1"], x=84, gap=True))
+    assert passes(text, ledger, "ab cd")
+    assert not passes(text, ledger, "abcd")
+
+
+def test_without_a_word_gap_chars_join_however_far_apart() -> None:
+    text, ledger = layer(R("ab", ["p-1"]), R("cd", ["p-1"], x=300, gap=False))
+    assert passes(text, ledger, "abcd")
+    assert not passes(text, ledger, "ab cd")
+
+
+def test_a_blank_char_cuts_a_word() -> None:
+    text, ledger = layer(R("ab cd", ["p-1"]))
+    assert passes(text, ledger, "ab cd")
+    assert not passes(text, ledger, "abcd")
+
+
+def test_a_new_line_cuts_a_word() -> None:
+    text, ledger = layer(R("ab", ["p-1"]), R("cd", ["p-1"], y=130, gap=False))
+    assert passes(text, ledger, "ab cd")
+    assert not passes(text, ledger, "abcd")
+
+
+def test_a_superscript_stays_in_its_word() -> None:
+    text, ledger = layer(R("x", ["p-1"]), R("2", ["p-1"], x=78, y=96, gap=False))
+    assert passes(text, ledger, "x2")
+    assert not passes(text, ledger, "x 2")
+
+
 def test_ligature_and_nb_hyphen_normalise() -> None:
     as_drawn = "\N{LATIN SMALL LIGATURE FI}ne non\N{NON-BREAKING HYPHEN}stop"
     text, ledger = layer(R(as_drawn, ["p-1"]))
@@ -276,7 +315,7 @@ def test_table_words_inside_its_region_pass() -> None:
     check_pdf(d, ledger, text, table_prov(t_1={0}))
 
 
-def test_word_moved_out_of_its_table_fails() -> None:
+def test_char_of_another_block_inside_a_table_fails() -> None:
     text, ledger = layer(R("A", ["t-1"]), R("B", ["p-1"], x=120))
     d = doc(table("t-1", "A"), para("p-1", "B"))
     message = fails(d, text, ledger, table_prov(t_1={0}, p_1={0}))
@@ -288,3 +327,15 @@ def test_word_moved_into_a_table_fails() -> None:
     d = doc(table("t-1", "A", "B"))
     message = fails(d, text, ledger, table_prov(t_1={0}))
     assert message == "page 1: 'B' moved into table t-1 (at t-1)"
+
+
+def test_a_word_is_inside_a_region_by_most_of_its_chars() -> None:
+    # the region ends at x=200: "abc" at x=188 has two chars of three centred inside it
+    text, ledger = layer(R("A", ["t-1"]), R("abc", ["t-1"], x=188))
+    check_pdf(doc(table("t-1", "A", "abc")), ledger, text, table_prov(t_1={0}))
+    text, ledger = layer(R("A", ["t-1"]), R("abc", ["p-1"], x=188))
+    message = fails(doc(table("t-1", "A"), para("p-1", "abc")), text, ledger, table_prov())
+    assert message == "page 1: 'abc' moved out of table t-1 (at t-1)"
+    # one char of three inside is not the table's
+    text, ledger = layer(R("A", ["t-1"]), R("abc", ["p-1"], x=194))
+    check_pdf(doc(table("t-1", "A"), para("p-1", "abc")), ledger, text, table_prov())

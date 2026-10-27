@@ -67,10 +67,24 @@ class JoinedTable(LayoutTable):
 
 
 def table_regions(piece: Piece) -> list[tuple[int, BBox]]:
-    """The page and box of each part of a table piece: one per page for a joined table."""
+    """The page and box of each part of a table piece, one per page for a joined table. A
+    part's box takes in its cells' boxes, which can run past the table's own: `attach_text`
+    gives the table the chars inside either."""
     if isinstance(piece.table, JoinedTable):
         return list(piece.table.regions)
-    return [(piece.page, piece.bbox)]
+    boxes = [piece.bbox]
+    if piece.table is not None:
+        boxes += [c.bbox for c in piece.table.cells if c.bbox is not None]
+    return [(piece.page, _union(boxes))]
+
+
+def _union(boxes: list[BBox]) -> BBox:
+    return (
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
 
 
 def _last_page(piece: Piece) -> int:

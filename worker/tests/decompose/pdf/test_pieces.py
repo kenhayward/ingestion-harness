@@ -9,7 +9,7 @@ from typing import Any
 from ingest_worker.decompose.model import Text
 from ingest_worker.decompose.pdf.layout import LayoutDoc, parse_docling
 from ingest_worker.decompose.pdf.pieces import Ledger, Piece, attach_text
-from ingest_worker.decompose.pdf.textlayer import read_text_layer
+from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer, read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 
@@ -128,6 +128,48 @@ def test_chars_in_a_table_but_in_no_cell_go_to_the_nearest_cell() -> None:
     assert pieces[0].cells is not None
     assert [ln.text for ln in pieces[0].cells[(1, 1)]] == ["R1C1 Z"]
     assert all(len(owners) == 1 for owners in ledger.entries(0).values())
+
+
+def test_a_word_across_two_cell_boxes_stays_in_one_cell() -> None:
+    # "Overflowing" runs past its cell's right edge: "Overfl" is centred in cell (0, 0) and
+    # "owing" in cell (0, 1). The word goes whole to the cell most of its chars are in.
+    table = docling.table(1, bl(72, 200, 272, 230), [(0, 0), (0, 1)], rows=1, cols=2)
+    for cell in table["data"]["table_cells"]:
+        c = cell["start_col_offset_idx"]
+        cell["bbox"] = {"l": 72 + 100 * c, "t": 200, "r": 172 + 100 * c, "b": 230}
+        cell["bbox"]["coord_origin"] = "TOPLEFT"
+    pieces, ledger = attach([Run("Overflowing", 140, 219), Run("next", 230, 219)], [table])
+    assert pieces[0].cells is not None
+    assert {k: [ln.text for ln in v] for k, v in pieces[0].cells.items()} == {
+        (0, 0): ["Overflowing"],
+        (0, 1): ["next"],
+    }
+    assert all(len(owners) == 1 for owners in ledger.entries(0).values())
+
+
+def test_a_word_goes_to_the_item_most_of_it_is_in_then_to_its_cell() -> None:
+    # "abcdefg" is one word: "ab" centred in cell (0, 0), "cd" in cell (0, 1), "efg" in a
+    # paragraph's box. The table holds 4 of its 7 chars, so it is the table's, in cell (0, 0)
+    # (the first of its cells with the most).
+    table = docling.table(1, bl(72, 200, 120, 230), [(0, 0), (0, 1)], rows=1, cols=2)
+    for cell, (left, right) in zip(
+        table["data"]["table_cells"], [(72, 100), (100, 120)], strict=True
+    ):
+        cell["bbox"] = {"l": left, "t": 200, "r": right, "b": 230, "coord_origin": "TOPLEFT"}
+    paragraph = docling.text("text", 1, bl(120, 200, 200, 230))
+    chars = tuple(
+        Char(n, ch, "Helvetica", 11, False, False, 80 + 10 * n, 210, 90 + 10 * n, 221, 219, True)
+        for n, ch in enumerate("abcdefg")
+    )
+    text = TextLayer((PageText(0, 595, HEIGHT, chars, 0.0),), ())
+    pieces, ledger = attach_text(layout([table, paragraph]), text)
+    [piece] = pieces
+    assert piece.cells is not None
+    assert {k: [ln.text for ln in v] for k, v in piece.cells.items()} == {
+        (0, 0): ["abcdefg"],
+        (0, 1): [],
+    }
+    assert {o for owners in ledger.entries(0).values() for o in owners} == {piece.ref}
 
 
 def test_table_cells_without_boxes_keep_every_char_in_the_first_cell() -> None:

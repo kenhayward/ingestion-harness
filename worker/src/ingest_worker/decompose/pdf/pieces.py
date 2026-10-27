@@ -2,7 +2,9 @@
 
 Docling says where the items are and what kind they are; the text of every item comes from the
 PDF's text layer: each visible character belongs to the item whose box holds its centre (the
-smallest box wins, a table cell beats its table). Characters in no item become orphan pieces, so
+smallest box wins, a table cell beats its table), except that a word is never split: it goes
+whole to the item most of its chars are in, and in a table to the cell most of those are in
+(`words_of`). Characters in no item become orphan pieces, so
 nothing on a born-digital page is lost. The `Ledger` records who owns every character; the
 fidelity check at the end of the reader is built on it.
 """
@@ -187,6 +189,31 @@ class Ledger:
                 owners[:] = [mapping.get(o, o) for o in owners]
 
 
+def continues_word(before: Char, c: Char) -> bool:
+    """Whether `c`, drawn right after `before`, is in the same word: neither is blank, pdfium
+    saw no word gap before `c`, and they are on one line (a superscript stays in its word)."""
+    return (
+        not c.text.isspace()
+        and not before.text.isspace()
+        and not c.space_before
+        and abs(c.baseline - before.baseline) <= _BASELINE_TOLERANCE * max(before.size, c.size)
+    )
+
+
+def words_of(page: PageText) -> list[list[Char]]:
+    """The page's visible chars in the order they are drawn, as words (`continues_word`); a
+    blank char is a word of its own."""
+    words: list[list[Char]] = []
+    for c in page.chars:
+        if not c.visible:
+            continue
+        if words and continues_word(words[-1][-1], c):
+            words[-1].append(c)
+        else:
+            words.append([c])
+    return words
+
+
 def _lines(page: int, chars: list[Char]) -> list[Line]:
     """Chars grouped by baseline into lines, top to bottom, each left to right."""
     clusters: list[list[Char]] = []
@@ -250,6 +277,7 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
     owned: dict[_Target, list[Char]] = defaultdict(list)
     loose: dict[int, list[Char]] = defaultdict(list)
     for number, page in pages.items():
+        targets: dict[int, _Target | None] = {}
         for c in page.chars:
             if not c.visible:
                 continue
@@ -261,7 +289,7 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
                 ):
                     best = cand
             if best is None:
-                loose[number].append(c)
+                targets[c.index] = None
                 continue
             target: _Target = best[3]
             if isinstance(items[target[0]], LayoutTable) and target[1] is None:
@@ -271,7 +299,16 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
                     target[0],
                     _cell_keys(table)[0],
                 )
-            owned[target].append(c)
+            targets[c.index] = target
+        # A word is never split: it goes whole to the item most of its chars are in, and in a
+        # table to the cell most of those are in (the first such, on a tie).
+        for word in words_of(page):
+            whole = _majority([targets[c.index] for c in word])
+            for c in word:
+                if whole is None:
+                    loose[number].append(c)
+                else:
+                    owned[whole].append(c)
 
     pieces: list[Piece] = []
     for i, item in enumerate(items):
@@ -284,6 +321,14 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
 
     orphans = _orphans(pages, loose, ledger)
     return _place(pieces, orphans), ledger
+
+
+def _majority(targets: list[_Target | None]) -> _Target | None:
+    """The item most of `targets` are in (None: no item), then the cell most of its are in."""
+    item = Counter(t[0] if t is not None else None for t in targets).most_common(1)[0][0]
+    if item is None:
+        return None
+    return Counter(t for t in targets if t is not None and t[0] == item).most_common(1)[0][0]
 
 
 def _nearest_cell(cells: list[tuple[BBox, _Target]], point: tuple[float, float]) -> _Target | None:

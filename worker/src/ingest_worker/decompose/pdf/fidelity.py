@@ -14,16 +14,19 @@ their titles) and the notes; a char can also be dropped on purpose (`dropped:<re
    of note references, cross-references and equations (their chars are dropped or are not
    text); an image's alt text counts as text. The chars of an image-only equation are accounted
    to its image and not compared.
-3. **Each table's region.** Every char inside a table's region on its page must be the table's
-   (or dropped), and every word in its cells must be read from the table's chars inside its
-   regions. A cell's text can't move out of its table, or into it. A table's caption and notes
-   may lie inside or outside its regions.
+3. **Each table's region.** A word mostly inside a table's region (its box and its cells'
+   boxes) on its page must not be another block's, and every word in its cells must be one of
+   the table's words at least half inside its regions: "mostly" as `attach_text` gives a word to
+   the item most of its chars are in. A cell's text can't move out of its table, or into it. A
+   table's caption and notes may lie inside or outside its regions.
 4. **References** resolve, as for Word (`check_references`).
 
 Words are those of `forms.normalise`, with the ligatures U+FB00 to U+FB06 split and the
-non-breaking hyphen U+2011 read as `-`, split as `\\w+|[^\\w\\s]`. The chars of one owner make a
-word gap where pdfium saw one (`Char.space_before`), at a blank, at a char of another owner or a
-dropped one, at a new line, and where the next char starts back to the left or far to the right.
+non-breaking hyphen U+2011 read as `-`, split as `\\w+|[^\\w\\s]`. The text layer's words follow the
+document's own rule (`pieces.words_of`): a word ends at a blank, where pdfium saw a word gap
+(`Char.space_before`), and at a new line; `attach_text` keeps each word whole in one item. Here a
+word is also cut where its chars' owner changes, so a dropped marker inside a word splits it, as
+the reference token standing for it does in the document.
 """
 
 from __future__ import annotations
@@ -56,7 +59,7 @@ from ingest_worker.decompose.model import (
 from ingest_worker.decompose.package import DecompositionFailed
 from ingest_worker.decompose.pdf.build import Provenance
 from ingest_worker.decompose.pdf.layout import BBox
-from ingest_worker.decompose.pdf.pieces import DROPPED_PREFIX, DropReason, Ledger
+from ingest_worker.decompose.pdf.pieces import DROPPED_PREFIX, DropReason, Ledger, words_of
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 
 _WORD = re.compile(r"\w+|[^\w\s]")
@@ -66,11 +69,6 @@ _READ_AS = {cp: unicodedata.normalize("NFKC", chr(cp)) for cp in range(0xFB00, 0
     0x2011: "-"
 }
 _DROPPED = frozenset(DROPPED_PREFIX + reason for reason in get_args(DropReason))
-#: Two chars are in one word only if the second starts at most this many font sizes after the
-#: first ends ...
-_WORD_GAP = 0.5
-#: ... and their baselines differ by at most this many (a superscript stays in its word).
-_LINE_SHIFT = 0.5
 
 
 def words(text: str) -> list[str]:
@@ -176,33 +174,21 @@ class _Segment:
         return self.entries[0]
 
 
-def _continues(before: Char, c: Char) -> bool:
-    """Whether `c` continues the word `before` is in (both of the same owner)."""
-    size = max(before.size, c.size)
-    return (
-        not c.space_before
-        and c.x0 >= before.x0
-        and c.x0 - before.x1 <= _WORD_GAP * size
-        and abs(c.baseline - before.baseline) <= _LINE_SHIFT * size
-    )
-
-
 def _segments(page: PageText, entries: dict[int, list[str]]) -> list[_Segment]:
-    """The page's visible chars, in the order they are drawn, cut at every word gap."""
+    """The page's words (`pieces.words_of`, as `attach_text` keeps them whole), each cut where
+    its chars' ledger entries change; blanks left out."""
     out: list[_Segment] = []
-    current: _Segment | None = None
-    for c in page.chars:
-        if not c.visible:
-            continue
-        if c.text.isspace():
-            current = None
-            continue
-        key = tuple(entries.get(c.index, ()))
-        if current is not None and current.entries == key and _continues(current.chars[-1], c):
-            current.chars.append(c)
-            continue
-        current = _Segment(page.index, key, [c])
-        out.append(current)
+    for word in words_of(page):
+        current: _Segment | None = None
+        for c in word:
+            if c.text.isspace():
+                continue
+            key = tuple(entries.get(c.index, ()))
+            if current is not None and current.entries == key:
+                current.chars.append(c)
+                continue
+            current = _Segment(page.index, key, [c])
+            out.append(current)
     return out
 
 
@@ -293,13 +279,12 @@ class _Check:
             inside: Counter[str] = Counter()
             for number, box in regions:
                 for segment in self.segments.get(number, []):
-                    chars_in = [_centre_in(c, box) for c in segment.chars]
-                    if not any(chars_in):
-                        continue
+                    # as attach_text decides a word's item: by most of its chars
+                    share = sum(_centre_in(c, box) for c in segment.chars) / len(segment.chars)
                     if segment.owner == table.id:
-                        if all(chars_in):
+                        if share >= 1 / 2:
                             inside.update(words(segment.text))
-                    elif segment.owner is not None:
+                    elif segment.owner is not None and share > 1 / 2:
                         raise DecompositionFailed(
                             f"page {number + 1}: '{_shown(segment.text)}' moved out of table "
                             f"{table.id}",

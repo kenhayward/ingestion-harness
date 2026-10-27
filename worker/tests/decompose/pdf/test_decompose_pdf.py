@@ -74,6 +74,21 @@ def test_end_to_end_small_report() -> None:
     assert layout.calls == [(1, 1)]
 
 
+def test_cell_text_past_the_table_box_stays_in_its_table() -> None:
+    # Docling's table box stops at x=250, but its last cell's box runs on to x=272: the text in
+    # that cell, past the table's box, is still the table's (attach_text gave it to the cell).
+    table = grid(1, simple(1, 2, header_rows=0), rows=1, cols=2)
+    table["prov"][0]["bbox"]["r"] = 250
+    runs = [Run("Dose", 76, 114), Run("Over", 245, 114)]
+    data = make_pdf([Page(runs=runs)])
+    result = decompose_pdf(data, layout=answering([table]), cropper=FakeCropper())
+    [built] = result.document.blocks
+    assert isinstance(built, Table)
+    assert [[c.blocks[0].inlines for c in row.cells] for row in built.rows] == [
+        [[Text(text="Dose")], [Text(text="Over")]]
+    ]
+
+
 def test_scanned_page_fails_for_now() -> None:
     data = make_pdf([Page(runs=[Run("Text", 72, 100)]), Page(images=[Img(0, 0, WIDTH, HEIGHT)])])
     layout = answering([], pages=2)
