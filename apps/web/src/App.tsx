@@ -12,7 +12,7 @@ import { ConnectionsDialog } from './access/ConnectionsDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { ConversionPage } from './conversion/ConversionPage.js';
-import { ConversionReviewPage } from './conversion/ConversionReviewPage.js';
+import { ConversionReviewPage } from './conversion/review/ConversionReviewPage.js';
 import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';

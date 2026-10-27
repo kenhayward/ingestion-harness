@@ -2854,6 +2854,166 @@ input.danger-border {
   }
 }
 
+/* Conversion review (spec §14.5): the extraction review's workspace, with the decomposed
+   document in place of the extracted data: its heading outline as a tree, each block with its
+   page and its flags beside it. */
+.review-header .flag-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+}
+.conversion-outline ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conversion-outline ul ul .outline-item {
+  padding-left: 28px;
+}
+.conversion-outline ul ul ul .outline-item {
+  padding-left: 42px;
+}
+.conversion-outline .outline-item {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ih-text);
+  font-size: var(--ih-text-md);
+  font-weight: 400;
+  text-align: left;
+}
+.conversion-outline .outline-item:hover {
+  background: var(--ih-surface2);
+}
+.conversion-outline .outline-item[aria-current='true'] {
+  background: var(--ih-accent-soft);
+  box-shadow: inset 3px 0 0 var(--ih-accent);
+  font-weight: 500;
+}
+.conversion-outline > .muted {
+  margin: 4px 14px;
+}
+.dd-document {
+  font-size: var(--ih-text-md);
+}
+.dd-heading,
+.dd-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 10px;
+  padding: 2px 6px;
+  border-radius: var(--ih-radius-md);
+}
+.dd-heading.selected,
+.dd-block.selected {
+  background: var(--ih-accent-soft);
+}
+.dd-heading h2,
+.dd-heading h3,
+.dd-heading h4,
+.dd-heading h5,
+.dd-heading h6 {
+  margin: 14px 0 4px;
+}
+.dd-block-body > :first-child {
+  margin-top: 4px;
+}
+.dd-page {
+  margin-top: 6px;
+  font-size: var(--ih-text-xs);
+  white-space: nowrap;
+}
+.dd-heading .dd-page {
+  margin-top: 18px;
+}
+.dd-flags {
+  grid-column: 1 / -1;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.dd-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-sm);
+  font-weight: 400;
+  text-align: left;
+}
+.dd-flag:hover:not(:disabled) {
+  border-color: var(--ih-warn-fg);
+}
+.dd-table {
+  overflow-x: auto;
+}
+.dd-table table {
+  border-collapse: collapse;
+}
+.dd-table caption {
+  padding: 4px 0;
+  text-align: left;
+}
+.dd-table caption.below {
+  caption-side: bottom;
+}
+.dd-table th,
+.dd-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--ih-border);
+}
+.dd-table th {
+  background: var(--ih-surface2);
+}
+.dd-table td > p,
+.dd-table th > p {
+  margin: 0;
+}
+.dd-table-notes {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.dd-table-notes div {
+  display: flex;
+  gap: 6px;
+}
+.dd-table-notes dd {
+  margin: 0;
+}
+.dd-figure {
+  margin: 8px 0;
+}
+.dd-crop,
+.dd-equation {
+  display: block;
+  max-width: 100%;
+  background: var(--ih-paper);
+  box-shadow: var(--ih-shadow-card);
+}
+.dd-inline-image {
+  max-height: 1.4em;
+  vertical-align: middle;
+}
+.dd-xref {
+  text-decoration: underline dotted;
+}
+
 /* Workbench */
 .workbench .muted {
   color: var(--ih-muted);

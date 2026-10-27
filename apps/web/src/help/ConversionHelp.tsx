@@ -115,6 +115,17 @@ export function ConversionHelp() {
         check, for Word files too. A Word document goes straight through; a PDF waits for review.
       </p>
 
+      <h3>Reviewing a PDF</h3>
+      <p>
+        <strong>Review</strong> opens the PDF's pages on the left and, on the right, the document as
+        it would be delivered: its headings as an outline, each section's text, tables and figures,
+        and each flag beside the part it is on. Choosing a heading, a part's page number or a flag
+        shows that page; pages with flags carry a dot. Nothing can be edited here.{' '}
+        <strong>Approve</strong> delivers it as shown (the note is optional);{' '}
+        <strong>Reject</strong> needs a note saying why, and is final. If someone else decided it
+        first, the page says so.
+      </p>
+
       <h3>Re-running failed documents</h3>
       <p>
         <strong>Re-run N failed</strong>, at the top of a batch with failed documents, lists them,

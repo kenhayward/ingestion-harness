@@ -224,6 +224,13 @@ or review step.
     the batch's `force`, in one transaction. Rejecting records the same and sets `rejected`
     (final), then deletes the held files the manifest names. Uploads and redeliveries take a Word
     file or a PDF (415 `Word or PDF files only` otherwise); a PDF is stored as `.pdf`.
+  - The web's review page (`#/conversion/items/:id/review`,
+    `apps/web/src/conversion/review/`) shows the held pages in the extraction review's page
+    viewer beside the decomposed document as it would be delivered: the heading outline, each
+    section's blocks (tables with their merges, figures as their crops) and each flag beside
+    the element it is on. A heading, block or flag shows its first page from the page map (a
+    section without pages, its first placed block's). It is read-only: Approve, with an optional
+    note, or Reject, with a required one; a 409 says someone else has already decided.
 - **The register.** `decomposition_register` holds one entry per document, scoped to the
   target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
   *duplicate*, *update* or *create*. An update carries the component versions the last receipt
