@@ -1604,7 +1604,7 @@ describe('reviewing a held PDF', () => {
   it('reject needs a note', async () => {
     const c = await setup();
     const item = await heldItem(c);
-    for (const payload of [undefined, {}, { note: '' }]) {
+    for (const payload of [undefined, {}, { note: '' }, { note: '   ' }]) {
       const res = await post(c.app, `/api/conversions/items/${item.id}/reject`, payload);
       expect(res.statusCode).toBe(400);
     }

@@ -82,6 +82,8 @@ describe('review decisions', () => {
     });
     expect(() => RejectDecisionSchema.parse({})).toThrow();
     expect(() => RejectDecisionSchema.parse({ note: '' })).toThrow();
+    expect(() => RejectDecisionSchema.parse({ note: ' \n\t ' })).toThrow();
+    expect(RejectDecisionSchema.parse({ note: '  wrong table ' })).toEqual({ note: 'wrong table' });
   });
 });
 

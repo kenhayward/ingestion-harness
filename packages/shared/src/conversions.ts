@@ -204,8 +204,8 @@ export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;
 export const ReviewDecisionSchema = z.object({ note: z.string().optional() }).strict();
 export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>;
 
-/** Rejecting a held document says why. */
-export const RejectDecisionSchema = z.object({ note: z.string().min(1) }).strict();
+/** Rejecting a held document says why: a note that is more than spaces (stored trimmed). */
+export const RejectDecisionSchema = z.object({ note: z.string().trim().min(1) }).strict();
 export type RejectDecision = z.infer<typeof RejectDecisionSchema>;
 
 /**
