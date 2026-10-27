@@ -219,6 +219,7 @@ export function ConversionReviewPage({ api, itemId }: { api: Api; itemId: string
                     <ol>
                       {document.notes.map((note) => (
                         <li key={note.id} id={`dd-${note.id}`}>
+                          <FlagList id={note.id} view={view} />
                           {note.blocks.map((block) => (
                             <BlockView key={block.id} block={block} view={view} nested />
                           ))}

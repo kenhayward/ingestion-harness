@@ -1,8 +1,9 @@
-import type { Block, DecomposedDocument, Flag, Section } from '@ih/bridge-contract';
+import type { Block, DecomposedDocument, Flag, Note, Section } from '@ih/bridge-contract';
 
-/** A section or block of the decomposed document, with the element it sits in. */
+/** A section, note or block of the decomposed document, with the element it sits in. */
 type Element =
   | { kind: 'section'; section: Section; parent: string | null }
+  | { kind: 'note'; note: Note; parent: null }
   | { kind: 'block'; block: Block; parent: string | null };
 
 /** The blocks a block holds: a list's items' blocks, a table's cells' blocks. */
@@ -12,7 +13,7 @@ export function innerBlocks(block: Block): Block[] {
   return [];
 }
 
-/** Every section and block of the document by id, however deep. */
+/** Every section, note and block of the document by id, however deep. */
 function indexOf(document: DecomposedDocument): Map<string, Element> {
   const index = new Map<string, Element>();
   const addBlock = (block: Block, parent: string | null) => {
@@ -26,22 +27,31 @@ function indexOf(document: DecomposedDocument): Map<string, Element> {
   };
   for (const block of document.blocks) addBlock(block, null);
   for (const section of document.sections) addSection(section, null);
+  for (const note of document.notes) {
+    index.set(note.id, { kind: 'note', note, parent: null });
+    for (const block of note.blocks) addBlock(block, note.id);
+  }
   return index;
 }
 
 /**
  * Where each element of a held document is: its pages from the manifest's `pageMap`. A section
- * with no pages of its own takes the first page of its first block (or subsection) that has one;
- * a block with none takes the pages of the element it sits in.
+ * with no pages of its own takes the first page of its first block (or subsection) that has one,
+ * and a note its first block's; a block with none takes the pages of the element it sits in.
  */
 export function documentPages(document: DecomposedDocument, pageMap: Record<string, number[]>) {
   const index = indexOf(document);
   const own = (id: string) => (pageMap[id]?.length ? pageMap[id] : null);
-  const firstOfSection = (section: Section): number | null => {
-    for (const block of section.blocks) {
+  const firstOfBlocks = (blocks: readonly Block[]): number | null => {
+    for (const block of blocks) {
       const pages = own(block.id);
       if (pages) return pages[0]!;
     }
+    return null;
+  };
+  const firstOfSection = (section: Section): number | null => {
+    const first = firstOfBlocks(section.blocks);
+    if (first) return first;
     for (const sub of section.sections) {
       const page = own(sub.id)?.[0] ?? firstOfSection(sub);
       if (page) return page;
@@ -54,8 +64,11 @@ export function documentPages(document: DecomposedDocument, pageMap: Record<stri
     if (pages) return pages;
     const element = index.get(id);
     if (!element) return [];
-    if (element.kind === 'section') {
-      const first = firstOfSection(element.section);
+    if (element.kind !== 'block') {
+      const first =
+        element.kind === 'section'
+          ? firstOfSection(element.section)
+          : firstOfBlocks(element.note.blocks);
       if (first) return [first];
     }
     return pagesOf(element.parent);

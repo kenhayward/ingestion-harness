@@ -180,6 +180,47 @@ describe('ConversionReviewPage', () => {
     expect(shownPage()).toHaveAttribute('src', `/api/conversions/items/${ITEM.id}/pages/2`);
   });
 
+  it("puts a note's flags beside the note, and they show its page", async () => {
+    const withNote: DecomposedDocument = {
+      ...DOCUMENT,
+      notes: [
+        { id: 'n1', blocks: [{ kind: 'paragraph', id: 'np1', inlines: text('A footnote.') }] },
+      ],
+      report: [
+        {
+          code: 'xref_unmatched',
+          severity: 'warning',
+          at: 'n1',
+          message: 'Note reference not found',
+        },
+        {
+          code: 'page_recognised',
+          severity: 'warning',
+          at: 'np1',
+          message: 'Page text recognised',
+        },
+      ],
+    };
+    await view(
+      reviewApi({
+        conversionReview: vi.fn(async () => ({
+          ...REVIEW,
+          document: withNote as unknown as Record<string, unknown>,
+          pageMap: { ...REVIEW.pageMap, np1: [3] },
+        })),
+      }),
+    );
+    const note = within(screen.getByText('A footnote.').closest('li')!);
+    const pages = within(screen.getByRole('navigation', { name: 'Pages' }));
+    expect(pages.getByRole('button', { name: 'Page 3 (flagged values)' })).toBeInTheDocument();
+
+    fireEvent.click(note.getByRole('button', { name: /page_recognised/ }));
+    expect(shownPage()).toHaveAccessibleName('Page 3 of 3');
+    fireEvent.click(outline().getByRole('button', { name: /^Introduction/ }));
+    fireEvent.click(note.getByRole('button', { name: /xref_unmatched/ }));
+    expect(shownPage()).toHaveAccessibleName('Page 3 of 3');
+  });
+
   it("shows a heading's first page, or its first block's when it has none", async () => {
     await view();
     fireEvent.click(outline().getByRole('button', { name: /^Results/ }));
