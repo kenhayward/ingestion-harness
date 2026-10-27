@@ -209,6 +209,13 @@ or review step.
     is then `awaiting_review`, recording the manifest's sha256 and the register entry the hold
     was decided against, and the job succeeds with "held for review". Any other answer is the
     item's outcome at once, as for Word.
+  - An approved hold comes back as a `decompose` job marked `approved`. The worker delivers the
+    held decomposition as it was reviewed, without reading the PDF again: with the decomposer
+    version it was read with, acting as whoever started the batch. It fails the item, sending
+    nothing, when the held files or the source are not the reviewed ones (their sha256s), or when
+    the register's entry for the source is no longer the one the hold recorded ("the target's
+    document changed after this was reviewed; run it again"). The outcome is then any delivery's,
+    never `awaiting_review` again, and the held files are deleted once it is recorded.
 - **The register.** `decomposition_register` holds one entry per document, scoped to the
   target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
   *duplicate*, *update* or *create*. An update carries the component versions the last receipt

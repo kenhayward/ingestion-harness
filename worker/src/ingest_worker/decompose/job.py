@@ -4,8 +4,11 @@
 writes its report beside it (plan ruling R4) and hands a Word file to `deliver_decomposition`
 (phase 2), which decides through the register. A PDF is held for review instead (`hold.py`,
 spec §14.2): `awaiting_review` with its held files, the job succeeding with "held for review",
-unless the register would send nothing, when that outcome is recorded at once. The item records
-the outcome (R3):
+unless the register would send nothing, when that outcome is recorded at once. An approved
+hold (`approved` params, spec §14.4) is delivered as it was reviewed, without reading the PDF
+again, unless the held files or the source are not the reviewed ones, or the register's entry
+for the source has changed since the hold; its held files are deleted once it has an outcome.
+The item records the outcome (R3):
 
 - `delivering`, with its register entry, when the bridge took the document: the API settles it
   as `created`, `updated`, `changed_in_target`, `read_back_mismatch` or `failed` from the
@@ -20,6 +23,7 @@ on its last attempt the item is failed with the error, so it never stays `decomp
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -43,8 +47,15 @@ from ingest_worker.decompose.deliver import (
     deliver_decomposition,
     preview_decision,
     refused,
+    source_entry,
 )
-from ingest_worker.decompose.hold import delete_held, write_held
+from ingest_worker.decompose.hold import (
+    HeldManifest,
+    HeldMismatch,
+    delete_held,
+    read_held,
+    write_held,
+)
 from ingest_worker.decompose.items import UNDECIDED, ConversionItem, ItemOutcome, ItemStore
 from ingest_worker.decompose.pdf.layout import LayoutAnalyser, LayoutUnavailable
 from ingest_worker.decompose.register import RegisterStore
@@ -55,10 +66,17 @@ from ingest_worker.outcomes import Complete, Delivering, Outcome
 from ingest_worker.pipeline import JobCancelled, PipelineDeps, check_cancelled
 from ingest_worker.publish_targets import TargetMissing, TargetNotSynced
 from ingest_worker.queue import ClaimedJob, JobQueue
-from ingest_worker.storage import ObjectStore, decomposition_report_key
+from ingest_worker.storage import (
+    ObjectStore,
+    decomposition_held_manifest_key,
+    decomposition_report_key,
+)
 
 #: Who a batch's documents are delivered as when no user queued it (no access control).
 NO_USER = ActingUser(id="ct-studio", name="CT Studio", email=None)
+
+#: An approved hold whose register entry changed after the hold (spec §14.4a).
+STALE_HOLD = "the target's document changed after this was reviewed; run it again"
 
 
 class DecomposeParams(BaseModel):
@@ -71,6 +89,8 @@ class DecomposeParams(BaseModel):
     target_id: str = Field(alias="targetId", min_length=1)
     source_key: str = Field(alias="sourceKey", min_length=1)
     force: bool
+    #: The reviewer approved the item's held PDF: deliver the held decomposition.
+    approved: bool = False
 
 
 @dataclass(frozen=True)
@@ -159,11 +179,20 @@ def run_decompose(job: ClaimedJob, deps: DecomposeDeps) -> Outcome:
     if params.source_key != item.source_key:
         detail = f"the job's source key {params.source_key} is not the item's ({item.source_key})"
         return _decided(job, deps, item, DeliveryOutcome("failed", None, None, detail))
+    if params.approved:
+        return _approved(job, deps, params, item)
     deps.queue.event(
         job.id, "info", "decomposing", {"itemId": item.id, "sourceKey": item.source_key}
     )
+    return _failing_on_error(job, deps, item, lambda: _convert(job, deps, params, item))
+
+
+def _failing_on_error(
+    job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem, run: Callable[[], Outcome]
+) -> Outcome:
+    """`run()`, failing the item when the job is cancelled or an error ends its last attempt."""
     try:
-        return _convert(job, deps, params, item)
+        return run()
     except JobCancelled:
         deps.items.decide(item.id, "failed", "the job was cancelled", None)
         raise
@@ -228,17 +257,42 @@ def _convert(
     check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
     if source_kind(data) == "pdf":
         return _hold(job, deps, params, item, data, result)
+    return _deliver(
+        job,
+        deps,
+        params,
+        item,
+        data,
+        result,
+        started_by=deps.queue.uploader(job.id) or NO_USER,
+        version=decomposer_version(source_kind(data)),
+    )
+
+
+def _deliver(
+    job: ClaimedJob,
+    deps: DecomposeDeps,
+    params: DecomposeParams,
+    item: ConversionItem,
+    data: bytes,
+    result: Decomposition,
+    *,
+    started_by: ActingUser,
+    version: int,
+) -> Outcome:
+    """`result`, the decomposition of `data`, delivered through the register as `started_by`;
+    the item records the outcome."""
     try:
         out = deliver_decomposition(
             deps.deliver,
             data=data,
             source_key=item.source_key,
             target_id=params.target_id,
-            started_by=deps.queue.uploader(job.id) or NO_USER,
+            started_by=started_by,
             batch_id=params.batch_id,
             force=params.force,
             decomposed=result,
-            decomposer_version=decomposer_version(source_kind(data)),
+            decomposer_version=version,
         )
     except TargetMissing as exc:
         out = DeliveryOutcome("failed", None, None, str(exc))
@@ -317,6 +371,90 @@ def _hold(
         {"heldSha256": held_sha256, "entryId": entry["id"] if entry is not None else None},
     )
     return Complete(note="held for review")
+
+
+def _approved(
+    job: ClaimedJob, deps: DecomposeDeps, params: DecomposeParams, item: ConversionItem
+) -> Outcome:
+    """The reviewed hold delivered (spec §14.4), and its held files deleted once the item has an
+    outcome, `delivering` included: an approved run never returns to `awaiting_review`. A retry
+    that finds the item `delivering` and the hold gone was handed over already: the bridge's
+    events settle it."""
+    if item.held_sha256 is None:
+        detail = f"approved, but nothing of {item.source_key} is held for review"
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, detail))
+    manifest_key = decomposition_held_manifest_key(item.batch_id, item.id)
+    if (
+        item.outcome == "delivering"
+        and deps.store.get_optional(deps.runs_bucket, manifest_key) is None
+    ):
+        return Complete(note="delivery already handed over")
+    deps.queue.event(
+        job.id, "info", "approved", {"itemId": item.id, "heldSha256": item.held_sha256}
+    )
+    try:
+        outcome = _failing_on_error(job, deps, item, lambda: _deliver_held(job, deps, params, item))
+    except TargetNotSynced:
+        raise  # nothing is decided: the hold waits with the job
+    except Exception as exc:
+        if isinstance(exc, JobCancelled) or job.attempts >= job.max_attempts:
+            delete_held(deps.store, deps.runs_bucket, item)  # the item was failed
+        raise
+    delete_held(deps.store, deps.runs_bucket, item)
+    return outcome
+
+
+def _deliver_held(
+    job: ClaimedJob, deps: DecomposeDeps, params: DecomposeParams, item: ConversionItem
+) -> Outcome:
+    """The held decomposition delivered with the version it was read with, as who started the
+    batch; the source is read only for its sha-256, the register's content key. Held files or
+    a source that are not the reviewed ones fail the item, and so does a hold whose register
+    entry has changed since (spec §14.4a)."""
+    try:
+        manifest, held = read_held(deps.store, deps.runs_bucket, item)
+        data = deps.store.get(deps.runs_bucket, item.object_key)
+        if hashlib.sha256(data).hexdigest() != manifest.source_sha256:
+            raise HeldMismatch(f"the source of {item.source_key} is not the reviewed one")
+    except HeldMismatch as exc:
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+    try:
+        current = _hold_is_current(deps, params, item, manifest)
+    except TargetMissing as exc:
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+    if not current:
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, STALE_HOLD))
+    check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
+    return _deliver(
+        job,
+        deps,
+        params,
+        item,
+        data,
+        held,
+        started_by=manifest.started_by,
+        version=manifest.decomposer_version,
+    )
+
+
+def _hold_is_current(
+    deps: DecomposeDeps, params: DecomposeParams, item: ConversionItem, manifest: HeldManifest
+) -> bool:
+    """Whether the source's register entry is still the one the hold was decided against: the
+    same id and content, or none for none. This approved run's own pending entry (a retry after
+    it wrote one) is current too: its delivery is resumed."""
+    entry = source_entry(deps.deliver, source_key=item.source_key, target_id=params.target_id)
+    held = manifest.entry
+    if (
+        entry is not None
+        and entry.state == "pending"
+        and entry.batch_id == params.batch_id
+        and entry.content_sha256 == manifest.source_sha256
+    ):
+        return True  # this run's own
+    if entry is None or held is None:
+        return entry is None and held is None
+    return (entry.id, entry.content_sha256) == (held.id, held.content_sha256)
 
 
 def _write_report(deps: DecomposeDeps, item: ConversionItem, result: Decomposition) -> str:

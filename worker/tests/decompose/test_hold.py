@@ -121,6 +121,18 @@ def test_a_manifest_that_is_not_the_held_one_is_refused() -> None:
         read_held(store, "runs", replace(ITEM, held_sha256="00" * 32))
 
 
+def test_an_item_with_no_hold_is_refused_before_anything_is_read() -> None:
+    store = MemoryObjectStore()  # nothing held: the item's check comes first
+
+    with pytest.raises(HeldMismatch):
+        read_held(store, "runs", ITEM)
+
+
+def test_a_hold_whose_manifest_is_gone_is_refused() -> None:
+    with pytest.raises(HeldMismatch):
+        read_held(MemoryObjectStore(), "runs", replace(ITEM, held_sha256="00" * 32))
+
+
 def test_delete_held_removes_everything_and_ignores_what_is_gone() -> None:
     store = MemoryObjectStore()
     data, result = _decomposed()

@@ -6,7 +6,9 @@ checks), writes the entry `pending` and hands a contract version 2 package to th
 entry's final state arrives later, from the bridge's events, through the API.
 
 `preview_decision` asks the register what it would decide, writing nothing: a PDF is held for
-review only when its delivery would send something (spec §14.2).
+review only when its delivery would send something (spec §14.2). `source_entry` reads the
+source's entry, writing nothing: an approved hold is delivered only if it is still the one the
+hold was decided against (spec §14.4a).
 """
 
 from __future__ import annotations
@@ -420,6 +422,16 @@ def _expected(decision: Decision) -> list[ComponentVersion]:
     assert decision.entry is not None and decision.entry.persistent_id is not None
     receipt = decision.entry.last_receipt
     return receipt.document.components if receipt and receipt.document else []
+
+
+def source_entry(deps: DeliverDeps, *, source_key: str, target_id: str) -> RegisterEntry | None:
+    """The source's entry on the target's tenant now, as both checks see it (a detached one is
+    none), recording nothing: what an approved hold compares with the entry it was decided
+    against (spec §14.4a)."""
+    sink_id, instance_id = deps.target_lookup(target_id)
+    with deps.register.transaction() as tx:
+        by_key, _ = _source_entry(tx, sink_id, instance_id, source_key)
+    return by_key
 
 
 def preview_decision(

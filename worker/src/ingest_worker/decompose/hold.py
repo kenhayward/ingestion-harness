@@ -132,9 +132,12 @@ def read_held(
     store: ObjectStore, bucket: str, item: ConversionItem
 ) -> tuple[HeldManifest, Decomposition]:
     """The item's held manifest and decomposition. Raises `HeldMismatch` when the manifest is
-    not the one the item recorded, or an image is not the one the manifest names."""
-    raw = store.get(bucket, decomposition_held_manifest_key(item.batch_id, item.id))
-    if item.held_sha256 is None or _sha(raw) != item.held_sha256:
+    not the one the item recorded (or the item holds nothing, or the manifest is gone), or an
+    image is not the one the manifest names."""
+    if item.held_sha256 is None:
+        raise HeldMismatch(f"nothing of {item.source_key} is held for review")
+    raw = store.get_optional(bucket, decomposition_held_manifest_key(item.batch_id, item.id))
+    if raw is None or _sha(raw) != item.held_sha256:
         raise HeldMismatch(f"the held decomposition of {item.source_key} is not the reviewed one")
     manifest = HeldManifest.model_validate_json(raw)
     image_bytes: dict[str, bytes] = {}
