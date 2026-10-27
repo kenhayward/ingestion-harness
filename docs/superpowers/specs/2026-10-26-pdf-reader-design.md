@@ -157,6 +157,9 @@ Dropping is where body text could go silently, so it is guarded: **[call]**
   A furniture label outside the margin bands is ignored.
 - A contents list is dropped only as a block: lines ending in a page number, most with dot leaders,
   under a contents heading or forming a run of them. A single such line in the body is kept.
+  A run without a contents heading starts on a line with a dot leader, and a run's page numbers
+  never go back nor past the document's last page, so body lines ending in numbers and a "Max
+  load ........ 250" line are kept. (2026-10-27)
 - What was dropped is listed in one `info` flag, by page: how many furniture lines, and which pages
   held contents or lists. A reviewer can see that nothing else was dropped.
 
@@ -190,8 +193,10 @@ were wrong. **[call]**
 - A paragraph that Docling split at a line or page break is joined again when the first part
   doesn't end a sentence and the next part continues it (no heading, list, table or figure between,
   and the same column).
-- List items keep their nesting from their indentation. Bullets and numbers are dropped, as for
-  Word.
+- List items keep their nesting from their indentation. Bullets are dropped, as for Word, and so
+  are numbers when a list's markers count from the start (1, 2, 3; a, b, c; i, ii, iii). A list
+  whose numbers don't (one continued from the page before, "4." "5.") keeps each number as text
+  in its item. **[call]** (2026-10-27)
 
 ### 4.6 Tables
 
@@ -223,7 +228,11 @@ pages, notes. **[call]**
 ### 4.8 Footnotes, links and properties
 
 - **Footnotes** at a page's foot are matched to their superscript markers in that page's body and
-  become notes. A footnote with no marker found stays a paragraph where it was, flagged.
+  become notes. A footnote with no marker found stays a paragraph where it was, flagged. A
+  superscript right after a digit, a closing bracket, a lone letter or a unit ("10²", "(a+b)²",
+  "R²", "kg/m²") is a power, never a marker. When more than one superscript could be a
+  footnote's marker, none is taken: the footnote stays a paragraph, flagged "Footnote marker
+  ambiguous". **[call]** (2026-10-27)
 - **Links** come from the PDF's link annotations over the text.
 - **Properties** come from the information dictionary and XMP metadata (`pdf-info`).
 - **Cross-references** stay plain text: a PDF has no reference fields. **[call]**
@@ -233,8 +242,10 @@ pages, notes. **[call]**
 The flag codes stay those of contract version 2, so the contract and the sink don't change.
 **[call]** Every inference is a `structure_inferred` flag at the element, and its message says
 which: an inferred heading level, a table's grid, a join across pages, notes moved out of a grid,
-text the layout analysis missed, a footnote with no marker, a bookmark left out. The dropped-text
-summary (§4.3) is a `structure_inferred` flag too, at no element, with severity `info`.
+text the layout analysis missed, a footnote with no marker or an ambiguous one, a bookmark left
+out. The dropped-text summary (§4.3) is a `structure_inferred` flag too, at no element, with
+severity `info`, and so is a count of the visible glyphs on a page that the text layer gives no
+text (or no box) and that are therefore left out. (2026-10-27)
 
 A PDF's structure flags are many by nature. The batch row and the report show their count, so a
 reviewer sees at a glance which documents have the most.
@@ -389,6 +400,16 @@ merges. The scores are after the step's fixes.
   entries.
 
 **What is weakest.** Table shape and cells on small, borderless or heavily merged tables (doc1,
-doc3); extra tables; and doc3's word recall, which is not yet explained.
+doc3); and extra tables.
+
+**doc3's word recall (0.897) is the PDF lacking what Word has, not the reader losing text.**
+Of its 676 missing words (of 6535), 640 are the cells of the last two columns of its three widest
+tables: Word sets them 9 inches wide on a page 8.5 inches wide, the converter's PDF draws them
+past the page's right edge and stops, and the PDF's text layer never holds those cells (the few
+characters it does hold past the edge are read). 30 are three level-1 headings whose Word style
+is all capitals: the PDF draws capitals, Word stores mixed case, and the word comparison is
+case-sensitive. The other 6 are "Table" and ":" of three captions whose Word paragraph starts
+with the heading's text, so the Word reading keeps "Table N:" in the caption, where the PDF
+reading drops it as the caption's number. (2026-10-27)
 
 The owner's decision on review (§8) waits on these scores.
