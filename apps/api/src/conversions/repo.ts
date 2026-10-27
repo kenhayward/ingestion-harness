@@ -74,8 +74,9 @@ export interface ConversionRepo {
    * `detached` tombstone naming that action, and sets the item's detail, all at once. Refused
    * (`pending`) while a delivery for the entry is in flight, or a run of its source to a target
    * on its tenant is unfinished (a rerun queued, say); `missing` when it is gone or detached
-   * already; `not_refused` unless it is `changed`, unversioned (`isUnversioned`) or gone from
-   * the target (`isGone`), so a live document is never detached.
+   * already; `not_refused` unless it is `changed`, unversioned (`isUnversioned`), gone from
+   * the target (`isGone`) or a create the target may have taken (`isUnconfirmed`), so a live
+   * document is never detached.
    */
   detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
@@ -201,6 +202,26 @@ export const isUnversioned = (
 export const isGone = (
   entry: Pick<RegisterEntry, 'state' | 'persistentId' | 'lastError'>,
 ): boolean => entry.state === 'failed' && isDocumentMissing(entry.lastError, entry.persistentId);
+
+/**
+ * The worker's marker on a bridge refusal of a delivery the target never took (its
+ * `REFUSED_BEFORE_ACCEPTANCE`), in the error's details.
+ */
+export const REFUSED_BEFORE_ACCEPTANCE = 'refusedBeforeAcceptance';
+
+/**
+ * A create the target may have taken (`Item.unconfirmed`): the entry has no document and failed
+ * with an error that is not a refusal before acceptance, so the worker only ever sends it again
+ * under its stored key. Detach takes it, so a sink that refuses that key for good (its earlier
+ * delivery stopped part-way) doesn't leave the source stuck.
+ */
+export const isUnconfirmed = (
+  entry: Pick<RegisterEntry, 'state' | 'persistentId' | 'lastError'>,
+): boolean =>
+  entry.state === 'failed' &&
+  entry.persistentId === null &&
+  entry.lastError !== null &&
+  entry.lastError.details?.[REFUSED_BEFORE_ACCEPTANCE] !== true;
 
 /**
  * Whether reload applies (`Item.reloadable`): the entry is gone or still the detached tombstone,

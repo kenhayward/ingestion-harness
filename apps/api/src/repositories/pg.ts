@@ -51,6 +51,8 @@ import {
   RUNNING_OUTCOMES,
   isGone,
   isReloadable,
+  isUnconfirmed,
+  REFUSED_BEFORE_ACCEPTANCE,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -290,6 +292,7 @@ interface ItemRow {
   resolution: Item['resolution'];
   unversioned: boolean;
   gone: boolean;
+  unconfirmed: boolean;
   entry_detached: boolean;
   rerun_in: string | null;
   rerun_at: Date | null;
@@ -339,6 +342,15 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
              AND r.last_error->'details'->>'persistentId' = r.persistent_id)
     AS gone,
   EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id
+             AND r.state = 'failed'
+             AND r.persistent_id IS NULL
+             AND r.last_error IS NOT NULL
+             AND jsonb_typeof(r.last_error) = 'object'
+             AND (r.last_error->'details'->'${REFUSED_BEFORE_ACCEPTANCE}')
+               IS DISTINCT FROM 'true'::jsonb)
+    AS unconfirmed,
+  EXISTS (SELECT 1 FROM decomposition_register r
            WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
     AS entry_detached,
   (SELECT n.batch_id FROM decomposition_items n
@@ -367,6 +379,7 @@ const toItem = (r: ItemRow): Item => ({
   resolution: r.resolution,
   unversioned: r.unversioned,
   gone: r.gone,
+  unconfirmed: r.unconfirmed,
   reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
   rerunIn: r.rerun_in ?? null,
   rerunAt: r.rerun_at?.toISOString() ?? null,
@@ -1729,9 +1742,15 @@ export class PgRepo implements IngestionRepo {
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
       // Only a document refused as changed in the target, one whose versions were never
-      // recorded, or one gone from the target, is detached: never a live one.
+      // recorded, one gone from the target, or a create the target may have taken, is
+      // detached: never a live one.
       const entry = toRegisterEntry(row);
-      if (row.state !== 'changed' && !isUnversioned(entry) && !isGone(entry)) {
+      if (
+        row.state !== 'changed' &&
+        !isUnversioned(entry) &&
+        !isGone(entry) &&
+        !isUnconfirmed(entry)
+      ) {
         return { ok: false, reason: 'not_refused' };
       }
       const action = await client.query<{ id: string }>(

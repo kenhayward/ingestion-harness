@@ -12682,6 +12682,9 @@
                     "gone": {
                       "type": "boolean"
                     },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -12788,6 +12791,7 @@
                     "resolution",
                     "unversioned",
                     "gone",
+                    "unconfirmed",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
@@ -13863,6 +13867,9 @@
                           "gone": {
                             "type": "boolean"
                           },
+                          "unconfirmed": {
+                            "type": "boolean"
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -13969,6 +13976,7 @@
                           "resolution",
                           "unversioned",
                           "gone",
+                          "unconfirmed",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -14520,6 +14528,9 @@
                           "gone": {
                             "type": "boolean"
                           },
+                          "unconfirmed": {
+                            "type": "boolean"
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -14626,6 +14637,7 @@
                           "resolution",
                           "unversioned",
                           "gone",
+                          "unconfirmed",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -17135,6 +17147,9 @@
                           "gone": {
                             "type": "boolean"
                           },
+                          "unconfirmed": {
+                            "type": "boolean"
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -17241,6 +17256,7 @@
                           "resolution",
                           "unversioned",
                           "gone",
+                          "unconfirmed",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -17721,6 +17737,9 @@
                           "gone": {
                             "type": "boolean"
                           },
+                          "unconfirmed": {
+                            "type": "boolean"
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -17827,6 +17846,7 @@
                           "resolution",
                           "unversioned",
                           "gone",
+                          "unconfirmed",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -18173,7 +18193,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target, its versions were never recorded (the\nitem's `unversioned`) or the target no longer has it (the item's `gone`)\n(`not_refused`), so a live document is never detached, from an old row or a stale\npage. Recorded with who and when; the item's detail says it was detached.",
+        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target, its versions were never recorded (the\nitem's `unversioned`), the target no longer has it (the item's `gone`), or it is\na create the target may have taken (the item's `unconfirmed`: no document, and a\nfailed delivery the target may have started, which the worker only ever sends again\nunder the same idempotency key, so a sink that refuses that key as part-way would\nleave it stuck) (`not_refused`), so a live document is never detached, from an old\nrow or a stale page. Recorded with who and when; the item's detail says it was detached.",
         "parameters": [
           {
             "schema": {
@@ -18313,6 +18333,9 @@
                     "gone": {
                       "type": "boolean"
                     },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -18419,6 +18442,7 @@
                     "resolution",
                     "unversioned",
                     "gone",
+                    "unconfirmed",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
@@ -18532,7 +18556,7 @@
             }
           },
           "409": {
-            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned nor gone (`not_refused`).",
+            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned, gone nor an unconfirmed create (`not_refused`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18566,7 +18590,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned nor gone (`not_refused`)."
+                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned, gone nor an unconfirmed create (`not_refused`)."
                 }
               }
             }
@@ -18837,6 +18861,9 @@
                           "gone": {
                             "type": "boolean"
                           },
+                          "unconfirmed": {
+                            "type": "boolean"
+                          },
                           "reloadable": {
                             "type": "boolean"
                           },
@@ -18943,6 +18970,7 @@
                           "resolution",
                           "unversioned",
                           "gone",
+                          "unconfirmed",
                           "reloadable",
                           "rerunIn",
                           "rerunAt",
@@ -19567,6 +19595,9 @@
                         "gone": {
                           "type": "boolean"
                         },
+                        "unconfirmed": {
+                          "type": "boolean"
+                        },
                         "reloadable": {
                           "type": "boolean"
                         },
@@ -19673,6 +19704,7 @@
                         "resolution",
                         "unversioned",
                         "gone",
+                        "unconfirmed",
                         "reloadable",
                         "rerunIn",
                         "rerunAt",

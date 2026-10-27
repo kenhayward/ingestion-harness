@@ -50,6 +50,7 @@ import {
   RUNNING_OUTCOMES,
   isGone,
   isReloadable,
+  isUnconfirmed,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -97,7 +98,7 @@ import {
 /** A conversion item as stored: its resolution is read from its register entry. */
 type StoredItem = Omit<
   Item,
-  'resolution' | 'unversioned' | 'gone' | 'reloadable' | 'rerunIn' | 'rerunAt'
+  'resolution' | 'unversioned' | 'gone' | 'unconfirmed' | 'reloadable' | 'rerunIn' | 'rerunAt'
 >;
 
 /** A conversion item's review columns before any report, hold or decision. */
@@ -1313,11 +1314,13 @@ export class MemoryRepo implements IngestionRepo {
     let resolution: Item['resolution'] = null;
     let unversioned = false;
     let gone = false;
+    let unconfirmed = false;
     let detached = false;
     if (item.registerEntryId) {
       const entry = this.register.get(item.registerEntryId);
       unversioned = entry !== undefined && isUnversioned(entry);
       gone = entry !== undefined && isGone(entry);
+      unconfirmed = entry !== undefined && isUnconfirmed(entry);
       const state = entry?.state;
       detached = state === 'detached';
       // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
@@ -1346,6 +1349,7 @@ export class MemoryRepo implements IngestionRepo {
       resolution,
       unversioned,
       gone,
+      unconfirmed,
       reloadable,
       rerunIn: rerun?.batchId ?? null,
       rerunAt: rerunBatch ? (rerunBatch.startedAt ?? rerunBatch.createdAt) : null,
@@ -1647,8 +1651,14 @@ export class MemoryRepo implements IngestionRepo {
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
     // Only a document refused as changed in the target, one whose versions were never
-    // recorded, or one gone from the target, is detached: never a live one.
-    if (entry.state !== 'changed' && !isUnversioned(entry) && !isGone(entry)) {
+    // recorded, one gone from the target, or a create the target may have taken, is
+    // detached: never a live one.
+    if (
+      entry.state !== 'changed' &&
+      !isUnversioned(entry) &&
+      !isGone(entry) &&
+      !isUnconfirmed(entry)
+    ) {
       return { ok: false, reason: 'not_refused' };
     }
     const action: RegisterAction = {

@@ -11,10 +11,21 @@ _BODY_LEVEL = 9
 _GENERATED_ID = re.compile(r"TOC[1-9]|TableofFigures")
 _GENERATED_NAME = re.compile(r"toc [1-9]|table of figures")
 _UNORDERED = {"bullet", "none"}
+_BUILT_IN_HEADING = re.compile(r"heading ([1-9])")
 
 
 def _val(el: Element | None) -> str | None:
     return None if el is None else el.get(f"{W}val")
+
+
+def _outline_lvl(ppr: Element | None) -> int | None:
+    """The `w:outlineLvl` a `pPr` sets, if it sets a usable one."""
+    raw = _val(ppr.find(f"{W}outlineLvl") if ppr is not None else None)
+    try:
+        level = int(raw) if raw is not None else None
+    except ValueError:
+        return None
+    return level if level is not None and level >= 0 else None
 
 
 class Styles:
@@ -94,16 +105,18 @@ class Styles:
         )
 
     def outline_level(self, p: Element) -> int | None:
-        """0-based outline level (from `w:outlineLvl`, then the style chain); None for body text."""
-        for ppr in self._layers(p):
-            raw = _val(ppr.find(f"{W}outlineLvl"))
-            if raw is None:
-                continue
-            try:
-                level = int(raw)
-            except ValueError:
-                continue
-            return level if 0 <= level < _BODY_LEVEL else None
+        """0-based outline level (from `w:outlineLvl`, then the style chain); None for body text.
+
+        A built-in `heading N` style that sets no `w:outlineLvl` has level N-1, as Word gives it."""
+        ppr = p.find(f"{W}pPr")
+        if (level := _outline_lvl(ppr)) is not None:
+            return level if level < _BODY_LEVEL else None
+        for style_id in self._style_chain(p):
+            level = _outline_lvl(self._ppr[style_id])
+            if level is None and (m := _BUILT_IN_HEADING.fullmatch(self._names[style_id])):
+                level = int(m.group(1)) - 1
+            if level is not None:
+                return level if level < _BODY_LEVEL else None
         return None
 
     def list_info(self, p: Element) -> tuple[str, int, bool] | None:

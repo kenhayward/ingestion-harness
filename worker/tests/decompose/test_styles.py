@@ -18,6 +18,12 @@ STYLES = (
     '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>'
     '<w:style w:type="paragraph" w:styleId="Bulleted"><w:pPr><w:numPr><w:numId w:val="1"/>'
     "</w:numPr></w:pPr></w:style>"
+    '<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/>'
+    '<w:basedOn w:val="Normal"/></w:style>'
+    '<w:style w:type="paragraph" w:styleId="SubHead"><w:basedOn w:val="Heading3"/></w:style>'
+    '<w:style w:type="paragraph" w:styleId="FlatHead"><w:name w:val="heading 4"/>'
+    '<w:basedOn w:val="Heading2"/></w:style>'
+    '<w:style w:type="paragraph" w:styleId="MyHeading"><w:name w:val="My heading 1"/></w:style>'
     "</w:styles>"
 )
 NUMBERING = (
@@ -59,6 +65,29 @@ def test_level_nine_is_body_text() -> None:
     styles, para = _one('<w:pStyle w:val="Plain"/>')
     assert styles.outline_level(para) is None
     styles, para = _one('<w:pStyle w:val="Heading2"/><w:outlineLvl w:val="9"/>')
+    assert styles.outline_level(para) is None
+
+
+def test_built_in_heading_style_has_an_implicit_outline_level() -> None:
+    # Word gives `heading 1`-`heading 9` their outline level even when styles.xml leaves
+    # `w:outlineLvl` out, as files written by some generators do.
+    styles, para = _one('<w:pStyle w:val="Heading3"/>')
+    assert styles.outline_level(para) == 2
+    styles, para = _one('<w:pStyle w:val="SubHead"/>')
+    assert styles.outline_level(para) == 2
+    styles, para = _one('<w:pStyle w:val="FlatHead"/>')
+    assert styles.outline_level(para) == 3
+
+
+def test_explicit_outline_level_beats_built_in_heading() -> None:
+    styles, para = _one('<w:pStyle w:val="Heading3"/><w:outlineLvl w:val="9"/>')
+    assert styles.outline_level(para) is None
+    styles, para = _one('<w:pStyle w:val="Heading3"/><w:outlineLvl w:val="0"/>')
+    assert styles.outline_level(para) == 0
+
+
+def test_custom_style_named_like_a_heading_is_body_text() -> None:
+    styles, para = _one('<w:pStyle w:val="MyHeading"/>')
     assert styles.outline_level(para) is None
 
 

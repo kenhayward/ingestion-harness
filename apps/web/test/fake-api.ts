@@ -913,6 +913,7 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     resolution: null,
     unversioned: false,
     gone: false,
+    unconfirmed: false,
     reloadable: false,
     rerunIn: null,
     rerunAt: null,
