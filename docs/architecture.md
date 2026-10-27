@@ -210,7 +210,11 @@ or review step.
     and `accepted`.
   - Detach and accept (`register_actions`, migration `202610252220_register_detached_accepted`)
     act only on an entry refused as `changed`. Detach also takes an entry whose document's
-    versions were never recorded (the item's `unversioned`, reported `unresolved`).
+    versions were never recorded (the item's `unversioned`, reported `unresolved`), and a create
+    the target may have taken (the item's `unconfirmed`: `failed`, no document, and not refused
+    before acceptance). The worker sends such a create again only under its stored key, so a
+    sink that refuses that key as part-way would leave it stuck; after a detach the next run
+    creates under a new key.
 - **Items settled from bridge events.** An item handed to the bridge is `delivering`. The bridge's
   final event for that delivery settles the register entry and the item together
   (`apps/api/src/bridge/register.ts`), whichever comes first, the event or the worker's write.
