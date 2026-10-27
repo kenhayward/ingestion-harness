@@ -30,12 +30,16 @@ from ingest_worker.bridge.models import (
 )
 from ingest_worker.bridge.package import PRODUCER
 from ingest_worker.decompose import (
-    DECOMPOSER_VERSION,
     Decomposition,
     DecompositionFailed,
     DecompositionRejected,
-    decompose_docx,
+    decompose_source,
+    source_kind,
 )
+from ingest_worker.decompose import (
+    decomposer_version as version_of,
+)
+from ingest_worker.decompose.pdf.layout import LayoutAnalyser
 from ingest_worker.decompose.register import RegisterEntry, RegisterRaced, RegisterStore
 from ingest_worker.decompose.render import Renderer
 
@@ -213,6 +217,8 @@ class DeliverDeps:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     #: This deployment's id, as packages name their producer.
     deployment: str = "default"
+    #: Reads a PDF's layout (None: a PDF can't be decomposed here).
+    layout: LayoutAnalyser | None = None
 
 
 def _iso(at: datetime) -> str:
@@ -243,6 +249,7 @@ def build_decomposition_package(
     decomposed_at: datetime,
     published_at: datetime,
     deployment: str,
+    decomposer_version: int,
 ) -> BridgePackage:
     """The version 2 package of a decomposed document: the document, one image per document
     image (its bytes, base64; converted images' originals are not sent) and its provenance."""
@@ -258,7 +265,7 @@ def build_decomposition_package(
             source_filename=filename,
             source_key=source_key,
             batch_id=batch_id,
-            decomposer_version=DECOMPOSER_VERSION,
+            decomposer_version=decomposer_version,
             started_by=started_by,
             decomposed_at=_iso(decomposed_at),
             published_at=_iso(published_at),
@@ -374,6 +381,7 @@ def deliver_decomposition(
     batch_id: str | None = None,
     force: bool = False,
     decomposed: Decomposition | None = None,
+    decomposer_version: int | None = None,
 ) -> DeliveryOutcome:
     """Decompose `data` and deliver it to `target_id` as the register decides.
 
@@ -395,10 +403,17 @@ def deliver_decomposition(
 
     `decomposed`: `data`'s decomposition when the caller made it already (the `decompose` job,
     which writes its report first), so nothing is rendered twice.
+
+    `decomposer_version`: the version sent with the document and part of its idempotency key
+    (None: the version of `data`'s kind).
     """
+    if decomposer_version is None:
+        decomposer_version = version_of(source_kind(data))
     try:
         result = (
-            decomposed if decomposed is not None else decompose_docx(data, renderer=deps.renderer)
+            decomposed
+            if decomposed is not None
+            else decompose_source(data, renderer=deps.renderer, layout=deps.layout)
         )
     except DecompositionRejected as exc:
         return DeliveryOutcome("failed", None, None, f"rejected: {exc}")
@@ -447,7 +462,7 @@ def deliver_decomposition(
         key = decision.idempotency_key or decomposition_idempotency_key(
             sha,
             update.persistent_id if update else None,
-            DECOMPOSER_VERSION,
+            decomposer_version,
             _run_token(batch_id, force, _detached_by(tombstone, decision.entry), update),
         )
         try:
@@ -475,6 +490,7 @@ def deliver_decomposition(
         decomposed_at=decomposed_at,
         published_at=deps.clock(),
         deployment=deps.deployment,
+        decomposer_version=decomposer_version,
     )
     request = CreateDeliveriesRequest(
         targets=[target_id], acting_user=started_by, package=package, update=update

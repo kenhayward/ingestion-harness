@@ -75,6 +75,7 @@ if TYPE_CHECKING:
 
     from .bridge.client import BridgeClient
     from .decompose.job import DecompositionStores
+    from .decompose.pdf.layout import LayoutAnalyser
     from .graph_registry import GraphRegistry
     from .linked_data import LinkedDataSettings
     from .mapping_memory import MappingMemoryStore
@@ -183,6 +184,8 @@ class PipelineDeps:
     example_template: str | None = None
     #: Converts Word (.docx) sources to PDF (None: Word documents go to needs_review).
     converter: DocumentConverter | None = None
+    #: Reads PDFs' layout for the `decompose` job (None: a PDF fails its item).
+    layout: LayoutAnalyser | None = None
     #: The ontology library's tables (None: ontology jobs go to review).
     ontologies: OntologyStore | None = None
     #: Imports over this many triples are refused (ONTOLOGY_MAX_TRIPLES).

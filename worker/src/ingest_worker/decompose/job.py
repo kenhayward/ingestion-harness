@@ -18,7 +18,8 @@ on its last attempt the item is failed with the error, so it never stays `decomp
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -27,13 +28,19 @@ from ingest_worker.decompose import (
     Decomposition,
     DecompositionFailed,
     DecompositionRejected,
-    decompose_docx,
+    decomposer_version,
+    source_kind,
+)
+from ingest_worker.decompose import (
+    decompose_source as decompose_any,
 )
 from ingest_worker.decompose.deliver import DeliverDeps, DeliveryOutcome, deliver_decomposition
 from ingest_worker.decompose.items import UNDECIDED, ConversionItem, ItemOutcome, ItemStore
+from ingest_worker.decompose.pdf.layout import LayoutAnalyser, LayoutUnavailable
 from ingest_worker.decompose.register import RegisterStore
 from ingest_worker.decompose.render import ConverterRenderer, Renderer, RenderFragment
 from ingest_worker.errors import DocumentError
+from ingest_worker.ocr import render_preview_jpeg
 from ingest_worker.outcomes import Complete, Delivering, Outcome
 from ingest_worker.pipeline import JobCancelled, PipelineDeps, check_cancelled
 from ingest_worker.publish_targets import TargetMissing, TargetNotSynced
@@ -72,6 +79,10 @@ class DecomposeDeps:
     #: The job's events (the live view) and its cancellation.
     queue: JobQueue
     deliver: DeliverDeps
+    #: Reads a PDF's layout (None: a PDF fails its item).
+    layout: LayoutAnalyser | None = None
+    #: (pdf, 0-based page) -> JPEG preview for the review screen.
+    render_preview: Callable[[bytes, int], bytes] = field(default=render_preview_jpeg)
 
 
 class NoConverter:
@@ -99,14 +110,22 @@ def decompose_deps(deps: PipelineDeps, queue: JobQueue) -> DecomposeDeps:
         runs_bucket=deps.buckets.runs,
         items=stores.items,
         queue=queue,
+        layout=deps.layout,
+        render_preview=deps.render_preview,
         deliver=DeliverDeps(
             renderer=renderer,
             register=stores.register,
             bridge=bridge,
             target_lookup=target_lookup,
             deployment=deps.deployment,
+            layout=deps.layout,
         ),
     )
+
+
+def decompose_source(deps: DecomposeDeps, data: bytes) -> Decomposition:
+    """`data` decomposed as the Word file or PDF it is."""
+    return decompose_any(data, renderer=deps.deliver.renderer, layout=deps.layout)
 
 
 def run_decompose(job: ClaimedJob, deps: DecomposeDeps) -> Outcome:
@@ -174,7 +193,12 @@ def _convert(
 ) -> Outcome:
     data = deps.store.get(deps.runs_bucket, item.object_key)
     try:
-        result = decompose_docx(data, renderer=deps.deliver.renderer)
+        result = decompose_source(deps, data)
+    except LayoutUnavailable as exc:
+        if job.attempts < job.max_attempts:
+            raise  # the layout service may be back: the job is retried
+        detail = f"the layout service could not be reached: {exc}"
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, detail))
     except DecompositionRejected as exc:
         return _decided(job, deps, item, DeliveryOutcome("failed", None, None, f"rejected: {exc}"))
     except DecompositionFailed as exc:
@@ -202,6 +226,7 @@ def _convert(
             batch_id=params.batch_id,
             force=params.force,
             decomposed=result,
+            decomposer_version=decomposer_version(source_kind(data)),
         )
     except TargetMissing as exc:
         out = DeliveryOutcome("failed", None, None, str(exc))

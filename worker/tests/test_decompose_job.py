@@ -28,6 +28,7 @@ from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
+from ingest_worker.decompose.pdf.layout import LayoutUnavailable
 from ingest_worker.decompose.register import MemoryRegisterStore
 from ingest_worker.errors import DocumentError
 from ingest_worker.main import TASKS
@@ -41,6 +42,7 @@ from ingest_worker.storage import (
     decomposition_source_key,
 )
 from tests.decompose.fakes import FakeRenderer
+from tests.decompose.pdf.fakes import FakeLayout, two_pages
 from tests.decompose.test_deliver import REFUSAL, FakeBridge, report_docx
 from tests.fakes import FakeQueue
 
@@ -65,6 +67,7 @@ class World:
         self.bridge = bridge if bridge is not None else FakeBridge()
         self.queue = FakeQueue()
         self.renderer = FakeRenderer()
+        self.layout: FakeLayout | None = None
         self._n = 0
 
     def deps(self) -> DecomposeDeps:
@@ -73,6 +76,7 @@ class World:
             runs_bucket="runs",
             items=self.items,
             queue=self.queue,
+            layout=self.layout,
             deliver=DeliverDeps(
                 renderer=self.renderer,
                 register=self.register,
@@ -89,7 +93,7 @@ class World:
         """An item uploaded to `batch` and its queued job, as the API's start writes them."""
         self._n += 1
         item_id = f"00000000-0000-4000-8000-{self._n:012d}"
-        key = decomposition_source_key(batch, item_id, "docx")
+        key = decomposition_source_key(batch, item_id, source_key.rsplit(".", 1)[-1])
         self.store.put("runs", key, data, "application/octet-stream")
         self.items.add(ConversionItem(item_id, batch, source_key, key, "queued"))
         job = ClaimedJob(
@@ -158,6 +162,74 @@ def test_decomposes_and_delivers_a_new_file_as_delivering() -> None:
     assert world.messages(job) == ["decomposing", "decomposed", "report written", "delivering"]
 
 
+def test_pdf_item_is_decomposed_with_the_pdf_reader() -> None:
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "reports/two-pages.pdf")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    [request] = world.bridge.requests
+    package = request.package
+    assert package.provenance.decomposer_version == DECOMPOSER_VERSION * 1000 + 1  # type: ignore[union-attr]
+    assert package.document is not None and package.document.sections
+    [entry] = world.register.entries()
+    assert entry.idempotency_key == decomposition_idempotency_key(
+        entry.content_sha256, None, 1001, None
+    )
+
+
+def test_pdf_without_layout_fails_the_item() -> None:
+    world = World()
+    data, _ = two_pages()
+    job = world.upload(data, "two-pages.pdf")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed"
+    assert item.detail is not None
+    assert "this CT Studio has no layout service (LAYOUT_URL)" in item.detail
+    assert world.bridge.requests == []
+
+
+def test_layout_unavailable_is_retried_then_fails() -> None:
+    world = World()
+    data, _ = two_pages()
+
+    def down(first: int, last: int) -> dict[str, Any]:
+        raise LayoutUnavailable("connection refused")
+
+    world.layout = FakeLayout(down)
+    job = world.upload(data, "two-pages.pdf")
+
+    with pytest.raises(LayoutUnavailable):
+        run_decompose(job, world.deps())
+    assert world.item(job).outcome == "decomposing"  # retried: nothing decided
+
+    last = replace(job, attempts=job.max_attempts)
+    outcome = run_decompose(last, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed"
+    assert item.detail is not None
+    assert item.detail.startswith("the layout service could not be reached: connection refused")
+    assert world.bridge.requests == []
+
+
+def test_word_version_unchanged() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+
+    run_decompose(job, world.deps())
+
+    [request] = world.bridge.requests
+    assert request.package.provenance.decomposer_version == 1  # type: ignore[union-attr]
+
+
 def test_an_item_records_when_it_started_and_finished() -> None:
     """How long a document took (the Conversion tab's row): started when it goes to
     `decomposing`, finished at a final outcome the worker decides; `delivering` is not final
@@ -216,9 +288,6 @@ def test_a_create_again_under_the_earlier_key_says_so_plainly() -> None:
 
 def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """The delivery takes the job's decomposition rather than rendering everything again."""
-    import ingest_worker.decompose.deliver as deliver_module
-    import ingest_worker.decompose.job as job_module
-
     calls: list[bytes] = []
     real = decompose_module.decompose_docx
 
@@ -226,8 +295,7 @@ def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append(data)
         return real(data, renderer=renderer)
 
-    monkeypatch.setattr(job_module, "decompose_docx", counted)
-    monkeypatch.setattr(deliver_module, "decompose_docx", counted)
+    monkeypatch.setattr(decompose_module, "decompose_docx", counted)
     world = World()
 
     run_decompose(world.upload(report_docx(), "r1.docx"), world.deps())

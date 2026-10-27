@@ -22,6 +22,7 @@ from .config import Settings
 from .convert import GotenbergConverter
 from .decompose.items import PgItemStore
 from .decompose.job import DecompositionStores, decompose_deps, run_decompose
+from .decompose.pdf.layout import HttpLayoutAnalyser
 from .decompose.register import PgRegisterStore
 from .drafting import run_draft
 from .embeddings import run_embed
@@ -505,18 +506,20 @@ class _Worker:
                 if settings.ontology_fetch_allow
                 else None
             ),
+            layout=HttpLayoutAnalyser(settings.layout_url) if settings.layout_url else None,
         )
         self.heartbeat = PgJobHeartbeat(settings.database_url)
         self.next_discovery = 0.0
         self.next_reap = 0.0
         self.next_config_check = 0.0
         log.info(
-            "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s, steps=%s",
+            "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s, layout=%s, steps=%s",
             settings.worker_id,
             len(specs),
             models.provider_names,
             ocr.model if ocr else "disabled",
             settings.converter_url or "disabled",
+            settings.layout_url or "disabled",
             "langgraph (checkpointed)" if self.step_checkpointer else "loop",
         )
 
