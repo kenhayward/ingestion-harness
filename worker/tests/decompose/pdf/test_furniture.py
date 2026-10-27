@@ -10,7 +10,7 @@ from ingest_worker.decompose.pdf.layout import parse_docling
 from ingest_worker.decompose.pdf.pieces import Piece, attach_text
 from ingest_worker.decompose.pdf.textlayer import read_text_layer
 from tests.decompose.pdf import docling
-from tests.decompose.pdf.make_pdf import Page, Run, make_pdf
+from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 
 HEIGHT = 842.0
 TOP = 40.0
@@ -338,3 +338,143 @@ def test_leader_lines_labelled_as_headings_are_contents() -> None:
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["1 SUMMARY"]
     assert dropped.contents_pages == (0,)
+
+
+# --- Printed line numbers and page numbers ---------------------------------------------------
+
+BODY = ["Stability data", "were collected", "at each station", "over six months", "and reviewed"]
+
+
+def numbered(lines: list[str], first: int = 2190, x: float = 40, top: float = 200) -> list[Run]:
+    """Each line at x 72 with its printed line number in the left margin."""
+    runs: list[Run] = []
+    for k, line in enumerate(lines):
+        y = top + 14 * k
+        runs += [Run(str(first + k), x, y, size=8), Run(line, 72, y)]
+    return runs
+
+
+def test_margin_line_numbers_are_dropped() -> None:
+    runs = [*numbered(["Table 7: Protocol design", *BODY]), Run("Page 8 of 120", 260, FOOT)]
+    items = [
+        docling.text("caption", 1, bl(30, 188, 400, 204)),
+        docling.text("text", 1, bl(30, 202, 400, 274)),
+    ]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert [[ln.text for ln in p.lines] for p in kept] == [["Table 7: Protocol design"], BODY]
+    assert kept[0].label == "caption"
+    assert dropped.line_numbers == {0: 6}
+    assert dropped.furniture == {0: 1}
+    digit = next(c for c in text.pages[0].chars if c.text == "9")
+    assert ledger.entries(0)[digit.index] == ["dropped:line-number"]
+    flag = dropped_flag(dropped)
+    assert flag is not None
+    assert flag.message == "Dropped as page furniture: 1 line on 1 page; 6 line numbers on 1 page"
+
+
+def test_line_numbers_outside_any_item_are_dropped() -> None:
+    pieces, text, ledger = build([Page(runs=numbered(BODY))], [])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == BODY
+    assert dropped.line_numbers == {0: 5}
+    assert dropped_flag(dropped) is not None
+
+
+def test_numbered_list_beside_body_text_is_kept() -> None:
+    items = [f"{n} Item number {n}" for n in range(1, 7)]
+    runs = [Run(line, 72, 200 + 14 * k) for k, line in enumerate(items)]
+    runs.append(Run("A paragraph under the list", 72, 320))
+    pieces, text, ledger = build([Page(runs=runs)])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == [*items, "A paragraph under the list"]
+    assert dropped.line_numbers == {}
+
+
+def test_numbers_that_do_not_increase_are_kept() -> None:
+    runs = numbered(BODY)
+    runs[2] = Run("2199", 40, 214, size=8)  # 2190, 2199, 2192, ...
+    pieces, text, ledger = build([Page(runs=runs)])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {}
+    assert "2190" in " ".join(texts(kept))
+
+
+def test_too_few_numbered_lines_are_kept() -> None:
+    runs = numbered(BODY[:3]) + [Run(f"Plain line {k}", 72, 300 + 14 * k) for k in range(6)]
+    pieces, text, ledger = build([Page(runs=runs)])
+    _, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {}
+
+
+def test_a_table_first_column_of_numbers_is_kept() -> None:
+    pages, items = _table_page([("1", "Apples"), ("2", "Pears"), ("3", "Plums"), ("4", "Figs")])
+    pages[0].runs += [Run("5", 78, 339), Run("Kiwis", 278, 339)]
+    items[0]["prov"] = docling.table(1, bl(72, 200, 472, 350), [], rows=5, cols=2)["prov"]
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {}
+    assert sum(p.table is not None for p in kept) == 1
+
+
+def test_page_numbers_in_the_band_are_dropped_on_any_page() -> None:
+    for label in ("8", "A3 8", "A3-8", "Page 8 of 120", "- 8 -", "8/120", "iv"):
+        pages = [Page(runs=[Run("Body", 72, 300), Run(label, 280, FOOT)])]
+        pieces, text, ledger = build(pages)
+        kept, dropped, _ = drop_furniture(pieces, text, ledger)
+        assert texts(kept) == ["Body"], label
+        assert dropped.furniture == {0: 1}, label
+
+
+def test_a_number_in_the_body_is_not_a_page_number() -> None:
+    pieces, text, ledger = build([Page(runs=[Run("Body", 72, 300), Run("8", 280, 400)])])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Body", "8"]
+    assert dropped.furniture == {}
+
+
+def test_a_picture_over_a_footer_page_number_is_dropped() -> None:
+    pages = [Page(runs=[Run("Body", 72, 300), Run("A3 8", 280, FOOT)])]
+    items = [
+        docling.text("text", 1, bl(60, 285, 300, 310)),
+        docling.picture(1, bl(270, 785, 330, 806)),
+        docling.text("text", 1, bl(275, 790, 320, 804)),
+    ]
+    pieces, text, ledger = build(pages, items)
+    assert any(p.picture is not None for p in pieces)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Body"]
+    assert all(p.picture is None for p in kept)
+    assert dropped.pictures == {0: 1}
+    flag = dropped_flag(dropped)
+    assert flag is not None
+    assert flag.message == "Dropped as page furniture: 1 line and 1 picture on 1 page"
+
+
+def test_a_picture_holding_the_page_number_is_dropped() -> None:
+    pages = [Page(runs=[Run("Body", 72, 300), Run("A3 8", 280, FOOT)])]
+    items = [docling.picture(1, bl(270, 785, 330, 806))]
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert all(p.picture is None for p in kept)
+    assert dropped.pictures == {0: 1}
+    eight = next(c for c in text.pages[0].chars if c.text == "8")
+    assert ledger.entries(0)[eight.index] == ["dropped:furniture"]
+
+
+def test_a_footer_picture_over_an_image_or_other_text_is_kept() -> None:
+    logo = Page(runs=[Run("Body", 72, 300), Run("8", 280, FOOT)], images=[Img(250, 785, 80, 20)])
+    named = Page(runs=[Run("Body", 72, 300), Run("Acme Labs", 260, FOOT)])
+    for page in (logo, named):
+        pieces, text, ledger = build([page], [docling.picture(1, bl(250, 785, 340, 806))])
+        kept, dropped, _ = drop_furniture(pieces, text, ledger)
+        assert sum(p.picture is not None for p in kept) == 1
+        assert dropped.pictures == {}
+
+
+def test_line_numbers_carry_on_into_the_top_band() -> None:
+    runs = [Run("2189", 40, 70, size=8), Run("Opening line", 72, 70), *numbered(BODY)]
+    pieces, text, ledger = build([Page(runs=runs)])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Opening line", *BODY]
+    assert dropped.line_numbers == {0: 6}

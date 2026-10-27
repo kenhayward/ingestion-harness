@@ -134,7 +134,7 @@ def test_untrusted_bookmarks_fall_back_to_numbering() -> None:
     pieces, ledger, marks = build(runs, items, outline)
     out, flags = assign_headings(pieces, marks, ledger)
     assert levels(out) == [1, 2, 3]
-    assert [f.message for f in flags] == ["Heading level inferred"]
+    assert [f.message for f in flags] == ["Heading levels inferred for 1 heading"]
 
 
 def test_unnumbered_heading_goes_one_below() -> None:
@@ -143,12 +143,21 @@ def test_unnumbered_heading_goes_one_below() -> None:
     pieces, ledger, _ = build(runs, items)
     out, flags = assign_headings(pieces, [], ledger)
     assert levels(out) == [1, 2, None]
-    assert len(flags) == 1
-    assert (flags[0].code, flags[0].at, flags[0].message) == (
-        "structure_inferred",
-        out[1].ref,
-        "Heading level inferred",
-    )
+    assert [(f.code, f.severity, f.at, f.message) for f in flags] == [
+        ("structure_inferred", "info", None, "Heading levels inferred for 1 heading")
+    ]
+
+
+def test_inferred_levels_are_counted_in_one_flag() -> None:
+    runs = [Run("Scope", 72, 100), Run("1 Method", 72, 200), Run("Conditions", 72, 300)]
+    runs.append(Run("Storage", 72, 400))
+    items = [head(1, 100), head(1, 200), head(1, 300), head(1, 400)]
+    pieces, ledger, _ = build(runs, items)
+    out, flags = assign_headings(pieces, [], ledger)
+    assert levels(out) == [1, 1, 2, 2]
+    assert [(f.severity, f.at, f.message) for f in flags] == [
+        ("info", None, "Heading levels inferred for 3 headings")
+    ]
 
 
 def test_first_unnumbered_heading_is_level_one_and_title_stays_text() -> None:

@@ -3,7 +3,8 @@ inference (spec section 4.4).
 
 Bookmarks are the author's own outline, so they win when at least half of them find their line
 on the page. Without them, Docling's section headers are the headings and a typed number
-("2.1 Scope") gives the level; an unnumbered one goes one below the previous numbered heading.
+("2.1 Scope") gives the level; an unnumbered one goes one below the previous numbered heading,
+and the unnumbered ones are counted in one `info` flag.
 The typed number of a heading is dropped from the ledger (the section numbering is rebuilt from
 the tree), except where it has more parts than the bookmark's level and the bookmark's title
 does not repeat it (the number is then text).
@@ -226,7 +227,10 @@ def _bounds(lines: list[Line]) -> BBox:
 
 
 def _number_headings(pieces: list[Piece], ledger: Ledger) -> list[Flag]:
-    flags: list[Flag] = []
+    """Levels from typed numbers, else one below the numbered heading before. The inferred ones
+    are counted in one `info` flag, not flagged one by one: on a real document that is nearly
+    every heading, and a flag each buried the flags that matter (2026-10-27)."""
+    inferred = 0
     previous: int | None = None
     for piece in pieces:
         if piece.label != "section_header" or not piece.lines:
@@ -237,15 +241,18 @@ def _number_headings(pieces: list[Piece], ledger: Ledger) -> list[Flag]:
             _drop_number(piece, ledger, bookmark=None)
             continue
         piece.heading_level = 1 if previous is None else previous + 1
-        flags.append(
-            Flag(
-                code="structure_inferred",
-                severity="warning",
-                at=piece.ref,
-                message="Heading level inferred",
-            )
+        inferred += 1
+    if not inferred:
+        return []
+    noun = "heading" if inferred == 1 else "headings"
+    return [
+        Flag(
+            code="structure_inferred",
+            severity="info",
+            at=None,
+            message=f"Heading levels inferred for {inferred} {noun}",
         )
-    return flags
+    ]
 
 
 def _number_text(text: str) -> str | None:

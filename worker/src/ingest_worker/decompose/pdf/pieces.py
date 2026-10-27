@@ -29,6 +29,7 @@ from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 
 DropReason = Literal[
     "furniture",
+    "line-number",
     "contents",
     "heading-number",
     "list-marker",
