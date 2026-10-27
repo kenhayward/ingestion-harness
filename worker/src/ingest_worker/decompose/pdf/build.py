@@ -20,8 +20,9 @@ drawing, flagged. A formula is cropped to an image-only equation, its chars owne
 A footnote whose leading marker is a superscript run on its page becomes a note, owning its
 chars, and that run a note reference; both markers are dropped as `note-marker`, since the
 reference's token stands for them in the text form. A footnote with no marker found stays a
-paragraph, flagged. Link annotations wrap the text under them in paragraphs, list items and
-notes; unmapped symbols are flagged at the block that owns them.
+paragraph, flagged, as does one that more than one run could be the marker of. A power
+("m²", "10²") is never a marker. Link annotations wrap the text under them in paragraphs, list
+items and notes; unmapped symbols are flagged at the block that owns them.
 """
 
 from __future__ import annotations
@@ -86,7 +87,8 @@ _MARKED = frozenset({"text", "paragraph", "list_item"})
 _FOOTNOTE_MARKER = re.compile(r"^(\d{1,2}|[a-z]|[*†‡§])\s")
 #: A letter marker also needs a capital or a digit after it: "a total of 12" is no footnote.
 _LETTER_NOTE = re.compile(r"^[a-z]\s+[A-Z\d]")
-#: A `2` or `3` superscript right after one of these units is a power, not a footnote marker.
+#: A `2` or `3` superscript right after one of these units ("m²", "kg/m²") is a power, not a
+#: footnote marker.
 _UNITS = frozenset(
     {"m", "cm", "mm", "km", "µm", "μm", "nm", "s", "ms", "g", "kg", "mg", "L", "mL", "ft", "in"}
 )
@@ -103,6 +105,7 @@ _MM_PER_POINT = 25.4 / 72
 
 _ORPHAN = "Text the layout analysis missed"
 _NO_MARKER = "Footnote with no marker found"
+_AMBIGUOUS = "Footnote marker ambiguous"
 
 #: The scope of the blocks before the first heading, as in the Word reader (`body.py`): `~` is
 #: never in a title's slug, so no section can have this id.
@@ -306,9 +309,20 @@ def _is_unit(word: str) -> bool:
     return match is not None and match.group(1) in _UNITS
 
 
+def _is_power(before: str, text: str) -> bool:
+    """Whether a superscript run `text` right after the word `before` (no space between) is
+    a power, never a footnote marker: after a digit, a closing bracket or a lone letter ("10²",
+    "(a+b)²", "R²"), or a `2` or `3` after a unit, the last of a compound one ("kg/m²")."""
+    if not before:
+        return False
+    if before[-1].isdigit() or before[-1] in ")]" or (len(before) == 1 and before.isalpha()):
+        return True
+    return text in _POWERS and _is_unit(before.rsplit("/", 1)[-1])
+
+
 def _superscript_runs(piece: Piece) -> list[tuple[str, tuple[Char, ...]]]:
     """The text and chars of each run of superscript chars in the piece, in reading order;
-    a power right after a unit ("m²") left out."""
+    a power (`_is_power`) left out."""
     found: list[tuple[str, tuple[Char, ...]]] = []
     for line in piece.lines:
         current: list[Char] = []
@@ -322,7 +336,7 @@ def _superscript_runs(piece: Piece) -> list[tuple[str, tuple[Char, ...]]]:
                 continue
             if current:
                 text = "".join(x.text for x in current)
-                if not (text in _POWERS and _is_unit(before)):
+                if not _is_power(before, text):
                     found.append((text, tuple(current)))
                 current = []
             word = "" if c is None or c.text.isspace() else word + c.text
@@ -369,7 +383,10 @@ class _Builder:
         self.equations: list[Equation] = []
         self.own_page: dict[str, int] = {}  # picture or formula block id -> its page
         self.markers: dict[str, _MarkerRun] = {}  # footnote ref -> the marker paired with it
+        self.ambiguous: set[str] = set()  # footnotes more than one run could be the marker of
         self.notes: list[tuple[str, list[Line]]] = []  # each note's id and lines
+        self.made: dict[str, tuple[str, Piece]] = {}  # footnote ref -> its note's id, its piece
+        self.note_count = 0
         # the first and last piece with text on each page, for joins across a page break
         self.firsts: dict[int, str] = {}
         self.lasts: dict[int, str] = {}
@@ -590,6 +607,7 @@ class _Builder:
             self.pages[piece.page],
         )
         self.took_before(consumed)
+        self.unpair(consumed)
         self.consumed |= consumed
         self.scope.blocks.append(table)
         self.flags.extend(flags)
@@ -644,6 +662,7 @@ class _Builder:
         else:
             assert caption.ref is not None
             self.took_before({caption.ref})
+            self.unpair({caption.ref})
             self.consumed.add(caption.ref)
             self.owner[caption.ref] = block_id
             inlines, numbered = caption_inlines(caption, self.ledger)
@@ -684,9 +703,11 @@ class _Builder:
     def match_footnotes(self) -> None:
         """Pairs each footnote that starts with a marker with a superscript run of that text
         on its page, in a paragraph or list item (spec 4.8). A page's footnotes take markers in
-        increasing reading order: each takes the last unpaired run before it and after the
-        marker the footnote before it took. Only the pairing is recorded here: the note and
-        its reference are made when the footnote is placed (`footnote`)."""
+        increasing reading order: each looks at the unpaired runs before it and after the
+        marker the footnote before it took. It takes the one run of its text there; when more
+        than one could be its marker, it takes none and is left `ambiguous` rather than paired
+        by a guess. Only the pairing is recorded here: the note and its reference are made
+        when the footnote is placed (`footnote`)."""
         runs: dict[int, list[_MarkerRun]] = defaultdict(list)
         for i, piece in enumerate(self.pieces):
             if (
@@ -711,7 +732,10 @@ class _Builder:
             ]
             if not candidates:
                 continue
-            hit = candidates[-1]
+            if len(candidates) > 1:
+                self.ambiguous.add(piece.ref)
+                continue
+            [hit] = candidates
             runs[piece.page].remove(hit)
             last[piece.page] = hit.position
             self.markers[piece.ref] = hit
@@ -719,21 +743,15 @@ class _Builder:
     def footnote(self, piece: Piece) -> None:
         """A footnote paired with a marker is a note, without its leading marker; the marker
         becomes its reference. Both markers are dropped as `note-marker`. A footnote with no
-        marker (or whose marker's piece a table or figure took as its caption) stays a
-        paragraph where it is, flagged. Neither ends the flow: a paragraph can continue on the
+        marker, an ambiguous one, or one whose piece a table or figure took as its caption
+        (before or after this, `unpair`) stays a paragraph where it is, flagged. Neither ends the flow: a paragraph can continue on the
         next page after the footnotes of this one."""
         marker = self.markers.get(piece.ref)
         if marker is None or marker.ref in self.consumed:
-            para = _Para(self.scope.take("p"), [piece])
-            self.scope.blocks.append(para)
-            self.placed(piece, para.id)
-            self.flags.append(
-                Flag(
-                    code="structure_inferred", severity="warning", at=piece.ref, message=_NO_MARKER
-                )
-            )
+            self.unpaired(piece)
             return
-        note_id = f"fn-{len(self.notes) + 1}"
+        self.note_count += 1
+        note_id = f"fn-{self.note_count}"
         for c in marker.chars:
             self.anchors.notes[(piece.page, c.index)] = note_id
             self.ledger.drop(piece.page, c.index, "note-marker")
@@ -747,7 +765,44 @@ class _Builder:
         self.notes.append(
             (note_id, [*lines[:index], *_without_lead(first, k), *lines[index + 1 :]])
         )
+        self.made[piece.ref] = (note_id, piece)
         self.owner[piece.ref] = note_id
+
+    def unpaired(self, piece: Piece, *, place: bool = True) -> None:
+        """A footnote with no marker (or an ambiguous one) stays a paragraph, flagged."""
+        para = _Para(self.scope.take("p"), [piece])
+        self.scope.blocks.append(para)
+        if place:
+            self.placed(piece, para.id)
+        else:
+            self.owner[piece.ref] = para.id
+        message = _AMBIGUOUS if piece.ref in self.ambiguous else _NO_MARKER
+        self.flags.append(
+            Flag(code="structure_inferred", severity="warning", at=piece.ref, message=message)
+        )
+
+    def unpair(self, consumed: set[str]) -> None:
+        """A note whose marker is in a piece a table or figure has just taken as its caption,
+        after the note was made, is undone: the marker is the caption's text again (its chars
+        owned by the caption's piece, unless the table took them already), and the footnote
+        is a paragraph here, flagged as one with no marker found."""
+        for ref, (note_id, piece) in list(self.made.items()):
+            marker = self.markers[ref]
+            if marker.ref not in consumed:
+                continue
+            del self.made[ref]
+            self.notes = [n for n in self.notes if n[0] != note_id]
+            for c in marker.chars:
+                self.anchors.notes.pop((piece.page, c.index), None)
+                if self.ledger.entries(piece.page).get(c.index) == [DROPPED_PREFIX + "note-marker"]:
+                    self.ledger.reassign(piece.page, c.index, marker.ref)
+            for line in piece.lines:
+                for c in line.chars:
+                    if self.ledger.entries(line.page).get(c.index) == [
+                        DROPPED_PREFIX + "note-marker"
+                    ]:
+                        self.ledger.reassign(line.page, c.index, piece.ref)
+            self.unpaired(piece, place=False)
 
     # -- unmapped symbols --
 

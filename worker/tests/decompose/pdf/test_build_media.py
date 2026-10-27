@@ -7,6 +7,7 @@ import io
 from dataclasses import replace
 from typing import Any
 
+import pytest
 from PIL import Image as PILImage
 
 from ingest_worker.decompose.forms import text_form
@@ -27,6 +28,7 @@ from ingest_worker.decompose.model import (
 )
 from ingest_worker.decompose.pdf.build import Provenance, build_document, pdf_properties
 from ingest_worker.decompose.pdf.crop import PdfiumCropper
+from ingest_worker.decompose.pdf.fidelity import check_pdf
 from ingest_worker.decompose.pdf.layout import parse_docling
 from ingest_worker.decompose.pdf.outline import assign_headings
 from ingest_worker.decompose.pdf.pieces import Ledger, Piece, attach_text
@@ -370,6 +372,93 @@ def test_a_footnote_takes_its_real_marker_not_a_unit_power() -> None:
     assert NoteRef(note_id="fn-1") in first.inlines
     assert second.inlines[1] == Text(text="2", marks=SUP)
     assert [n.id for n in doc.notes] == ["fn-1"]
+
+
+def right_edge(run: Run) -> float:
+    """Where `run`'s last char ends, read back from a page holding it alone."""
+    return max(c.x1 for c in read_text_layer(make_pdf([Page(runs=[run])])).pages[0].chars)
+
+
+def powered(before: str, y: float, after: str = "on site.") -> list[Run]:
+    """`before` with a superscript "2" right after it (no gap), then `after`."""
+    base = Run(before, 72, y)
+    x = right_edge(base)
+    return [base, Run("2", x, y, size=7, rise=3), Run(after, x + 6, y)]
+
+
+def test_a_power_after_a_compound_unit_is_not_taken_from_the_real_marker() -> None:
+    runs = [
+        *powered("The dose", 100, "was given."),
+        *powered("A BMI over 30 kg/m", 130),
+        Run("2 Measured by laser.", 72, 800, size=9),
+    ]
+    items = [item("text", 1, 100), item("text", 1, 130), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, prov = document(pieces, text, ledger, flags)
+    first, second = doc.blocks
+    assert isinstance(first, Paragraph) and isinstance(second, Paragraph)
+    assert NoteRef(note_id="fn-1") in first.inlines
+    assert Text(text="2", marks=SUP) in second.inlines
+    assert [n.id for n in doc.notes] == ["fn-1"]
+    check_pdf(doc, ledger, text, prov)
+
+
+@pytest.mark.parametrize("before", ["A gain of 10", "Fit with R", "Then x", "Taken as (a+b)"])
+def test_a_superscript_after_a_digit_a_bracket_or_a_letter_is_no_marker(before: str) -> None:
+    runs = [*powered(before, 100), Run("2 Measured by laser.", 72, 800, size=9)]
+    items = [item("text", 1, 100), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, prov = document(pieces, text, ledger, flags)
+    assert doc.notes == []
+    assert Text(text="2", marks=SUP) in doc.blocks[0].inlines  # type: ignore[union-attr]
+    assert [f.message for f in doc.report] == ["Footnote with no marker found"]
+    check_pdf(doc, ledger, text, prov)
+
+
+def test_two_runs_matching_a_footnote_leave_it_unpaired_and_flagged() -> None:
+    runs = [
+        *powered("The dose", 100, "was given."),
+        *powered("The time", 130, "was noted."),
+        Run("2 Measured by laser.", 72, 800, size=9),
+    ]
+    items = [item("text", 1, 100), item("text", 1, 130), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, prov = document(pieces, text, ledger, flags)
+    assert doc.notes == []
+    assert [plain(b.inlines) for b in doc.blocks] == [  # type: ignore[union-attr]
+        "The dose2 was given.",
+        "The time2 was noted.",
+        "2 Measured by laser.",
+    ]
+    assert [(f.code, f.at, f.message) for f in doc.report] == [
+        ("structure_inferred", "s~lead#p-3", "Footnote marker ambiguous")
+    ]
+    assert "note-marker" not in str([ledger.entries(0)])
+    check_pdf(doc, ledger, text, prov)
+
+
+def test_a_marker_in_a_caption_taken_after_its_footnote_stays_in_the_caption() -> None:
+    caption = [*powered("Figure 2: Dose response", 100, "")][:2]
+    runs = [
+        *caption,
+        Run("Axis", 120, 250),
+        Run("2 See the protocol.", 72, 800, size=9),
+    ]
+    page = Page(runs=runs, images=[Img(100, 200, 300, 180)])
+    # Docling's reading order puts the footnote before the picture the caption is above
+    items = [item("text", 1, 100), item("footnote", 1, 800), picture((90, 120, 410, 390))]
+    pieces, text, ledger, flags = build([page], items)
+    doc, _, prov = document(pieces, text, ledger, flags)
+    footnote, figure = doc.blocks
+    assert isinstance(figure, Figure)
+    assert figure.caption == [Text(text="Dose response"), Text(text="2", marks=SUP)]
+    assert doc.notes == []
+    assert footnote == Paragraph(id="s~lead#p-2", inlines=[Text(text="2 See the protocol.")])
+    assert [f.message for f in doc.report if f.code == "structure_inferred"] == [
+        "Footnote with no marker found"
+    ]
+    assert "note-marker" not in str([ledger.entries(0)])
+    check_pdf(doc, ledger, text, prov)
 
 
 def test_a_carried_over_line_starting_with_an_article_is_no_letter_marker() -> None:
