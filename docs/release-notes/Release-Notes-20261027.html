@@ -189,6 +189,10 @@
             <span>— printed numbers dropped as furniture; one line for inferred headings</span>
           </li>
           <li>
+            <a href="#pdf-control-codes">Control codes in a PDF's text</a>
+            <span>— left out, so the sink no longer refuses the document</span>
+          </li>
+          <li>
             <a href="#sink-administration">Administer a system from its target</a>
             <span>— its instances, client tokens and audit log, from Published outputs</span>
           </li>
@@ -222,8 +226,9 @@
             A PDF's decomposer version is the decomposer's version times 1000, plus the PDF
             reader's, so a newer PDF reader changes the version of PDFs without touching Word files,
             whose version stays 1. With scanned pages the reader is version 2, and with printed line
-            and page numbers dropped it is version 3, so a PDF's decomposer version is now 1003 (it
-            was 1001 earlier today, then 1002): a PDF run again is an ordinary update.
+            and page numbers dropped it is version 3. With control codes left out it is version 4,
+            so a PDF's decomposer version is now 1004 (it was 1001 earlier today, then 1002 and
+            1003): a PDF run again is an ordinary update.
           </li>
           <li>
             A PDF with a scanned page needs CT Studio's OCR model (Administration &gt; Models, or
@@ -355,6 +360,19 @@
         level inferred" warning. On a real document that is nearly every heading, and the warnings
         hid the flags that need a reviewer's eye. They are now one information line at the top of
         the report: "Heading levels inferred for 34 headings".
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-control-codes">Control codes in a PDF's text</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PRNUM">#PRNUM</a>
+      </p>
+      <p>
+        A PDF whose font has no Unicode mapping can give a glyph's raw code as its text, and that
+        can be a control code such as U+0002. The PDF reader kept it, so the document decomposed,
+        but the sink refused it on delivery: "… holds U+0002, which XML 1.0 forbids". Such a glyph
+        is now left out like any glyph with no text, and counted in the report's line for its page:
+        "1 glyph on page 12 had no text and was left out".
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
