@@ -95,6 +95,14 @@ export const ItemSchema = z
      */
     gone: z.boolean(),
     /**
+     * The item's register entry is a create the target may have taken: it has no document, and
+     * failed with an error that was not a refusal before acceptance. The worker sends it again
+     * only under its stored key, and a sink that refuses that key for good (one whose earlier
+     * delivery stopped part-way) leaves it stuck, force or not. Only detach frees it: the next
+     * run then creates under a new key, so check the target for a document it left first.
+     */
+    unconfirmed: z.boolean(),
+    /**
      * Whether *Load as a new document* applies, exactly as the route decides: the entry is gone,
      * or is still the detached tombstone (no later create replaced it), and the row is not
      * `superseded`. A reload whose rerun failed after its detach can so be tried again.

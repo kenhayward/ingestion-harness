@@ -135,6 +135,7 @@ export function conversionsContract(
         resolution: null,
         unversioned: false,
         gone: false,
+        unconfirmed: false,
         reloadable: false,
         rerunIn: null,
         rerunAt: null,
@@ -338,6 +339,7 @@ export function conversionsContract(
         resolution: null,
         unversioned: false,
         gone: false,
+        unconfirmed: false,
         reloadable: false,
         rerunIn: null,
         rerunAt: null,
@@ -435,6 +437,7 @@ export function conversionsContract(
           resolution: null,
           unversioned: false,
           gone: false,
+          unconfirmed: false,
           reloadable: false,
           rerunIn: null,
           rerunAt: null,
@@ -824,6 +827,82 @@ export function conversionsContract(
           detail: () => 'x',
         }),
       ).toEqual({ ok: false, reason: 'not_refused' });
+    });
+
+    it('detaches a create the target may have taken, so the next run creates under a new key', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'failed',
+        persistentId: null,
+        lastReceipt: null,
+        lastError: bridgeError('content_rejected', 'an earlier delivery stopped part-way'),
+      });
+      await facts.settleItem(a.id, 'failed', entryId);
+      expect(ItemSchema.parse(await repo.getItem(a.id))).toMatchObject({
+        unconfirmed: true,
+        unversioned: false,
+        gone: false,
+        resolution: null,
+      });
+      expect((await repo.listItems(batch.id))[0]?.unconfirmed).toBe(true);
+
+      const detached = await repo.detachRegisterEntry({
+        itemId: a.id,
+        entryId,
+        targetIds: ['manuals'],
+        by: ADA,
+        detail: () => 'detached',
+      });
+
+      if (!detached.ok) throw new Error(detached.reason);
+      expect(detached.entry.state).toBe('detached');
+      expect(ItemSchema.parse(detached.item)).toMatchObject({
+        resolution: 'detached',
+        unconfirmed: false,
+      });
+      expect(await facts.actions(entryId)).toMatchObject([
+        { action: 'detach', details: { persistentId: null, sourceKey: a.sourceKey } },
+      ]);
+    });
+
+    it('a create refused before acceptance, with a document, or with no error, is not unconfirmed', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const unconfirmed = async () => (await repo.getItem(a.id))?.unconfirmed;
+      expect(await unconfirmed()).toBe(false); // no entry
+      const partWay = bridgeError('content_rejected', 'stopped part-way');
+      for (const seed of [
+        // Refused outright: the worker's next run creates under a new key by itself.
+        {
+          state: 'failed',
+          persistentId: null,
+          lastError: bridgeError('content_rejected', 'no', { refusedBeforeAcceptance: true }),
+        },
+        { state: 'failed', persistentId: null, lastError: null },
+        { state: 'pending', persistentId: null, lastError: partWay },
+        { state: 'failed', persistentId: 'doc-1', lastError: partWay },
+      ] as const) {
+        const other = await facts.entry({
+          ...changedSeed(a.sourceKey, batch.id),
+          lastReceipt: null,
+          ...seed,
+        });
+        await facts.settleItem(a.id, 'failed', other);
+        expect(await unconfirmed(), JSON.stringify(seed)).toBe(false);
+        if (seed.state !== 'pending') {
+          expect(
+            await repo.detachRegisterEntry({
+              itemId: a.id,
+              entryId: other,
+              targetIds: ['manuals'],
+              by: ADA,
+              detail: () => 'x',
+            }),
+            JSON.stringify(seed),
+          ).toMatchObject({ ok: seed.persistentId !== null });
+        }
+        await facts.dropEntry(other);
+      }
     });
 
     it('an entry the target refused with its missing-document marker is gone', async () => {

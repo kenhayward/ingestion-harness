@@ -61,7 +61,7 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     entryId: entry.id,
     item: (): Omit<
       Item,
-      'resolution' | 'unversioned' | 'gone' | 'reloadable' | 'rerunIn' | 'rerunAt'
+      'resolution' | 'unversioned' | 'gone' | 'unconfirmed' | 'reloadable' | 'rerunIn' | 'rerunAt'
     > => ({
       ...repo.conversionItems.get(itemId)!,
     }),
