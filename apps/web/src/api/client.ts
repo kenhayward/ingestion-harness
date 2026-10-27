@@ -136,6 +136,15 @@ import type {
   VersionLabel,
   VersionLabelBody,
 } from '@ih/shared';
+import type {
+  AdminAuditPage,
+  AdminClient,
+  AdminInstance,
+  AdminIssuedClient,
+  ClientAccess,
+  ClientExpiry,
+  ClientInstances,
+} from '@ih/bridge-contract';
 import { openConnectionsLink } from '../access/connections.js';
 import { loadTheme, themeAttr } from '../theme.js';
 
@@ -520,6 +529,32 @@ export interface Api {
     parentId: string | null;
     cursor: string | null;
   }): Promise<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>;
+  /**
+   * Sink administration (contract version 3; admins): a sink's instances, clients and audit log,
+   * relayed by the delivery bridge. Rejects with an ApiError whose body's `code` is the sink's
+   * refusal (`locked`, `name_conflict`, `not_found`, …) or `not_offered`.
+   */
+  listSinkInstances(sinkId: string): Promise<AdminInstance[]>;
+  addSinkInstance(
+    sinkId: string,
+    body: { id: string; label: string; fields: Record<string, string> },
+  ): Promise<AdminInstance>;
+  renameSinkInstance(sinkId: string, id: string, label: string): Promise<AdminInstance>;
+  removeSinkInstance(sinkId: string, id: string): Promise<void>;
+  listSinkClients(sinkId: string): Promise<AdminClient[]>;
+  /** The answer holds the client's token: the only time it is sent. Never keep it. */
+  issueSinkClient(
+    sinkId: string,
+    body: {
+      name: string;
+      instances: ClientInstances;
+      access: ClientAccess;
+      expiresInDays: ClientExpiry;
+    },
+  ): Promise<AdminIssuedClient>;
+  revokeSinkClient(sinkId: string, id: string): Promise<AdminClient>;
+  /** One page of the audit log, newest first; `cursor` from the page before. */
+  listSinkAudit(sinkId: string, cursor: string | null): Promise<AdminAuditPage>;
   deletePublishTarget(id: string): Promise<void>;
   /** Through the delivery bridge: writes, reads back and deletes a small file. */
   testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
@@ -1172,6 +1207,9 @@ function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
 }
 
 export function createHttpApi(base = '/api'): Api {
+  /** Where a sink's administration calls go. */
+  const sinkAdmin = (sinkId: string) =>
+    `${base}/publish-targets/sinks/${encodeURIComponent(sinkId)}/admin`;
   return {
     me: async () => {
       const res = await apiFetch(`${base}/auth/me`);
@@ -1242,6 +1280,31 @@ export function createHttpApi(base = '/api'): Api {
         `${base}/publish-targets/browse`,
         req,
       ),
+    listSinkInstances: (sinkId) =>
+      apiFetch(`${sinkAdmin(sinkId)}/instances`)
+        .then(json<{ instances: AdminInstance[] }>)
+        .then((r) => r.instances),
+    addSinkInstance: (sinkId, body) => post<AdminInstance>(`${sinkAdmin(sinkId)}/instances`, body),
+    renameSinkInstance: (sinkId, id, label) =>
+      post<AdminInstance>(`${sinkAdmin(sinkId)}/instances/${encodeURIComponent(id)}/rename`, {
+        label,
+      }),
+    removeSinkInstance: (sinkId, id) =>
+      post<unknown>(`${sinkAdmin(sinkId)}/instances/${encodeURIComponent(id)}/remove`, {}).then(
+        () => undefined,
+      ),
+    listSinkClients: (sinkId) =>
+      apiFetch(`${sinkAdmin(sinkId)}/clients`)
+        .then(json<{ clients: AdminClient[] }>)
+        .then((r) => r.clients),
+    issueSinkClient: (sinkId, body) =>
+      post<AdminIssuedClient>(`${sinkAdmin(sinkId)}/clients`, body),
+    revokeSinkClient: (sinkId, id) =>
+      post<AdminClient>(`${sinkAdmin(sinkId)}/clients/${encodeURIComponent(id)}/revoke`, {}),
+    listSinkAudit: (sinkId, cursor) =>
+      apiFetch(
+        `${sinkAdmin(sinkId)}/audit${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+      ).then(json<AdminAuditPage>),
     listSinks: () =>
       apiFetch(`${base}/publish-targets/sinks`)
         .then(json<{ sinks: SinkInfo[] }>)

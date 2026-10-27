@@ -1,4 +1,5 @@
 import {
+  adminRoute,
   BridgeErrorSchema,
   ConnectionsDeletedSchema,
   ConnectionSummarySchema,
@@ -10,6 +11,8 @@ import {
   SinkViewSchema,
   TargetTestResultSchema,
   TargetViewSchema,
+  type AdminCallName,
+  type AdminRoute,
   type BridgeError,
   type ConnectionSummary,
   type DeliveryView,
@@ -37,6 +40,17 @@ export const ReadConnectionSummary = ConnectionSummarySchema.extend({
 });
 /** A summary as a bridge may send it (what `ReadConnectionSummary` reads). */
 export type SentConnectionSummary = z.input<typeof ReadConnectionSummary>;
+
+/** One administration call relayed to a sink (the producer API's `SinkAdminCall`). */
+export interface AdminCall<C extends AdminCallName = AdminCallName> {
+  call: C;
+  id: string | null;
+  request: z.input<Extract<AdminRoute, { name: C }>['request']>;
+}
+/** What a sink answers an administration call. */
+export type AdminAnswer<C extends AdminCallName> = z.infer<
+  Extract<AdminRoute, { name: C }>['response']
+>;
 
 /** A shared connection written once, by the move of a target's keys to the bridge. */
 export interface SharedConnection {
@@ -76,6 +90,11 @@ export interface BridgeApi {
   /** Null when there is no such object; throws (404 `target_missing`) when the bridge lacks the target. */
   readObject(targetId: string, bucket: string, key: string): Promise<Buffer | null>;
   getDelivery(id: string): Promise<DeliveryView | null>;
+  /**
+   * One administration call (contract version 3) relayed by the bridge to a sink, its answer
+   * checked against the call's schema. Refusals keep the sink's status and code.
+   */
+  sinkAdmin<C extends AdminCallName>(sinkId: string, call: AdminCall<C>): Promise<AdminAnswer<C>>;
 }
 
 /** The bridge answered with an error (or could not be reached: `status` 0). */
@@ -291,5 +310,18 @@ export class HttpBridgeApi implements BridgeApi {
     if (res.status === 404) return null;
     await this.expect(res, [200], `delivery ${id}`);
     return DeliveryViewSchema.parse(await res.json());
+  }
+
+  async sinkAdmin<C extends AdminCallName>(
+    sinkId: string,
+    call: AdminCall<C>,
+  ): Promise<AdminAnswer<C>> {
+    const route = adminRoute(call.call);
+    const res = await this.expect(
+      await this.call('POST', `/v1/sinks/${encodeURIComponent(sinkId)}/admin`, call),
+      [route.status],
+      `the administration call ${call.call} to ${sinkId}`,
+    );
+    return route.response.parse(await res.json()) as AdminAnswer<C>;
   }
 }

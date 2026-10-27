@@ -1,4 +1,6 @@
 import {
+  adminCallPath,
+  adminRoute,
   bridgeError,
   BridgeErrorSchema,
   ERROR_CODES,
@@ -8,6 +10,7 @@ import {
   SinkDeliverResultSchema,
   SinkDescribeSchema,
   SinkJobStatusSchema,
+  type AdminCallName,
   type BridgeError,
   type BrowseRequest,
   type BrowseResult,
@@ -102,6 +105,17 @@ export class HttpSink implements SinkPort {
       undefined,
       SinkJobStatusSchema,
       this.timeouts.long,
+    );
+  }
+
+  admin(call: AdminCallName, id: string | null, request: unknown): Promise<unknown> {
+    const route = adminRoute(call);
+    return this.call(
+      'POST',
+      adminCallPath(call, id),
+      request,
+      route.response as z.ZodType<unknown>,
+      this.timeouts.short,
     );
   }
 
