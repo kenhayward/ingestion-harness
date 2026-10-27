@@ -2,8 +2,9 @@
 
 **Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
 implemented (2026-10-27)**; results in §13. **5b implemented (2026-10-27)**: PDFs in CT Studio,
-with review, in §14; the owner's run against the real sink is pending. **5c designed
-(2026-10-27)**: scanned pages, in §15.
+with review, in §14; the owner's run against the real sink is pending. **5c implemented
+(2026-10-27)**: scanned pages, in §15; the rasterised twins' scores and the owner's run are
+pending.
 
 - The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
   `docker compose -f deploy/docker-compose.yml up -d --build layout`.
@@ -370,7 +371,7 @@ before release.
 | 5a | **Born-digital PDFs:** the layout service, the text layer, the mapping, the fidelity checks, a dev tool, the twin scorer | Twins and the owner's real PDFs decompose with no text-accounting failure, and the twin scores are reported to the owner |
 | — | **The owner's decision** on review (§8) | — |
 | 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (§14). **Implemented (2026-10-27)**; the owner's run is pending | A PDF goes through to the fake sink, and to the real sink in the owner's run |
-| 5c | **Scanned pages** through the OCR model (§15) | A scanned sample decomposes with every scanned page flagged |
+| 5c | **Scanned pages** through the OCR model (§15). **Implemented (2026-10-27)**; the scores and the owner's run are pending | A scanned sample decomposes with every scanned page flagged |
 
 ## 12. Left to the builder
 

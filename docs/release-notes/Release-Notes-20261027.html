@@ -161,8 +161,9 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Tuesday 27 October 2026: PDFs read for the first time, on the command line, then converted
-        on the Conversion tab, each reviewed before it is delivered; and a contract for
-        administering a sink from CT Studio. PRs #338 to #342.
+        on the Conversion tab, each reviewed before it is delivered, scanned pages included; and a
+        contract for administering a sink from CT Studio. PRs #338 to #342, and the scanned pages'
+        PR.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -178,6 +179,10 @@
             <span
               >— a PDF is held until someone approves it; a Word file goes straight through</span
             >
+          </li>
+          <li>
+            <a href="#pdf-reader-5c">Scanned pages</a>
+            <span>— read by CT Studio's OCR model, beside a PDF's born-digital pages</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -206,9 +211,15 @@
             record a held PDF and its review. It runs on its own when the API starts.
           </li>
           <li>
-            A PDF's decomposer version is 1001 (the decomposer's version times 1000, plus the PDF
-            reader's), so a newer PDF reader changes the version of PDFs without touching Word
-            files, whose version stays 1.
+            A PDF's decomposer version is the decomposer's version times 1000, plus the PDF
+            reader's, so a newer PDF reader changes the version of PDFs without touching Word files,
+            whose version stays 1. With scanned pages the reader is version 2, so a PDF's decomposer
+            version is now 1002 (it was 1001 earlier today): a PDF run again is an ordinary update.
+          </li>
+          <li>
+            A PDF with a scanned page needs CT Studio's OCR model (Administration &gt; Models, or
+            <code>ocr.model</code>). Without one it fails at once: "page N is scanned and this CT
+            Studio has no OCR model". Born-digital PDFs don't need it.
           </li>
           <li>
             The delivery contract package is now <code>0.9.0</code>, contract version 3. A sink may
@@ -273,6 +284,35 @@
         "the target's document changed after this was reviewed; run it again". A rejected PDF is
         left out of Re-run failed; Force-load on its line reads it again and holds it for review
         again.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-reader-5c">Scanned pages</h3>
+      <p>
+        A PDF's scanned pages are now read too, so a scan, or a PDF with some scanned pages, can be
+        converted on the Conversion tab. Each scanned page is sent to the OCR model CT Studio is
+        already set up with, the same one, with the same settings, that extraction uses. Its
+        headings, paragraphs, lists, tables and equations become part of the document, between the
+        pages around it. Its pictures are cropped from the page, with the model's description of
+        each.
+      </p>
+      <p>
+        A scanned page has no text of its own to check against, so it is flagged instead: every
+        scanned page says it was read by the OCR model, and its tables are flagged too. The flags
+        show on the batch line and on the review page, beside the page image. Like every PDF, a
+        scanned one is held for review before anything is delivered.
+      </p>
+      <p>
+        A page counts as scanned when it has no visible text and is mostly image, or when one image
+        covers at least 80% of it and it has no more than 20 visible words. The second rule catches
+        a stamp or a page number printed over a scan; those words are left out and counted in the
+        page's flag, and the OCR model reads them from the image anyway. A full-page figure with a
+        short caption is read the same way, and flagged.
+      </p>
+      <p>
+        Each page's transcription is kept, so running the same PDF again reads the same text, and an
+        extraction and a conversion of the same PDF share them. Scores for the OCR route, on the
+        Word/PDF twins rendered as images, follow once they have been run against the OCR model.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
