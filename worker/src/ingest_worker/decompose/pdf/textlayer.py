@@ -26,6 +26,10 @@ _ITALIC = re.compile(r"italic|oblique", re.IGNORECASE)
 _INVISIBLE_RENDER_MODE = 3
 #: A page with no visible text and at least this fraction covered by images is a scan.
 _SCANNED_IMAGE_AREA = 0.5
+#: So is a page one image covers this fraction of, with at most `_SCAN_MAX_WORDS` visible words
+#: (a stamp or a page number over the scan; spec 15.2).
+_SCAN_COVER = 0.8
+_SCAN_MAX_WORDS = 20
 _FONT_NAME_BYTES = 256
 
 #: x0, y0, x1, y1 in points on the page as displayed, top-left origin (as `layout.BBox`).
@@ -64,12 +68,46 @@ class PageText:
     links: tuple[tuple[Box, str], ...] = ()
     #: Visible glyphs left out because pdfium gave them no text (code 0) or no box.
     glyphs_left_out: int = 0
+    #: A scanned page's synthetic text layer, from the OCR model's transcription (scanned.py).
+    recognised: bool = False
 
     @property
     def kind(self) -> Literal["born_digital", "scanned"]:
-        if any(c.visible for c in self.chars):
-            return "born_digital"
-        return "scanned" if self.image_area >= _SCANNED_IMAGE_AREA else "born_digital"
+        if self.recognised:
+            return "scanned"
+        words = self.visible_words
+        if not words:
+            return "scanned" if self.image_area >= _SCANNED_IMAGE_AREA else "born_digital"
+        if words <= _SCAN_MAX_WORDS and self.largest_image >= _SCAN_COVER:
+            return "scanned"
+        return "born_digital"
+
+    @property
+    def visible_words(self) -> int:
+        """The words of the visible text: runs of visible, non-blank chars split at word gaps."""
+        count = 0
+        in_word = False
+        for c in self.chars:
+            if not c.visible or c.text.isspace():
+                in_word = False
+                continue
+            if not in_word or c.space_before:
+                count += 1
+            in_word = True
+        return count
+
+    @property
+    def largest_image(self) -> float:
+        """The fraction of the page its largest image covers."""
+        area = self.width * self.height
+        if area <= 0 or not self.images:
+            return 0.0
+        return min(max((b[2] - b[0]) * (b[3] - b[1]) for b in self.images) / area, 1.0)
+
+    @property
+    def left_out_words(self) -> int:
+        """The visible words over a scan, left out: the OCR model reads them from the image."""
+        return self.visible_words if self.kind == "scanned" and not self.recognised else 0
 
 
 @dataclass(frozen=True)

@@ -564,6 +564,8 @@ class _Builder:
         """Whether `second` continues the paragraph just placed (spec section 4.5)."""
         assert self.para is not None
         first = self.para.pieces[-1]
+        if first.recognised != second.recognised:  # spec 5: not across a scan's edge
+            return False
         last, nxt = _text_lines(first)[-1], _text_lines(second)[0]
         if _SENTENCE_END.search(last.text) or not _overlaps(first.bbox, second.bbox):
             return False

@@ -255,6 +255,7 @@ class _Writer:
             chars=tuple(self.chars),
             links=tuple(self.links),
             glyphs_left_out=0,
+            recognised=True,
         )
 
 

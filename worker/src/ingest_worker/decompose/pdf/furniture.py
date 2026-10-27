@@ -79,8 +79,9 @@ def drop_furniture(
 ) -> tuple[list[Piece], Dropped, list[Property]]:
     """The pieces without furniture lines and contents, what was dropped, and the header fields
     found among the furniture."""
-    heights = {p.index: p.height for p in text.pages}
-    needed = max(_REPEAT_PAGES, math.ceil(len(text.pages) / 2))
+    # scanned pages have their own rule (scanned.py), and don't count here (spec 15.4)
+    heights = {p.index: p.height for p in text.pages if p.kind == "born_digital"}
+    needed = max(_REPEAT_PAGES, math.ceil(len(heights) / 2))
 
     def in_band(line: Line) -> bool:
         height = heights.get(line.page)

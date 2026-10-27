@@ -44,6 +44,7 @@ from ingest_worker.decompose.render import Renderer
 
 if TYPE_CHECKING:
     from ingest_worker.decompose.pdf.layout import LayoutAnalyser
+    from ingest_worker.decompose.pdf.transcript import PageTranscriber
 
 __all__ = [
     "DECOMPOSER_VERSION",
@@ -99,17 +100,26 @@ def decomposer_version(kind: SourceKind) -> int:
 
 
 def decompose_source(
-    data: bytes, *, renderer: Renderer, layout: LayoutAnalyser | None
+    data: bytes,
+    *,
+    renderer: Renderer,
+    layout: LayoutAnalyser | None,
+    transcriber: PageTranscriber | None = None,
+    ocr_longest_dim: int = 1288,
 ) -> Decomposition:
     """Decompose a Word file or a PDF, by what `data` is. A PDF needs `layout`; without it the
-    document fails. A layout service that can't answer raises `LayoutUnavailable`."""
+    document fails. A layout service that can't answer raises `LayoutUnavailable`. A PDF's
+    scanned pages are read through `transcriber` (the OCR model, its images `ocr_longest_dim`
+    pixels on their longest side); without one, a PDF with a scanned page fails."""
     if source_kind(data) == "docx":
         return decompose_docx(data, renderer=renderer)
     from ingest_worker.decompose.pdf import decompose_pdf
 
     if layout is None:
         raise DecompositionFailed(NO_LAYOUT)
-    return decompose_pdf(data, layout=layout)
+    return decompose_pdf(
+        data, layout=layout, transcriber=transcriber, ocr_longest_dim=ocr_longest_dim
+    )
 
 
 def decompose_docx(data: bytes, *, renderer: Renderer) -> Decomposition:

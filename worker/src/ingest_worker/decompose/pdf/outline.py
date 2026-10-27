@@ -236,7 +236,10 @@ def _number_headings(pieces: list[Piece], ledger: Ledger) -> list[Flag]:
             piece.heading_level = previous = number[0]
             _drop_number(piece, ledger, bookmark=None)
             continue
-        piece.heading_level = 1 if previous is None else previous + 1
+        if previous is None and piece.recognised and piece.level is not None:
+            piece.heading_level = piece.level  # the OCR model's markdown level (spec 15.3)
+        else:
+            piece.heading_level = 1 if previous is None else previous + 1
         flags.append(
             Flag(
                 code="structure_inferred",
