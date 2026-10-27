@@ -183,6 +183,10 @@
             <a href="#pdf-reader-5c">Scanned pages</a>
             <span>— read by CT Studio's OCR model, beside a PDF's born-digital pages</span>
           </li>
+          <li>
+            <a href="#pdf-numbers">Line numbers, page numbers and heading flags in PDFs</a>
+            <span>— printed numbers dropped as furniture; one line for inferred headings</span>
+          </li>
         </ul>
         <h4>Other updates</h4>
         <ul>
@@ -212,8 +216,9 @@
           <li>
             A PDF's decomposer version is the decomposer's version times 1000, plus the PDF
             reader's, so a newer PDF reader changes the version of PDFs without touching Word files,
-            whose version stays 1. With scanned pages the reader is version 2, so a PDF's decomposer
-            version is now 1002 (it was 1001 earlier today): a PDF run again is an ordinary update.
+            whose version stays 1. With scanned pages the reader is version 2, and with printed line
+            and page numbers dropped it is version 3, so a PDF's decomposer version is now 1003 (it
+            was 1001 earlier today, then 1002): a PDF run again is an ordinary update.
           </li>
           <li>
             A PDF with a scanned page needs CT Studio's OCR model (Administration &gt; Models, or
@@ -313,6 +318,33 @@
         Each page's transcription is kept, so running the same PDF again reads the same text, and an
         extraction and a conversion of the same PDF share them. Scores for the OCR route, on the
         Word/PDF twins rendered as images, follow once they have been run against the OCR model.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-numbers">Line numbers, page numbers and heading flags in PDFs</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PR_NUMBER">#PR_NUMBER</a>
+      </p>
+      <p>
+        Some guidelines print a running line number in the left margin of every line. The PDF reader
+        kept those numbers as text, so a table's title read "2195 Table A1-7 …" and wasn't taken as
+        its caption, the notes under a table weren't taken as notes, and paragraphs started with a
+        number. They are now dropped as page furniture. Only a column of numbers left of all other
+        text on the page, on at least half its lines and counting up, is taken for line numbers, so
+        a numbered list or a table's first column of numbers stays.
+      </p>
+      <p>
+        A printed page number in a page's header or footer is now dropped on any page, whatever its
+        form ("8", "A3 8", "Page 8 of 120"), even when it doesn't repeat on enough pages to count as
+        a running footer, as an annex's own page numbers don't. When the layout analysis also took
+        such a page number for a picture, the picture is dropped too, instead of being cropped to an
+        image and flagged as a drawing. Both are counted in the dropped-text line of the report.
+      </p>
+      <p>
+        Every heading whose level was worked out rather than read from the PDF had its own "Heading
+        level inferred" warning. On a real document that is nearly every heading, and the warnings
+        hid the flags that need a reviewer's eye. They are now one information line at the top of
+        the report: "Heading levels inferred for 34 headings".
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
