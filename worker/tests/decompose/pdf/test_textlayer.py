@@ -8,7 +8,12 @@ import pytest
 from pypdf import PdfReader
 
 from ingest_worker.decompose.package import DecompositionRejected
-from ingest_worker.decompose.pdf.textlayer import left_out_flags, map_symbol, read_text_layer
+from ingest_worker.decompose.pdf.textlayer import (
+    PageText,
+    left_out_flags,
+    map_symbol,
+    read_text_layer,
+)
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 
 
@@ -74,7 +79,8 @@ def test_page_kinds() -> None:
             ]
         )
     )
-    assert [p.kind for p in layer.pages] == ["born_digital", "scanned", "scanned", "born_digital"]
+    # the last: one word over a full-page image is a stamp on a scan (spec 15.2)
+    assert [p.kind for p in layer.pages] == ["born_digital", "scanned", "scanned", "scanned"]
     assert layer.pages[0].image_area == 0
     assert layer.pages[2].image_area == pytest.approx(1)
 
@@ -147,3 +153,22 @@ def test_visible_glyphs_with_no_text_are_counted_per_page() -> None:
         ("structure_inferred", "info", None, "2 glyphs on page 1 had no text and were left out"),
         ("structure_inferred", "info", None, "1 glyph on page 3 had no text and was left out"),
     ]
+
+
+def test_stamp_over_scan_is_scanned() -> None:
+    """Spec 15.2: one image over 80% of the page and at most 20 visible words is a scan."""
+
+    def page_of(words: int, cover: float) -> PageText:
+        side = 842 * cover**0.5
+        runs = [Run(" ".join(["stamp"] * words), 30, 20)] if words else []
+        layer = read_text_layer(
+            make_pdf([Page(runs=runs, images=[Img(0, 0, 595 * cover**0.5, side)])])
+        )
+        return layer.pages[0]
+
+    stamped = page_of(5, 0.9)
+    assert stamped.kind == "scanned" and stamped.left_out_words == 5
+    wordy = page_of(30, 0.9)
+    assert wordy.kind == "born_digital" and wordy.left_out_words == 0
+    assert page_of(5, 0.75).kind == "born_digital"
+    assert page_of(0, 0.9).left_out_words == 0

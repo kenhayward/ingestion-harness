@@ -213,6 +213,8 @@ class _Check:
         self.forms = _Words(doc)
         self.expected = _expected(doc, self.forms)
         self.pages = [p for p in text.pages if p.kind == "born_digital"]
+        #: Scanned pages are flagged, not checked (spec 6, 15.4).
+        self.recognised = {p.index for p in text.pages if p.kind == "scanned"}
         self.entries = {p.index: ledger.entries(p.index) for p in self.pages}
         self.segments = {p.index: _segments(p, self.entries[p.index]) for p in self.pages}
 
@@ -257,6 +259,8 @@ class _Check:
         for owner, expected in self.expected.words.items():
             if owner in self.expected.image_only:
                 continue
+            if self.prov.pages.get(owner, set()) & self.recognised:
+                continue
             by_page = got.get(owner, {})
             total: Counter[str] = sum(by_page.values(), Counter())
             differing = sorted(w for w in set(total) | set(expected) if total[w] != expected[w])
@@ -276,6 +280,8 @@ class _Check:
     def table_regions(self) -> None:
         for table in tables_of(self.doc):
             regions = self.prov.regions.get(table.id, [])
+            if any(number in self.recognised for number, _ in regions):
+                continue
             inside: Counter[str] = Counter()
             for number, box in regions:
                 for segment in self.segments.get(number, []):

@@ -32,8 +32,10 @@ from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_
 from ingest_worker.decompose.pdf.layout import LayoutUnavailable
 from ingest_worker.decompose.register import MemoryRegisterStore
 from ingest_worker.errors import DocumentError
+from ingest_worker.llm.base import RefusalError
+from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import TASKS
-from ingest_worker.ocr import render_preview_jpeg
+from ingest_worker.ocr import OcrSettings, render_preview_jpeg
 from ingest_worker.outcomes import Complete, Delivering
 from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetNotSynced
@@ -46,9 +48,12 @@ from ingest_worker.storage import (
     decomposition_source_key,
 )
 from tests.decompose.fakes import FakeRenderer
+from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeLayout, two_pages
+from tests.decompose.pdf.make_pdf import Img, Page, make_pdf
 from tests.decompose.test_deliver import REFUSAL, FakeBridge, report_docx
-from tests.fakes import FakeQueue
+from tests.fakes import FakeProvider, FakeQueue
+from tests.test_pipeline import OLMOCR_OK
 
 AT = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
 TARGET = "manuals"
@@ -224,7 +229,7 @@ def test_pdf_that_would_create_is_held() -> None:
     assert world.bridge.requests == [] and world.register.entries() == []
     manifest = _manifest(world, job)
     assert manifest["pageCount"] == 2
-    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 1
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 2
     assert manifest["startedBy"] == USER.model_dump(by_alias=True)
     assert manifest["document"]["sections"]
     for page in (1, 2):
@@ -374,7 +379,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     world = World()
     job = _held_pdf(world)
     held_document = _manifest(world, job)["document"]
-    monkeypatch.setattr("ingest_worker.decompose.pdf.PDF_READER_VERSION", 2)  # the reader moved on
+    monkeypatch.setattr("ingest_worker.decompose.pdf.PDF_READER_VERSION", 3)  # the reader moved on
 
     def unreadable(first: int, last: int) -> dict[str, Any]:
         raise AssertionError("the PDF was read again")
@@ -389,7 +394,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     package = request.package
     assert package.document is not None
     assert package.document.model_dump(mode="json", by_alias=True) == held_document
-    assert package.provenance.decomposer_version == 1001  # type: ignore[union-attr]
+    assert package.provenance.decomposer_version == 1002  # type: ignore[union-attr]
     [entry] = world.register.entries()
     item = world.item(job)
     assert (item.outcome, item.register_entry_id) == ("delivering", entry.id)
@@ -1434,3 +1439,77 @@ class _Targets:
 
     def rdf(self) -> Target | None:
         return None
+
+
+def _scanned_pdf() -> tuple[bytes, FakeLayout]:
+    """A PDF whose one page is a scan (an image over the whole page, no text)."""
+    data = make_pdf([Page(images=[Img(0, 0, 595, 842)])])
+    return data, FakeLayout(lambda first, last: docling.doc([(595.0, 842.0)], []))
+
+
+def _worker_deps(world: World, layout: FakeLayout, ocr: FakeProvider | None) -> PipelineDeps:
+    deps = PipelineDeps(
+        store=world.store,
+        specs=None,  # type: ignore[arg-type]
+        models=ModelRegistry({}, {}, {}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        targets=_Targets(),
+        bridge=world.bridge,
+        decomposition=DecompositionStores(register=world.register, items=world.items),
+        layout=layout,
+    )
+    if ocr is not None:
+        deps.models = ModelRegistry(
+            {"local": ocr}, {"local": ProviderConfig(name="local", kind="openai-chat")}, {}
+        )
+        deps.ocr = OcrSettings(model="local/olmocr-2-7b-1025")
+        deps.render_page = lambda pdf, index, dim, rotation: b"PNG" + bytes([index])
+    return deps
+
+
+def test_a_scanned_pdf_is_read_by_the_ocr_model_and_held() -> None:
+    world = World()
+    data, layout = _scanned_pdf()
+    job = world.upload(data, "scan.pdf")
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + "# Scope\n\nScanned text."]
+
+    outcome = TASKS["decompose"](job, _worker_deps(world, layout, ocr), world.queue)
+
+    assert outcome == Complete(note="held for review")
+    assert world.item(job).outcome == "awaiting_review"
+    report = _manifest(world, job)["document"]["report"]
+    assert [f["message"] for f in report if f["code"] == "page_recognised"] == [
+        "page 1 was read by the OCR model"
+    ]
+    assert [m for m, _ in ocr.vision_calls] == ["olmocr-2-7b-1025"]
+
+
+def test_a_scanned_pdf_without_ocr_fails_the_item() -> None:
+    world = World()
+    data, layout = _scanned_pdf()
+    job = world.upload(data, "scan.pdf")
+
+    outcome = TASKS["decompose"](job, _worker_deps(world, layout, None), world.queue)
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert "page 1 is scanned and this CT Studio has no OCR model" in item.detail
+    assert layout.calls == []
+
+
+def test_an_ocr_refusal_fails_the_item_naming_the_page() -> None:
+    world = World()
+    data, layout = _scanned_pdf()
+    job = world.upload(data, "scan.pdf")
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [RefusalError("refused")]
+
+    outcome = TASKS["decompose"](job, _worker_deps(world, layout, ocr), world.queue)
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert item.detail.startswith("decomposition failed at page 1: OCR page 1:")

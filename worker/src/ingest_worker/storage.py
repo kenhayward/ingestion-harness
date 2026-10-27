@@ -37,6 +37,12 @@ def ocr_cache_key(pdf_sha256: str, settings_fingerprint: str, page_number: int) 
     return f"ocr-cache/{pdf_sha256}/{settings_fingerprint}/page-{page_number}.md"
 
 
+def ocr_rotation_key(text_key: str) -> str:
+    """Beside an OCR output (`ocr_run_key`, `ocr_cache_key`): the clockwise degrees the page was
+    turned by before it was read, when not 0 (none: upright)."""
+    return text_key + ".rotation"
+
+
 def converted_key(source_sha256: str, fingerprint: str) -> str:
     """The PDF a Word (.docx) source converts to, per converter version (worker-internal)."""
     return f"converted/{source_sha256}/{fingerprint}.pdf"

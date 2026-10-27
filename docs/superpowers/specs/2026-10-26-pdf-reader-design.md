@@ -2,12 +2,14 @@
 
 **Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
 implemented (2026-10-27)**; results in §13. **5b implemented (2026-10-27)**: PDFs in CT Studio,
-with review, in §14; the owner's run against the real sink is pending.
+with review, in §14; the owner's run against the real sink is pending. **5c implemented
+(2026-10-27)**: scanned pages, in §15; the rasterised twins' scores and the owner's run are
+pending.
 
 - The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
   `docker compose -f deploy/docker-compose.yml up -d --build layout`.
-- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
-- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
+- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL [--ocr-url URL]` (scanned pages need the OCR model; its key from `OCR_API_KEY`)
+- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>] [--rasterise] [--ocr-url URL]` (`--rasterise` scores the OCR route, §15.5)
 
 This is phase 5 of document decomposition
 ([2026-10-23-document-decomposition-design.md](2026-10-23-document-decomposition-design.md), "the
@@ -337,7 +339,8 @@ spec §8):
 
 - Docling, its model weights and the OCR model are pinned to exact versions, and the weights are
   baked into the image: nothing is downloaded at run time;
-- the OCR model runs at temperature 0, as it does for extraction;
+- scanned pages' transcriptions are kept in the shared OCR cache, so a re-run reads the same text
+  (§15.1; this replaced "the OCR model runs at temperature 0");
 - the reader's version is part of the decomposer version, and so of the idempotency key.
 
 A new reader version can infer headings differently, and so change section ids, which come from
@@ -368,7 +371,7 @@ before release.
 | 5a | **Born-digital PDFs:** the layout service, the text layer, the mapping, the fidelity checks, a dev tool, the twin scorer | Twins and the owner's real PDFs decompose with no text-accounting failure, and the twin scores are reported to the owner |
 | — | **The owner's decision** on review (§8) | — |
 | 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (§14). **Implemented (2026-10-27)**; the owner's run is pending | A PDF goes through to the fake sink, and to the real sink in the owner's run |
-| 5c | **Scanned pages** through the OCR model | A scanned sample decomposes with every scanned page flagged |
+| 5c | **Scanned pages** through the OCR model (§15). **Implemented (2026-10-27)**; the scores and the owner's run are pending | A scanned sample decomposes with every scanned page flagged |
 
 ## 12. Left to the builder
 
@@ -542,3 +545,141 @@ not of Word files. The reader's version stays below 1000.
   layout analyser), a review approval and the bridge to the fake sink. It also takes a rejected
   PDF through, and a Word file in the same batch straight through.
 - In the owner's run, a real PDF is reviewed and delivered to the real sink.
+
+## 15. Step 5c: scanned pages
+
+Agreed with the owner on 2026-10-27. The owner has scanned PDFs to test with. The OCR model is
+the one CT Studio is already configured to use. §3, §5 and §6 still hold, and this section
+fills in the rest.
+
+### 15.1 The OCR model
+
+- Scanned pages use **CT Studio's own OCR setting**: the model chosen under Administration >
+  Models (or `ocr.model` in `config/llm-providers.yaml`), its own endpoint and key
+  (`OCR_BASE_URL`, `OCR_API_KEY`) when set, and its output budget, temperature, concurrency and
+  parallel-call limit. Decomposition adds no OCR setting of its own. An extraction spec's
+  `document.ocr` mode doesn't apply. **[owner]**
+- This replaces §9's "temperature 0". What makes a re-run repeatable is the **shared OCR cache**,
+  as for extraction. A page's transcription is kept under the PDF's SHA-256, the model and the
+  settings, so a re-run reads the same text as the first run and updates in place. An extraction
+  and a decomposition of the same PDF bytes share transcriptions. **[call]**
+- If the cache is cleared or the OCR settings change, a re-run may read a page differently. That
+  shows up as an ordinary update behind the version check, and is accepted. **[call]**
+- Each job also keeps its own copy of every page it transcribes, under its run key, as
+  extraction does. A retried job doesn't transcribe a page twice.
+- Errors are handled as for extraction. A transient model error is retried. A refusal, an
+  unavailable model or an exceeded context fails the document, naming the page and the model. A
+  cancelled batch stops at the next page.
+- **No OCR configured.** A PDF with a page that has no visible text over its scan fails before
+  any layout or OCR work, saying "page N is scanned and this CT Studio has no OCR model". A page
+  that is scanned only by §15.2's second rule (a little visible text over a full-page image) is
+  then read from its visible text, as before 5c, since that rule exists only to send it to the
+  model. A born-digital PDF is unaffected. **[call]** (2026-10-27, after the final review: a
+  born-digital cover page must not fail the PDF)
+- **The seam.** The reader is given a page transcriber, which takes a page index and returns
+  the model's raw markdown and the rotation it applied. In the worker, this is extraction's OCR
+  loop, with its caches, gates and cancellation, refactored to hand back raw markdown. The dev
+  tools use a plain client with a cache folder on disk. **[call]**
+
+### 15.2 Classification
+
+A page is **scanned** when either of these holds: **[owner]**
+
+- it has no visible text and images cover at least half of it (§3's rule, as the reader has
+  it);
+- one image covers at least 80% of it and its visible text is at most 20 words. This catches the
+  stamps, page-number overlays and "scanned by" lines that real scans carry. The visible words
+  are then left out, and they are counted in the page's `page_recognised` flag: "N words of
+  visible text over the scan were left out". The OCR reads them from the image anyway.
+
+A page with no visible text and no images (a blank page) is born-digital, with nothing on it. A
+full-page figure with a short caption meets the second rule, so it is read as a scanned page
+and flagged. The reviewer sees that on the review page. **[owner]** (2026-10-27: the trade is
+acceptable)
+
+### 15.3 From transcription to document
+
+The model returns markdown: headings, paragraphs, lists, HTML tables with their spans, LaTeX
+equations, and a placeholder for each figure with its box. Its text comes without positions, so
+it is taken in the model's own order, and the page comes **whole, between its neighbours** in
+page order. Its blocks map to their page in the provenance and the page map, and the text check
+leaves them out (§15.4). **[call]**
+
+- **Headings**, decided per heading, by §4.4's sources in their order: **[call]**
+  - a bookmark targeting the page, matched against that page's headings and lines, ignoring
+    case, spaces and the typed number;
+  - then a typed number;
+  - then, in a document whose other headings are numbered, one below the previous numbered
+    heading (§4.4);
+  - otherwise the markdown's `#` level. The levels are normalised, so the shallowest level used
+    on the document's scanned pages is level 1.
+
+  A heading whose level comes from the markdown alone is flagged `structure_inferred`.
+- **Inline text.** Bold, italic, `<sup>` and `<sub>` become marks. Markdown links become links.
+  Lists keep their nesting. Footnote markers stay as text. **[call]**
+- **Tables** come from the HTML grid, parsed leniently, with their row and column spans:
+  - `<br>` is a line break in the cell;
+  - `<th>` rows are header rows, and a table with no `<th>` has none;
+  - §4.6's caption, note and "Table N:" rules apply to the paragraphs next to it.
+
+  Each scanned table is flagged `structure_inferred` (§5). A table that is the last block of one
+  scanned page is joined to one that is the first block of the next scanned page by §4.6's
+  rule. Nothing is joined across a scanned/born-digital boundary (§5). **[call]**
+- **Equations.** A display equation is matched to the layout's formula regions on the page, in
+  reading order. It becomes an equation block with its LaTeX text and the region's crop as its
+  image. A display equation with no region, and every inline equation, stays as its LaTeX in the
+  text, flagged `structure_inferred`. **[call]**
+- **Figures.** The layout service reads every page, as now. On a scanned page, only its picture
+  and formula regions are used (§5), and they are cropped from the rendered page. **[call]**
+  - Each placeholder's box, converted from the rendered image's pixels to the page, is matched
+    to the picture region it overlaps most. The placeholder's alt text becomes the figure's
+    description, and the figure sits where the placeholder was.
+  - A region left unmatched goes after the page's last block.
+  - A placeholder left unmatched is dropped.
+  - Either kind of mismatch is flagged on the page.
+- **Rotation.** pdfium applies `/Rotate`, so the OCR and the layout see the page as displayed.
+  When the OCR client corrects a page's rotation, the layout's regions are in the uncorrected
+  frame. Figures are then matched in reading order only, and their crops are rotated by the
+  same correction. **[call]**
+- **Furniture.** The model is asked for the page "as if reading naturally", and usually leaves out
+  running headers and page numbers. Where a PDF has at least three scanned pages, a first or last
+  line of a scanned page that repeats, digits aside, on at least half of them is dropped as
+  furniture. It is counted in §4.3's flag. **[call]**
+- **A scanned page with no text** (the model returns nothing) adds nothing. It is still flagged
+  `page_recognised`, with the message that no text was recognised on it. **[call]**
+
+### 15.4 Checks
+
+Scanned pages are flagged, not checked (§6). The born-digital pages of the same PDF are checked as
+before. Scanned pages are left out of the text check, the text layer's left-out counts and the
+born-digital furniture rule's page count. References must still resolve across the whole
+document. The flag count on the batch row includes the scanned pages' flags, so a reviewer sees
+them before opening the review page.
+
+### 15.5 Measuring quality: rasterised twins
+
+A scan has no Word original, so quality is measured as in §7, on **rasterised twins**: the twins'
+PDFs rendered to image-only PDFs at 200 dpi (every page an image, no text layer). **[call]**
+
+- They go through the scanned route and are scored against their Word files with §7's scorer.
+  This gives §13's scores (headings, tables, cells, word recall and precision) for the OCR route,
+  on documents whose answer is known.
+- `pdf_twins.py` gains `--rasterise`, plus `--ocr-url`, `--ocr-model`, an API key from the
+  `OCR_API_KEY` environment variable, and a cache folder. A second run is free and repeatable.
+- The scores are reported to the owner, as in 5a.
+- The owner's own scans are decomposed and reviewed by eye. They have no answer to score
+  against.
+
+### 15.6 Version
+
+`PDF_READER_VERSION` goes to 2, so a PDF's decomposer version becomes 1002 (§14.8). Born-digital
+PDFs get the new version too. A re-run of one is an ordinary update behind the version check.
+**[call]**
+
+### 15.7 Done when
+
+- A mixed PDF (born-digital and scanned pages) decomposes in the worker's tests, with a fake OCR
+  transcriber and a fake layout analyser, and every scanned page is flagged.
+- The rasterised twins are scored, and the scores are reported to the owner.
+- In the owner's run, their scanned PDFs decompose, are held for review, and one is approved
+  through to the sink.

@@ -14,12 +14,13 @@ from ingest_worker.convert import ConverterUnavailable
 from ingest_worker.decompose import decompose_docx
 from ingest_worker.decompose.pdf import decompose_pdf
 from ingest_worker.decompose.pdf.layout import LayoutUnavailable
+from ingest_worker.decompose.pdf.transcript import Transcript
 from ingest_worker.decompose.render import RenderFragment
 from tests.decompose.docx import build_docx
 from tests.decompose.fakes import FakeRenderer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeLayout
-from tests.decompose.pdf.make_pdf import Page, Run, make_pdf
+from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 from tests.decompose.test_media import EMF, PNG, picture
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "decompose.py"
@@ -186,3 +187,34 @@ def test_layout_unavailable_exits_4(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert cli.main([str(source), str(out)], layout=FakeLayout(down)) == 4
     assert "layout unavailable: layout service unreachable" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_scanned_pdf_reads_through_the_ocr_model(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = make_pdf([Page(images=[Img(0, 0, 595, 842)])])
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(data)
+    layout = FakeLayout(lambda first, last: docling.doc([(595.0, 842.0)], []))
+
+    class Transcriber:
+        def transcribe(self, pages: Any) -> dict[int, Transcript]:
+            return {p: Transcript("Scanned text.") for p in pages}
+
+    assert (
+        cli.main([str(source), str(tmp_path / "out")], layout=layout, transcriber=Transcriber())
+        == 0
+    )
+    report = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert [f["code"] for f in report] == ["page_recognised"]
+
+
+def test_scanned_pdf_without_ocr_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(make_pdf([Page(images=[Img(0, 0, 595, 842)])]))
+    layout = FakeLayout(lambda first, last: docling.doc([(595.0, 842.0)], []))
+
+    assert cli.main([str(source), str(tmp_path / "out")], layout=layout) == 2
+    assert "page 1 is scanned and this CT Studio has no OCR model" in capsys.readouterr().err
