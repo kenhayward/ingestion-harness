@@ -15259,6 +15259,9 @@
                         "gone": {
                           "type": "boolean"
                         },
+                        "unconfirmed": {
+                          "type": "boolean"
+                        },
                         "reloadable": {
                           "type": "boolean"
                         },
@@ -15365,6 +15368,7 @@
                         "resolution",
                         "unversioned",
                         "gone",
+                        "unconfirmed",
                         "reloadable",
                         "rerunIn",
                         "rerunAt",
@@ -16594,6 +16598,9 @@
                     "gone": {
                       "type": "boolean"
                     },
+                    "unconfirmed": {
+                      "type": "boolean"
+                    },
                     "reloadable": {
                       "type": "boolean"
                     },
@@ -16700,6 +16707,7 @@
                     "resolution",
                     "unversioned",
                     "gone",
+                    "unconfirmed",
                     "reloadable",
                     "rerunIn",
                     "rerunAt",
