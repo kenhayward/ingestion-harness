@@ -185,3 +185,12 @@ def test_same_pdf_same_document() -> None:
 def test_reader_constants() -> None:
     assert pdf_reader.PDF_READER_VERSION == 1
     assert pdf_reader.MAX_PAGES == 500
+
+
+def test_glyphs_with_no_text_are_flagged_in_the_report() -> None:
+    data = make_pdf([Page(runs=[Run("Dose\x00 given.", 72, 100)])])
+    result = decompose_pdf(data, layout=answering([]), cropper=FakeCropper())
+    assert [(f.code, f.severity, f.at, f.message) for f in result.document.report] == [
+        ("structure_inferred", "info", None, "1 glyph on page 1 had no text and was left out"),
+        ("structure_inferred", "warning", "s~lead#p-1", "Text the layout analysis missed"),
+    ]

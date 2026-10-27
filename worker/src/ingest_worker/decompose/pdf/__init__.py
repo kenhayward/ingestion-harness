@@ -19,7 +19,7 @@ from ingest_worker.decompose.pdf.layout import LayoutAnalyser, analyse_document
 from ingest_worker.decompose.pdf.outline import assign_headings, read_bookmarks
 from ingest_worker.decompose.pdf.pieces import attach_text
 from ingest_worker.decompose.pdf.tables import join_split_tables
-from ingest_worker.decompose.pdf.textlayer import read_text_layer
+from ingest_worker.decompose.pdf.textlayer import left_out_flags, read_text_layer
 
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
@@ -70,7 +70,11 @@ def decompose_pdf(
         if own_cropper is not None:
             own_cropper.close()
     summary = dropped_flag(dropped)
-    report = [*([summary] if summary is not None else []), *in_document_order(doc.report, doc)]
+    report = [
+        *([summary] if summary is not None else []),
+        *left_out_flags(text),
+        *in_document_order(doc.report, doc),
+    ]
     doc = doc.model_copy(update={"report": report})
     check_pdf(doc, ledger, text, provenance)
     return Decomposition(document=doc, image_bytes=image_bytes, originals={})

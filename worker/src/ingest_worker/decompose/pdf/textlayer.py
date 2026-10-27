@@ -4,6 +4,8 @@ each page's image objects and URI link annotations.
 Read through pypdfium2's text page and its raw API. Coordinates are in points with the origin at
 the top left of the page as displayed (`/Rotate` applied). A PDF pdfium cannot open, a
 password-protected one included, is rejected; one that opens with an empty password is read.
+A glyph pdfium gives no text (code 0) or no box can't be accounted for: it is left out, and the
+visible ones are counted per page and flagged (`left_out_flags`).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from ingest_worker.decompose.model import Flag
 from ingest_worker.decompose.package import DecompositionRejected
 from ingest_worker.symbol_fonts import FIRST, LAST, TABLES, font_family
 
@@ -59,6 +62,8 @@ class PageText:
     images: tuple[Box, ...] = ()
     #: The box and URI of each link annotation with a `/URI` action.
     links: tuple[tuple[Box, str], ...] = ()
+    #: Visible glyphs left out because pdfium gave them no text (code 0) or no box.
+    glyphs_left_out: int = 0
 
     @property
     def kind(self) -> Literal["born_digital", "scanned"]:
@@ -136,20 +141,20 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         name = ctypes.create_string_buffer(_FONT_NAME_BYTES)
         flags = ctypes.c_int()
         gap = False
+        left_out = 0
         for i in range(text_page.count_chars()):
             if raw.FPDFText_IsGenerated(handle, i):
                 gap = True  # a space or line break pdfium inserted, not one the PDF draws
                 continue
+            obj = raw.FPDFText_GetTextObject(handle, i)
+            visible = not (obj and raw.FPDFTextObj_GetTextRenderMode(obj) == _INVISIBLE_RENDER_MODE)
             code = raw.FPDFText_GetUnicode(handle, i)
-            if code == 0:
-                continue
-            if not raw.FPDFText_GetCharBox(handle, i, *box):
+            if code == 0 or not raw.FPDFText_GetCharBox(handle, i, *box):
+                left_out += visible
                 continue
             raw.FPDFText_GetCharOrigin(handle, i, *origin)
             raw.FPDFText_GetFontInfo(handle, i, name, _FONT_NAME_BYTES, flags)
             font = name.value.decode("utf-8", "replace")
-            obj = raw.FPDFText_GetTextObject(handle, i)
-            visible = not (obj and raw.FPDFTextObj_GetTextRenderMode(obj) == _INVISIBLE_RENDER_MODE)
             text, is_unmapped = map_symbol(chr(code), font)
             if is_unmapped:
                 unmapped.append((number, font, text))
@@ -180,7 +185,20 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
     covered = sum((b[2] - b[0]) * (b[3] - b[1]) for b in images)
     area = min(covered / (width * height), 1.0) if width > 0 and height > 0 else 0.0
     links = _links(page, display)
-    return PageText(number, width, height, tuple(chars), area, images, links)
+    return PageText(number, width, height, tuple(chars), area, images, links, left_out)
+
+
+def left_out_flags(text: TextLayer) -> list[Flag]:
+    """An `info` flag for each page with visible glyphs left out (no text or no box)."""
+    flags: list[Flag] = []
+    for page in text.pages:
+        n = page.glyphs_left_out
+        if n:
+            what = "1 glyph" if n == 1 else f"{n} glyphs"
+            verb = "was" if n == 1 else "were"
+            message = f"{what} on page {page.index + 1} had no text and {verb} left out"
+            flags.append(Flag(code="structure_inferred", severity="info", at=None, message=message))
+    return flags
 
 
 def _displayed(

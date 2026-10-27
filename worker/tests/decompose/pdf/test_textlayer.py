@@ -8,7 +8,7 @@ import pytest
 from pypdf import PdfReader
 
 from ingest_worker.decompose.package import DecompositionRejected
-from ingest_worker.decompose.pdf.textlayer import map_symbol, read_text_layer
+from ingest_worker.decompose.pdf.textlayer import left_out_flags, map_symbol, read_text_layer
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 
 
@@ -132,3 +132,18 @@ def test_builder_outline_info_and_links_survive() -> None:
     assert reader.metadata is not None and reader.metadata.title == "T"
     assert reader.outline[0].title == "One" and reader.outline[1][0].title == "Sub"
     assert reader.pages[0]["/Annots"][0].get_object()["/A"]["/URI"] == "https://example.com"
+
+
+def test_visible_glyphs_with_no_text_are_counted_per_page() -> None:
+    pages = [
+        Page([Run("A\x00B\x00", 72, 100)]),
+        Page([Run("Clean", 72, 100), Run("\x00", 72, 200, invisible=True)]),
+        Page([Run("C\x00", 72, 100)]),
+    ]
+    text = read_text_layer(make_pdf(pages))
+    assert [p.glyphs_left_out for p in text.pages] == [2, 0, 1]
+    assert ["".join(c.text for c in p.chars) for p in text.pages] == ["AB", "Clean", "C"]
+    assert [(f.code, f.severity, f.at, f.message) for f in left_out_flags(text)] == [
+        ("structure_inferred", "info", None, "2 glyphs on page 1 had no text and were left out"),
+        ("structure_inferred", "info", None, "1 glyph on page 3 had no text and was left out"),
+    ]
