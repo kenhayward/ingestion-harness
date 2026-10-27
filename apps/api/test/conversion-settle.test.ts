@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
 import { reconcileOnce, STRAGGLER_MINUTES } from '../src/bridge/reconcile.js';
 import { linkOf } from '../src/bridge/register.js';
+import { errorLinksOf } from '../src/conversions/repo.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { FakeBridgeApi } from './fake-bridge.js';
@@ -61,7 +62,14 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     entryId: entry.id,
     item: (): Omit<
       Item,
-      'resolution' | 'unversioned' | 'gone' | 'unconfirmed' | 'reloadable' | 'rerunIn' | 'rerunAt'
+      | 'resolution'
+      | 'unversioned'
+      | 'gone'
+      | 'unconfirmed'
+      | 'links'
+      | 'reloadable'
+      | 'rerunIn'
+      | 'rerunAt'
     > => ({
       ...repo.conversionItems.get(itemId)!,
     }),
@@ -174,6 +182,30 @@ describe('a conversion item, settled from the bridge events', () => {
     });
     // R3: an outcome was decided, so the job succeeds; it never waits for a review.
     expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it("a refusal without a document link takes the first web link the sink's error gives", async () => {
+    const t = await delivered({ persistentId: 'doc-1' });
+    t.workerRecords();
+    const error = bridgeError('changed_in_target', 'a topic is locked', {
+      links: [
+        { label: 'Not a web page', url: 'file:///c/doc' },
+        { label: 'Open the document', url: 'https://t.test/doc' },
+        { label: 'Open the locked topic', url: 'https://t.test/topic' },
+      ],
+    });
+    await applyEvent(t.deps, event(t.deliveryId, { status: 'needs_user', error, receipt: null }));
+    expect(t.item()).toMatchObject({ outcome: 'changed_in_target', link: 'https://t.test/doc' });
+  });
+
+  it("a failed delivery's error links stand in for the receipt's missing link", async () => {
+    const t = await delivered();
+    t.workerRecords();
+    const error = bridgeError('content_rejected', 'refused', {
+      links: [{ label: 'Open the document', url: 'https://t.test/doc' }],
+    });
+    await applyEvent(t.deps, event(t.deliveryId, { status: 'failed', error, receipt: null }));
+    expect(t.item()).toMatchObject({ outcome: 'failed', link: 'https://t.test/doc' });
   });
 
   it('a failed delivery fails the item with its reason', async () => {
@@ -396,5 +428,56 @@ describe('linkOf', () => {
     ];
     expect(linkOf(receipt(written, 'doc-1/map'))).toBe('https://t.test/map');
     expect(linkOf(receipt(written))).toBe('https://t.test/other');
+  });
+});
+
+describe('errorLinksOf', () => {
+  const withLinks = (links: unknown) => bridgeError('content_rejected', 'x', { links });
+
+  it("reads the error's web links, label and url", () => {
+    expect(
+      errorLinksOf(
+        withLinks([
+          { label: 'Open the document', url: 'https://t.test/doc' },
+          { label: 'Open the topic', url: 'http://t.test/topic' },
+        ]),
+      ),
+    ).toEqual([
+      { label: 'Open the document', url: 'https://t.test/doc' },
+      { label: 'Open the topic', url: 'http://t.test/topic' },
+    ]);
+  });
+
+  it('is empty without an error, details or links', () => {
+    expect(errorLinksOf(null)).toEqual([]);
+    expect(errorLinksOf(undefined)).toEqual([]);
+    expect(errorLinksOf(bridgeError('content_rejected', 'x'))).toEqual([]);
+  });
+
+  it('drops malformed entries and anything not a web address', () => {
+    expect(errorLinksOf(withLinks('https://t.test/doc'))).toEqual([]);
+    expect(
+      errorLinksOf(
+        withLinks([
+          null,
+          'https://t.test/a',
+          { label: 1, url: 'https://t.test/b' },
+          { label: 'no url' },
+          { label: 'script', url: 'javascript:alert(1)' },
+          { label: 'file', url: 'file:///etc/passwd' },
+          { label: 'kept', url: 'https://t.test/c' },
+        ]),
+      ),
+    ).toEqual([{ label: 'kept', url: 'https://t.test/c' }]);
+  });
+
+  it('keeps at most five, with labels cut to 100 characters', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      label: 'x'.repeat(150),
+      url: `https://t.test/${i}`,
+    }));
+    const links = errorLinksOf(withLinks(many));
+    expect(links).toHaveLength(5);
+    expect(links[0]!.label).toHaveLength(100);
   });
 });

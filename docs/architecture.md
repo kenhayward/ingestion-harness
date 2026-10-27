@@ -256,6 +256,9 @@ or review step.
   - Outcomes decided without a delivery (`already_loaded`, `duplicate`, `in_flight`,
     `unresolved`, an early `failed`) are written by the worker at once.
   - A `decompose` job succeeds whenever an outcome was decided, so it never goes to review.
+  - A refused or failed item links what the bridge error's `details.links` name (the document,
+    the component that blocked it): the first is its link when the receipt gives none, and all
+    show in the document panel (`Item.links`, http(s) only).
 - **The Conversion tab** (`apps/web/src/conversion/`) shows each batch with one row per document:
   its outcome, its link in the target and its report. Each row offers force-load, redeliver,
   detach or accept the target's state where they apply. Earlier batches are listed newest first.
