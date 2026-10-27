@@ -71,7 +71,7 @@ never returned. Any other failure is a 500.
 The tests inject a fake analyser and never import Docling:
 
 ```sh
-uv run --project deploy/layout pytest -q
+uv run --directory deploy/layout pytest -q
 ```
 
 `layout_service/docling_analyser.py` is imported only by the `main` factory, so installing the

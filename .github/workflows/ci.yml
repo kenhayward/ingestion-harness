@@ -73,7 +73,7 @@ jobs:
           version: '0.10.5'
           python-version: '3.12'
       # No docling extra: the tests inject a fake analyser.
-      - run: uv run --frozen --project deploy/layout pytest -q
+      - run: uv run --frozen --directory deploy/layout pytest -q
 
   stack:
     name: Images + compose smoke test
