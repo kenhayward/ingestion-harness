@@ -13,16 +13,32 @@ from fastapi.responses import JSONResponse
 
 MAX_PAGES = 500
 MAX_BYTES = 256 * 2**20
+#: A request's time limit: this many seconds a page in its range, ...
+SECONDS_PER_PAGE = 30
+#: ... and never more than this.
+MAX_SECONDS = 600
 
 
 class AnalysisFailed(Exception):
     """The analyser could not convert this PDF (corrupt, or a page range it chokes on)."""
 
 
+def require_success(status: str, *, timed_out: bool) -> None:
+    """Raises `AnalysisFailed` unless a conversion that ended with `status` (Docling's
+    `ConversionStatus` value) succeeded in full: a partial document is never returned."""
+    if timed_out:
+        raise AnalysisFailed("timed out")
+    if status != "success":
+        raise AnalysisFailed(f"the conversion ended {status}")
+
+
 class Analyser(Protocol):
     def page_count(self, pdf: bytes) -> int: ...
 
-    def analyse(self, pdf: bytes, first: int, last: int) -> dict: ...
+    def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
+        """Docling's document for pages `first` to `last`; raises `AnalysisFailed` when the
+        conversion fails, takes longer than `timeout` seconds, or is partial."""
+        ...
 
     def fingerprint(self) -> str: ...
 
@@ -53,7 +69,8 @@ def create_app(
         if not 1 <= first <= last <= pages:
             raise HTTPException(422, f"pages {first} to {last} are not within 1 to {pages}")
         try:
-            document = analyser.analyse(pdf, first, last)
+            timeout = float(min(SECONDS_PER_PAGE * (last - first + 1), MAX_SECONDS))
+            document = analyser.analyse(pdf, first, last, timeout)
         except AnalysisFailed as error:
             # 422, not 5xx: the worker retries server errors, and this PDF will fail again.
             return JSONResponse({"error": f"layout analysis failed: {error}"}, status_code=422)

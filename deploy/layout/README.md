@@ -6,7 +6,8 @@ gets Docling's document back. The worker never imports Docling.
 
 It parses untrusted PDFs, so in `deploy/docker-compose.yml` it sits on the internal `layout`
 network that only the worker shares (no route out, no published ports), with a read-only root,
-`/tmp` as a tmpfs and 6 GB of memory.
+`/tmp` as a 512 MB tmpfs, 6 GB of memory, at most 256 processes, no capabilities and no new
+privileges.
 
 ## Running it
 
@@ -59,8 +60,11 @@ To move to a new Docling or weights version, change the pins in `pyproject.toml`
 ## Errors
 
 `422 {"error": "layout analysis failed: <reason>"}` is a PDF Docling cannot convert. It is not a
-5xx on purpose: the worker retries server errors, and this PDF would fail again. Any other
-failure is a 500.
+5xx on purpose: the worker retries server errors, and this PDF would fail again. Each request
+has a time limit of 30 seconds a page in its range, at most 600 seconds (Docling's
+`document_timeout`); one that runs over is `422 {"error": "layout analysis failed: timed out"}`.
+A conversion that ends with any status but full success is a 422 too: a partial document is
+never returned. Any other failure is a 500.
 
 ## Tests
 

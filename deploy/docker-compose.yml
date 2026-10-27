@@ -134,9 +134,12 @@ services:
     restart: unless-stopped
     networks: [layout]
     mem_limit: 6g
+    pids_limit: 256
     read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     tmpfs:
-      - /tmp
+      - /tmp:size=512m
     healthcheck:
       test:
         - CMD

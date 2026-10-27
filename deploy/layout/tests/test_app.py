@@ -1,18 +1,21 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from layout_service.app import AnalysisFailed, create_app
+from layout_service.app import AnalysisFailed, create_app, require_success
 
 
 class FakeAnalyser:
     def __init__(self, pages: int = 3) -> None:
         self.pages = pages
         self.calls: list[tuple[int, int]] = []
+        self.timeouts: list[float] = []
 
     def page_count(self, pdf: bytes) -> int:
         return self.pages
 
-    def analyse(self, pdf: bytes, first: int, last: int) -> dict:
+    def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
         self.calls.append((first, last))
+        self.timeouts.append(timeout)
         return {"body": {}}
 
     def fingerprint(self) -> str:
@@ -89,7 +92,7 @@ def test_unreadable_pdf_is_400() -> None:
 
 def test_conversion_failure_is_422_not_a_server_error() -> None:
     class Failing(FakeAnalyser):
-        def analyse(self, pdf: bytes, first: int, last: int) -> dict:
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
             raise AnalysisFailed("page 2 could not be parsed")
 
     res = post(TestClient(create_app(Failing())))
@@ -99,8 +102,38 @@ def test_conversion_failure_is_422_not_a_server_error() -> None:
 
 def test_other_analyser_errors_stay_500() -> None:
     class Broken(FakeAnalyser):
-        def analyse(self, pdf: bytes, first: int, last: int) -> dict:
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
             raise RuntimeError("out of memory")
 
     client = TestClient(create_app(Broken()), raise_server_exceptions=False)
     assert post(client).status_code == 500
+
+
+def test_each_request_has_a_time_limit_of_30_seconds_a_page_up_to_600() -> None:
+    fake = FakeAnalyser(pages=40)
+    client = TestClient(create_app(fake))
+    assert post(client, first=1, last=2).status_code == 200
+    assert post(client, first=5, last=5).status_code == 200
+    assert post(client, first=1, last=40).status_code == 200
+    assert fake.timeouts == [60.0, 30.0, 600.0]
+
+
+def test_a_timed_out_conversion_is_422() -> None:
+    class Slow(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
+            require_success("partial_success", timed_out=True)
+            return {"body": {}}
+
+    res = post(TestClient(create_app(Slow())))
+    assert res.status_code == 422
+    assert res.json() == {"error": "layout analysis failed: timed out"}
+
+
+@pytest.mark.parametrize("status", ["partial_success", "failure", "skipped", "pending"])
+def test_any_status_but_success_is_a_failed_analysis(status: str) -> None:
+    with pytest.raises(AnalysisFailed, match=f"the conversion ended {status}"):
+        require_success(status, timed_out=False)
+
+
+def test_a_successful_conversion_passes() -> None:
+    require_success("success", timed_out=False)
