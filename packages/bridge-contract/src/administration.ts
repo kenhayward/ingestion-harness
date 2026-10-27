@@ -284,3 +284,53 @@ export const ADMIN_ROUTES = [
     status: 200,
   },
 ] as const;
+
+/** The name of an administration call, as `ADMIN_ROUTES` lists them. */
+export type AdminCallName = (typeof ADMIN_ROUTES)[number]['name'];
+export type AdminRoute = (typeof ADMIN_ROUTES)[number];
+
+const ADMIN_CALL_NAMES = ADMIN_ROUTES.map((r) => r.name) as [AdminCallName, ...AdminCallName[]];
+
+/** One administration call's route. */
+export function adminRoute(name: AdminCallName): AdminRoute {
+  return ADMIN_ROUTES.find((r) => r.name === name)!;
+}
+
+/** The sink path of a call: `id` where the path takes one (rename, remove, revoke), else null. */
+export function adminCallPath(name: AdminCallName, id: string | null): string {
+  const { path } = adminRoute(name);
+  const takesId = path.includes('/:id:');
+  if (takesId && id === null) throw new Error(`${name} needs an id`);
+  if (!takesId && id !== null) throw new Error(`${name} takes no id`);
+  return id === null ? path : path.replace(':id', seg(id));
+}
+
+/**
+ * Producer API (`POST /v1/sinks/{sinkId}/admin`): one administration call the bridge relays to a
+ * registered sink, signed with that sink's key. `request` is the sink's request for that call
+ * (checked by the bridge against its route), and the answer is the sink's, checked the same way.
+ */
+export const SinkAdminCallSchema = z.strictObject({
+  call: z.enum(ADMIN_CALL_NAMES),
+  /** The instance or client id of rename, remove and revoke; null for the others. */
+  id: z.string().regex(CLIENT_ID).nullable(),
+  request: z.unknown(),
+});
+export type SinkAdminCall = z.infer<typeof SinkAdminCallSchema>;
+
+const ADMIN_ERROR_STATUS: Readonly<Record<string, number>> = {
+  not_found: 404,
+  locked: 409,
+  name_conflict: 409,
+  not_configured: 409,
+  content_rejected: 422,
+};
+
+/**
+ * The HTTP status a relayed administration refusal keeps: the sink's own for the codes the calls
+ * define, 422 for any other a person acts on, 503 for a retryable one.
+ */
+export function adminErrorStatus(e: { class: string; code: string }): number {
+  if (Object.hasOwn(ADMIN_ERROR_STATUS, e.code)) return ADMIN_ERROR_STATUS[e.code]!;
+  return e.class === 'needs_user' ? 422 : 503;
+}

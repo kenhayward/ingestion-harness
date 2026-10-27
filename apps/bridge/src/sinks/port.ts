@@ -1,4 +1,5 @@
 import type {
+  AdminCallName,
   BridgeError,
   BrowseRequest,
   BrowseResult,
@@ -18,6 +19,12 @@ export interface SinkPort {
   browse(req: BrowseRequest): Promise<BrowseResult>;
   deliver(req: SinkDeliverRequest): Promise<SinkDeliverResult>;
   deliveryStatus(sinkJobId: string): Promise<SinkJobStatus>;
+  /**
+   * Contract version 3: one administration call (`ADMIN_ROUTES`), its answer checked against the
+   * call's schema. Only external sinks have it; the bridge offers it only for a sink whose
+   * describe declares administration.
+   */
+  admin?(call: AdminCallName, id: string | null, request: unknown): Promise<unknown>;
 }
 
 /** Where a target writes: its connection's credential and its destination. */

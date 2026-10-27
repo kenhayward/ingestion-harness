@@ -90,6 +90,15 @@ graph version and withdrawal records or names its target, so older outputs are r
 bridge) and withdrawn where they were written even after the recipe moves on. S3 keys for the data
 lake ([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
 
+**Sink administration** ([design](design/sink-administration.md)): a sink that declares
+administration (contract version 3) is administered from its target row under Published outputs
+(*Administer*: its instances, clients and audit log). The admin-only routes
+`/api/publish-targets/sinks/{sinkId}/admin/…` (`apps/api/src/routes/sink-admin.ts`) set
+`actingAdmin` from the session and relay each call to the bridge's `POST /v1/sinks/{sinkId}/admin`
+(`apps/bridge/src/routes/sink-admin.ts`), which checks the call, signs it with the sink's key and
+checks the answer. The sink's refusals keep their status and code; an issued client's token passes
+straight through to the browser, once, and is never stored or logged.
+
 1. **Upload** (`POST /api/documents`): PDF magic-byte check, spec resolved (latest version unless
    pinned), optional model override validated against discovered models. PDF stored at
    `inbox/{specId}/v{version}/{documentId}.pdf`; `documents` + `jobs` rows inserted in one

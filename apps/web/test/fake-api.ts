@@ -409,6 +409,32 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listMyConnections: vi.fn(async () => ({ personalSinks: false, connections: [] })),
     listSinks: vi.fn(async () => []),
     browseSink: vi.fn(async () => ({ nodes: [], nextCursor: null })),
+    listSinkInstances: vi.fn(async () => []),
+    addSinkInstance: vi.fn(async (_sinkId: string, body: { id: string; label: string }) => ({
+      id: body.id,
+      label: body.label,
+      fields: {},
+      locked: false,
+      createdAt: null,
+      createdBy: null,
+    })),
+    renameSinkInstance: vi.fn(async (_sinkId: string, id: string, label: string) => ({
+      id,
+      label,
+      fields: {},
+      locked: false,
+      createdAt: null,
+      createdBy: null,
+    })),
+    removeSinkInstance: vi.fn(async () => undefined),
+    listSinkClients: vi.fn(async () => []),
+    issueSinkClient: vi.fn(async () => {
+      throw new Error('no client issue scripted');
+    }),
+    revokeSinkClient: vi.fn(async () => {
+      throw new Error('no client revoke scripted');
+    }),
+    listSinkAudit: vi.fn(async () => ({ entries: [], nextCursor: null })),
     previewPattern: vi.fn(async (pattern: string) => ({
       value: pattern.replaceAll('{source.stem}', 'sample'),
       unresolved: [],

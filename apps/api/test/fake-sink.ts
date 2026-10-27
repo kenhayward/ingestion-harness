@@ -49,3 +49,22 @@ export const FAKE_DOCUMENT_SINK: SinkView = {
     decomposedDocuments: { equations: ['mathml'] },
   },
 };
+
+/** A sink that declares administration (contract version 3), as the bridge's catalog lists it. */
+export const FAKE_ADMIN_SINK: SinkView = {
+  ...FAKE_SINK,
+  id: 'admin-sink',
+  name: 'Administered sink',
+  contractVersion: 3,
+  capabilities: {
+    ...FAKE_SINK.capabilities,
+    administration: {
+      instances: true,
+      clients: true,
+      instanceFields: [
+        { id: 'address', label: 'Address', required: true, hint: 'Where it is reached' },
+        { id: 'region', label: 'Region', required: false, hint: null },
+      ],
+    },
+  },
+};

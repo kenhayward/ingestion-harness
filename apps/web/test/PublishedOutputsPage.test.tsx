@@ -748,6 +748,34 @@ describe('AdminDialog Published outputs tab', () => {
     });
   });
 
+  it("a sink target whose sink declares administration offers Administer; others don't", async () => {
+    const ADMIN_SINK: SinkInfo = {
+      ...FAKE_SINK,
+      id: 'admin-sink',
+      name: 'Administered sink',
+      contractVersion: 3,
+      capabilities: {
+        ...FAKE_SINK.capabilities,
+        administration: { instances: true, clients: true, instanceFields: [] },
+      },
+    };
+    const api = page(
+      [
+        sinkTarget(),
+        sinkTarget({ id: 'admin-target', label: 'Admin target', sinkId: 'admin-sink' }),
+      ],
+      { listSinks: vi.fn(async () => [FAKE_SINK, ADMIN_SINK]) },
+    );
+    const plain = await open('Fake target');
+    expect(within(plain).queryByRole('button', { name: 'Administer' })).toBeNull();
+    const administered = await open('Admin target');
+    await userEvent.click(within(administered).getByRole('button', { name: 'Administer' }));
+    expect(
+      await screen.findByRole('dialog', { name: 'Administer Administered sink' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(api.listSinkInstances).toHaveBeenCalledWith('admin-sink'));
+  });
+
   it('lists the systems read-only', async () => {
     page([target()], { listSinks: vi.fn(async () => [S3_SINK, FAKE_SINK]) });
     const systems = await screen.findByRole('table', { name: 'Systems' });

@@ -327,6 +327,24 @@ export const SinkInfoSchema = z.object({
     decomposedDocuments: z
       .object({ equations: z.array(z.enum(['mathml', 'latex', 'image'])) })
       .optional(),
+    /**
+     * Contract version 3: what an administrator may manage of the sink (its instances, its
+     * clients) and the settings an added instance takes. Absent: no administration.
+     */
+    administration: z
+      .object({
+        instances: z.boolean(),
+        clients: z.boolean(),
+        instanceFields: z.array(
+          z.object({
+            id: z.string(),
+            label: z.string(),
+            required: z.boolean(),
+            hint: z.string().nullable(),
+          }),
+        ),
+      })
+      .optional(),
   }),
 });
 export type SinkInfo = z.infer<typeof SinkInfoSchema>;

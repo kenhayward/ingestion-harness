@@ -39,6 +39,7 @@ import {
   s3PlaceOf,
 } from '../publish-targets/place.js';
 import type { TargetRecord } from '../publish-targets/repo.js';
+import { sinkAdminRoutes } from './sink-admin.js';
 
 const ADMINS_ONLY = error('`admins only`.');
 const NOT_FOUND_MESSAGE = 'publishing target not found';
@@ -335,6 +336,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(403).send({ error: 'admins only' });
     }
   });
+  // Inside this plugin, so the admin check above applies to every administration call.
+  await app.register(sinkAdminRoutes);
 
   const by = (req: FastifyRequest) => req.auth?.label ?? null;
   /** Creates an internal target's bucket; the error message, else null. */

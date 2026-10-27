@@ -1,4 +1,5 @@
 import type {
+  AdminCallName,
   BrowseResult,
   ConnectionSummary,
   PreflightRequest,
@@ -10,7 +11,13 @@ import type {
   TargetTestResult,
   TargetView,
 } from '@ih/bridge-contract';
-import type { BridgeApi, SentConnectionSummary, SharedConnection } from '../src/bridge/client.js';
+import type {
+  AdminAnswer,
+  AdminCall,
+  BridgeApi,
+  SentConnectionSummary,
+  SharedConnection,
+} from '../src/bridge/client.js';
 import { BridgeApiError, ReadConnectionSummary } from '../src/bridge/client.js';
 
 /** The destination fields each sink declares, as the bridge's sinks describe them. */
@@ -79,8 +86,8 @@ export class FakeBridgeApi implements BridgeApi {
   }
 
   /** A refusal as the HTTP client raises it. */
-  static refusal(message: string, code = 'content_rejected'): BridgeApiError {
-    return new BridgeApiError(422, { class: 'needs_user', code, message }, message);
+  static refusal(message: string, code = 'content_rejected', status = 422): BridgeApiError {
+    return new BridgeApiError(status, { class: 'needs_user', code, message }, message);
   }
 
   put(targetId: string, bucket: string, key: string, body: Buffer | string): void {
@@ -182,6 +189,23 @@ export class FakeBridgeApi implements BridgeApi {
     this.fail();
     this.reconciles.push([...liveUserIds]);
     return 0;
+  }
+
+  /** Every administration call relayed, and what the sink answers one (a refusal: throw). */
+  readonly adminCalls: { sinkId: string; call: AdminCall }[] = [];
+  adminAnswer: (sinkId: string, call: AdminCall) => unknown = () => {
+    throw new Error('no administration answer scripted');
+  };
+
+  async sinkAdmin<C extends AdminCallName>(
+    sinkId: string,
+    call: AdminCall<C>,
+  ): Promise<AdminAnswer<C>> {
+    this.fail();
+    this.adminCalls.push({ sinkId, call: structuredClone(call) as unknown as AdminCall });
+    return structuredClone(
+      this.adminAnswer(sinkId, call as unknown as AdminCall),
+    ) as AdminAnswer<C>;
   }
 
   async listSinks(): Promise<SinkView[]> {
