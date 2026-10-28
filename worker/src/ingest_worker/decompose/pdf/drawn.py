@@ -11,6 +11,11 @@ A grid where Docling has a table already is that table; any other becomes a tabl
 `ruled`, which its flag says, and the text items inside it are dropped from the layout so its
 chars go to its cells. When every ruling line in the picture is in a grid, the picture was only
 tables, and it is dropped; else it stays as it is, and so do its grids.
+
+A picture that stays over a table Docling did read, the same region, still had its text items
+inside that table: they would take its cells' chars (the smallest box wins), and the cells would
+be empty. So they are dropped too, and the picture stays an image (a table of chemical
+structures, say, whose drawings no cell holds).
 """
 
 from __future__ import annotations
@@ -46,7 +51,8 @@ class _Rule:
 
 def tables_from_drawings(layout: LayoutDoc, text: TextLayer) -> LayoutDoc:
     """The layout with each picture that is only ruled tables replaced by those of its tables
-    Docling didn't read, and the text items inside them dropped."""
+    Docling didn't read, and the text items inside them dropped; and the text items inside a
+    table Docling read that a picture repeats."""
     pages = {p.index: p for p in text.pages if p.kind == "born_digital"}
     docling = [i for i in layout.items if isinstance(i, LayoutTable)]
     found: dict[str, list[LayoutTable]] = {}
@@ -58,9 +64,21 @@ def tables_from_drawings(layout: LayoutDoc, text: TextLayer) -> LayoutDoc:
                 found[item.ref] = [
                     t for t in tables if not any(_same(t, d) for d in docling if d.page == t.page)
                 ]
-    if not found:
+    repeated = [
+        d
+        for d in docling
+        if any(
+            isinstance(i, LayoutPicture)
+            and i.ref not in found
+            and i.page == d.page
+            and _same_box(i.bbox, d.bbox, of_both=True)
+            for i in layout.items
+        )
+    ]
+    if not found and not repeated:
         return layout
     boxes = [(t.page, t.bbox) for tables in found.values() for t in tables]
+    boxes += [(d.page, d.bbox) for d in repeated]
     items: list[LayoutItem] = []
     for item in layout.items:
         if item.ref in found:
@@ -71,10 +89,17 @@ def tables_from_drawings(layout: LayoutDoc, text: TextLayer) -> LayoutDoc:
 
 
 def _same(a: LayoutTable, b: LayoutTable) -> bool:
-    w = min(a.bbox[2], b.bbox[2]) - max(a.bbox[0], b.bbox[0])
-    h = min(a.bbox[3], b.bbox[3]) - max(a.bbox[1], b.bbox[1])
-    smaller = min(_area(a.bbox), _area(b.bbox))
-    return w > 0 and h > 0 and smaller > 0 and w * h >= _SAME * smaller
+    return _same_box(a.bbox, b.bbox)
+
+
+def _same_box(a: BBox, b: BBox, *, of_both: bool = False) -> bool:
+    """Whether the boxes share `_SAME` of the smaller one's area; `of_both`, of the larger's
+    too (a small picture inside a table is not a picture of it)."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    areas = (_area(a), _area(b))
+    measure = max(areas) if of_both else min(areas)
+    return w > 0 and h > 0 and measure > 0 and w * h >= _SAME * measure
 
 
 def _area(box: BBox) -> float:
