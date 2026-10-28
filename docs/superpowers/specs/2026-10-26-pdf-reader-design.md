@@ -795,3 +795,63 @@ What is left, and why:
   now split into a different section and pair with a different Word table.
 
 The owner's own scans are next (§15.7): they are decomposed, held for review and read by eye.
+
+## 16. Layout analysis on a GPU (2026-10-28)
+
+The layout service is most of a PDF's decomposition time: on the CPU, about 3 s a page on a
+table-heavy report (§13's 102-page twin took 314 s). It can now run on the CT Studio host's NVIDIA
+GPU, with the CPU service behind it.
+
+### 16.1 What was measured
+
+A spike timed the same four PDFs (two of the owner's, two twins) through a whole decompose, warm,
+on the pinned CPU image (Docker given 8 CPUs) and on the same Docling and weights built with CUDA
+torch:
+
+| PDF | Pages | CPU | RTX 3090 (another host) | RTX 5090 (the CT Studio host) |
+|---|---|---|---|---|
+| real1 | 15 | 19 s | 5 s | 2.7 s |
+| real2 | 8 | 11 s | 3 s | 1.4 s |
+| doc1 | 13 | 17 s | 5 s | 2.1 s |
+| doc4, 70 tables | 102 | 314 s | 107 s | 43 s |
+
+- **TF32 changes the output.** With the GPU's default TF32 matrix maths, the layout model split one
+  table on page 68 of doc4 in two, and §6's checks refused the document, which the CPU reads
+  whole. In full precision the GPU's boxes are the CPU's to within 0.002 points on all four, at
+  about the same speed. The service turns TF32 off whenever it runs on CUDA.
+- **Memory:** about 1.7 GB of GPU memory, up to 2.5 GB while warming up.
+- **Two documents at once** on the 5090 gained about 20% throughput (on the 3090, nearly double):
+  not worth a second instance on this host. The service still reads one request at a time.
+
+### 16.2 How it is set up
+
+- **One Dockerfile, two images.** `deploy/layout/Dockerfile` takes `TORCH_INDEX` (`cpu` by default;
+  `cu130` for the GPU image): the same torch version from PyTorch's index, the same locked
+  Docling, the same weights. `layout_service.device.prepare` turns TF32 off on CUDA before the
+  models load, and the fingerprint ends `; cuda` or `; cpu`. The GPU image without a GPU runs on
+  the CPU.
+- **`layout-gpu`** (`deploy/docker-compose.yml`) extends `layout` (internal network, no ports,
+  read-only root, nothing fetched) with `gpus: all`, only in the `gpu` profile. The worker
+  starts it when the profile is on (`depends_on`, `required: false`); `layout` keeps running.
+- **Turned on by three lines in `.env`:** `COMPOSE_PROFILES=gpu`, `LAYOUT_URL=http://layout-gpu:8000`,
+  `LAYOUT_FALLBACK_URL=http://layout:8000`. Without them nothing changes.
+
+### 16.3 Fallback
+
+`LAYOUT_FALLBACK_URL` makes the worker's analyser a `FallbackLayoutAnalyser`
+(`decompose/pdf/layout.py`). A document is read by one service from its first page to its last:
+
+- If the primary is unavailable (unreachable, a timeout, a 5xx) on any chunk, the whole document
+  is read again on the fallback, and the primary is left alone for 60 s; the next document after
+  that tries it again. **[call]**
+- A GPU failure (out of memory, since other programs share the GPU, or a CUDA error) is a 503
+  from the service (`DeviceUnavailable`, `device.is_device_error`), not the 422 of a PDF it can't
+  read, so it falls back too.
+- A document the primary refuses (4xx) is not retried: the CPU would refuse it as well.
+- Both down: the job is retried as before.
+
+### 16.4 Left for later
+
+- The layout service on another host's GPU (the 3090 above): it needs a published port, a token
+  and the 21 GB image copied there.
+- Several documents at once: worth it only where the GPU has room, as on the 3090.

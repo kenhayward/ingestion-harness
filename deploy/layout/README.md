@@ -19,6 +19,22 @@ extracts and converts Word files. The worker reaches it at `LAYOUT_URL` (default
 layout service (LAYOUT_URL)"). A layout service that can't be reached is retried, as the converter
 is; on the job's last attempt the item fails.
 
+### On the GPU
+
+`layout-gpu`, in the `gpu` compose profile, is this image built with `--build-arg
+TORCH_INDEX=cu130` (CUDA torch, same versions and weights; about 21 GB) and given the host's
+NVIDIA GPU (PDF reader design, section 16). On CUDA the service turns TF32 off before the models
+load, so its output matches the CPU's. To use it, in `.env`:
+
+```
+COMPOSE_PROFILES=gpu
+LAYOUT_URL=http://layout-gpu:8000
+LAYOUT_FALLBACK_URL=http://layout:8000
+```
+
+`layout` keeps running: the worker reads a document on it whenever `layout-gpu` is down or its
+GPU fails (503 below).
+
 ## API
 
 | Request | Response |
@@ -67,7 +83,9 @@ To move to a new Docling or weights version, change the pins in `pyproject.toml`
 has a time limit of 30 seconds a page in its range, at most 600 seconds (Docling's
 `document_timeout`); one that runs over is `422 {"error": "layout analysis failed: timed out"}`.
 A conversion that ends with any status but full success is a 422 too: a partial document is
-never returned. Any other failure is a 500.
+never returned. A GPU failure (out of memory, a CUDA error) is `503 {"error": "layout device
+unavailable: <reason>"}`: the PDF is not at fault, and the worker reads it on its fallback
+service. Any other failure is a 500.
 
 ## Tests
 
