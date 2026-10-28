@@ -25,7 +25,7 @@ from ingest_worker.bridge.models import (
     Receipt,
     decomposition_idempotency_key,
 )
-from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed
+from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed, decomposer_version
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
@@ -362,7 +362,7 @@ def test_an_auto_approved_pdf_is_delivered_not_held() -> None:
     [request] = world.bridge.requests
     assert request.acting_user == USER
     provenance = request.package.provenance
-    assert provenance.decomposer_version == DECOMPOSER_VERSION * 1000 + 7  # type: ignore[union-attr]
+    assert provenance.decomposer_version == decomposer_version("pdf")  # type: ignore[union-attr]
     assert "auto-approved" in world.messages(job)
 
 
