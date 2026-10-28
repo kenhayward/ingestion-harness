@@ -52,6 +52,7 @@ import {
   errorLinksOf,
   LINKED_STATES,
   isReloadable,
+  isPartWay,
   isUnconfirmed,
   isUnversioned,
   type StartBatchResult,
@@ -104,6 +105,7 @@ type StoredItem = Omit<
   | 'unversioned'
   | 'gone'
   | 'unconfirmed'
+  | 'partWay'
   | 'links'
   | 'reloadable'
   | 'rerunIn'
@@ -1324,6 +1326,7 @@ export class MemoryRepo implements IngestionRepo {
     let unversioned = false;
     let gone = false;
     let unconfirmed = false;
+    let partWay = false;
     let links: Item['links'] = [];
     let detached = false;
     if (item.registerEntryId) {
@@ -1331,6 +1334,7 @@ export class MemoryRepo implements IngestionRepo {
       unversioned = entry !== undefined && isUnversioned(entry);
       gone = entry !== undefined && isGone(entry);
       unconfirmed = entry !== undefined && isUnconfirmed(entry);
+      partWay = entry !== undefined && isPartWay(entry);
       if (entry && LINKED_STATES.has(entry.state)) links = errorLinksOf(entry.lastError);
       const state = entry?.state;
       detached = state === 'detached';
@@ -1361,6 +1365,7 @@ export class MemoryRepo implements IngestionRepo {
       unversioned,
       gone,
       unconfirmed,
+      partWay,
       links,
       reloadable,
       rerunIn: rerun?.batchId ?? null,
@@ -1663,13 +1668,14 @@ export class MemoryRepo implements IngestionRepo {
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
     // Only a document refused as changed in the target, one whose versions were never
-    // recorded, one gone from the target, or a create the target may have taken, is
-    // detached: never a live one.
+    // recorded, one gone from the target, a create the target may have taken, or one refused
+    // as part-way, is detached: never a live one.
     if (
       entry.state !== 'changed' &&
       !isUnversioned(entry) &&
       !isGone(entry) &&
-      !isUnconfirmed(entry)
+      !isUnconfirmed(entry) &&
+      !isPartWay(entry)
     ) {
       return { ok: false, reason: 'not_refused' };
     }

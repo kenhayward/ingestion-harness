@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { DELIVERY_PART_WAY } from '@ih/bridge-contract';
 import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
@@ -51,6 +52,7 @@ import {
   RUNNING_OUTCOMES,
   isGone,
   isReloadable,
+  isPartWay,
   isUnconfirmed,
   linksOf,
   REFUSED_BEFORE_ACCEPTANCE,
@@ -294,6 +296,7 @@ interface ItemRow {
   unversioned: boolean;
   gone: boolean;
   unconfirmed: boolean;
+  part_way: boolean;
   links: unknown;
   entry_detached: boolean;
   rerun_in: string | null;
@@ -352,6 +355,13 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
              AND (r.last_error->'details'->'${REFUSED_BEFORE_ACCEPTANCE}')
                IS DISTINCT FROM 'true'::jsonb)
     AS unconfirmed,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id
+             AND r.state = 'failed'
+             AND jsonb_typeof(r.last_error) = 'object'
+             AND r.last_error->>'code' = 'content_rejected'
+             AND r.last_error->'details'->>'reason' = '${DELIVERY_PART_WAY}')
+    AS part_way,
   (SELECT r.last_error->'details'->'links' FROM decomposition_register r
     WHERE r.id = decomposition_items.register_entry_id AND r.state IN ('changed', 'failed'))
     AS links,
@@ -385,6 +395,7 @@ const toItem = (r: ItemRow): Item => ({
   unversioned: r.unversioned,
   gone: r.gone,
   unconfirmed: r.unconfirmed,
+  partWay: r.part_way,
   links: linksOf(r.links),
   reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
   rerunIn: r.rerun_in ?? null,
@@ -1748,14 +1759,15 @@ export class PgRepo implements IngestionRepo {
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
       // Only a document refused as changed in the target, one whose versions were never
-      // recorded, one gone from the target, or a create the target may have taken, is
-      // detached: never a live one.
+      // recorded, one gone from the target, a create the target may have taken, or one refused
+      // as part-way, is detached: never a live one.
       const entry = toRegisterEntry(row);
       if (
         row.state !== 'changed' &&
         !isUnversioned(entry) &&
         !isGone(entry) &&
-        !isUnconfirmed(entry)
+        !isUnconfirmed(entry) &&
+        !isPartWay(entry)
       ) {
         return { ok: false, reason: 'not_refused' };
       }
