@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -13,6 +14,7 @@ from ingest_worker.ocr import (
     render_page_png,
 )
 
+from .decompose.pdf.make_pdf import Page, Run, make_pdf
 from .fakes import FakeProvider
 
 SETTINGS = OcrSettings(model="local/olmocr-2-7b-1025")
@@ -111,3 +113,12 @@ def test_parse_olmocr_flattens_html_tables_to_text_rows() -> None:
         "Widget & bolt  2  10.00",
         "Subtotal 10.00",
     ]
+
+
+def test_pages_render_from_many_threads_at_once() -> None:
+    """OCR renders from a thread pool; PDFium, not thread-safe, failed such opens at random with
+    "Failed to load document (PDFium: Data format error)"."""
+    pdf = make_pdf([Page(runs=[Run(f"Page {n}", 72, 100)]) for n in range(4)])
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        pngs = list(pool.map(lambda i: render_page_png(pdf, i % 4, 200, 0), range(64)))
+    assert all(png.startswith(b"\x89PNG") for png in pngs)

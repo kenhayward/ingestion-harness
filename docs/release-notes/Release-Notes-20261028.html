@@ -161,8 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Wednesday 28 October 2026: PDFs with printed line numbers read in full, their numbers left
-        out everywhere, and ruled tables the layout analysis took for pictures read as tables. PRs
-        #351 and #352.
+        out everywhere, ruled tables the layout analysis took for pictures read as tables, and
+        scanned pages no longer failing OCR at random. PRs #351, #352 and #354.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -176,6 +176,10 @@
           <li>
             <a href="#pdf-ruled-tables">Ruled tables taken for pictures</a>
             <span>— read from their ruling lines, not delivered as images</span>
+          </li>
+          <li>
+            <a href="#ocr-render-race">OCR failing with "Data format error"</a>
+            <span>— scanned pages are rendered one at a time</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -233,6 +237,20 @@
       <p>
         On the ICH Q1 draft guideline, matrixing tables A1-4 and A1-5 are now tables, and no longer
         images.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="ocr-render-race">OCR failing with "Data format error"</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/354">#354</a>
+      </p>
+      <p>
+        A document with scanned pages could fail with "PdfiumError: Failed to load document (PDFium:
+        Data format error)", though the PDF was sound. OCR reads several pages at once, and each was
+        rendered to an image at the same moment; the PDF library that renders them cannot do two at
+        once, and failed one of them at random. Pages are now rendered one at a time and still sent
+        to the OCR model together, so OCR takes no longer. A job that failed this way succeeds when
+        it is run again.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
