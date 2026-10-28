@@ -107,6 +107,33 @@ def test_rotated_page_reads_upright() -> None:
     assert page.chars[0].baseline == pytest.approx(100, abs=2)
 
 
+@pytest.mark.parametrize("angle", [0, 90, 180, 270])
+@pytest.mark.parametrize("rotate", [0, 90])
+def test_chars_carry_the_way_their_text_runs(angle: int, rotate: int) -> None:
+    chars = _chars(Run("Risk", 300, 400, angle=angle), size=(595, 842), rotate=rotate)
+    assert [c.angle for c in chars] == [angle] * 4
+    if angle in (90, 270):  # its baseline is a column
+        assert all(c.origin_x == pytest.approx(300, abs=1) for c in chars)
+        assert len({round(c.baseline) for c in chars}) == 4
+
+
+def test_a_char_drawn_at_another_scale_takes_the_page_s_size() -> None:
+    # 320-point type shrunk 20 times beside 16-point type: both read as 16 points
+    chars = _chars(Run("Final", 72, 100, size=16, scale=0.05), Run("Adopted", 72, 120, size=16))
+    assert [round(c.size) for c in chars] == [16] * 12
+
+
+def test_a_glyph_drawn_twice_in_one_place_is_read_once() -> None:
+    # pdfium merges a copy drawn soon after the first itself; not one drawn later
+    between = [
+        Run(word, 72, 200 + 12 * k) for k, word in enumerate(("One", "Two", "Six", "Ten", "Red"))
+    ]
+    runs = [Run("Dry", 72, 100), *between, Run("Dry", 72, 100)]
+    page = read_text_layer(make_pdf([Page(runs)])).pages[0]
+    assert "".join(c.text for c in page.chars if not c.text.isspace()) == "DryOneTwoSixTenRed"
+    assert page.overprinted == 3
+
+
 @pytest.mark.parametrize("rotate", [180, 270])
 def test_other_rotations_read_upright(rotate: int) -> None:
     chars = _chars(Run("Hello", 72, 100), rotate=rotate)
