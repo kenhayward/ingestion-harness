@@ -179,6 +179,10 @@
             <span>— read from their ruling lines, not delivered as images</span>
           </li>
           <li>
+            <a href="#pdf-bullet-pictures">Bullets taken for pictures</a>
+            <span>— given back to their list items, not delivered as images</span>
+          </li>
+          <li>
             <a href="#pdf-gpu">PDF layout analysis on the GPU</a>
             <span>— optional, about 7 times faster, with the CPU behind it</span>
           </li>
@@ -197,7 +201,7 @@
         <h4>Other updates</h4>
         <ul>
           <li>
-            The PDF reader is version 6, so a PDF's decomposer version is now 1006 (it was 1005
+            The PDF reader is version 7, so a PDF's decomposer version is now 1007 (it was 1005
             earlier today): a PDF run again is an ordinary update.
           </li>
         </ul>
@@ -249,6 +253,24 @@
       <p>
         On the ICH Q1 draft guideline, matrixing tables A1-4 and A1-5 are now tables, and no longer
         images.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-bullet-pictures">Bullets taken for pictures</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/355">#355</a>
+      </p>
+      <p>
+        The layout analysis sometimes takes a list item's bullet for a picture of its own. The
+        bullet was delivered as a small image of a dot, flagged as a rendered drawing, and its item
+        as a plain paragraph. Such a picture, small, over no image and holding only a bullet, now
+        joins the text that starts beside it on the same line, which is delivered as a list item
+        with the bullet dropped, as any other. A small picture with no text beside it stays a
+        picture.
+      </p>
+      <p>
+        On the ICH Q1 draft guideline, the bullet before line 1714 on page 66 is now a list item,
+        and no longer an image.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
