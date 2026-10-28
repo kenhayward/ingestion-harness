@@ -29,7 +29,12 @@ function conversionApi(overrides: Parameters<typeof fakeApi>[0] = {}) {
   return fakeApi({
     listConversionTargets: vi.fn(async () => TARGETS),
     createConversionBatch: vi.fn(async (body) =>
-      conversionBatch({ id: BATCH_ID, targetId: body.targetId, force: body.force ?? false }),
+      conversionBatch({
+        id: BATCH_ID,
+        targetId: body.targetId,
+        force: body.force ?? false,
+        autoApprove: body.autoApprove ?? false,
+      }),
     ),
     uploadConversionItem: vi.fn(async (batchId, file, sourceKey) =>
       conversionItem({ batchId, filename: file.name, sourceKey }),
@@ -86,7 +91,11 @@ describe('the Conversion tab: a new batch', () => {
     expect(listed()).toEqual(['report.docx']);
     await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalledWith(BATCH_ID));
-    expect(api.createConversionBatch).toHaveBeenCalledWith({ targetId: 'archive', force: false });
+    expect(api.createConversionBatch).toHaveBeenCalledWith({
+      targetId: 'archive',
+      force: false,
+      autoApprove: false,
+    });
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
     expect(api.uploadConversionItem).toHaveBeenCalledWith(
       BATCH_ID,
@@ -107,6 +116,25 @@ describe('the Conversion tab: a new batch', () => {
       expect(api.createConversionBatch).toHaveBeenCalledWith({
         targetId: 'documents',
         force: true,
+        autoApprove: false,
+      }),
+    );
+  });
+
+  it('offers Auto Approve, off until turned on, and sends it with the batch', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    const auto = screen.getByRole('switch', { name: 'Auto Approve' });
+    expect(auto).not.toBeChecked();
+    await userEvent.upload(screen.getByLabelText('Choose files'), word('report.docx'));
+    await userEvent.click(auto);
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
+    await waitFor(() =>
+      expect(api.createConversionBatch).toHaveBeenCalledWith({
+        targetId: 'documents',
+        force: false,
+        autoApprove: true,
       }),
     );
   });

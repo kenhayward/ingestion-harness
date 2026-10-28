@@ -522,6 +522,10 @@ Rejecting needs a note, so the row says why. **[call]** Approving takes an optio
   delivered, so a change in between (another delivery landing first) is still caught.
 - Every run that would deliver is held, forced runs and re-deliveries included. **[call]** A
   forced run exists to send the document again, and what is sent should have been looked at.
+- Except in a batch with **Auto Approve** on (2026-10-28, the owner's request; off by default):
+  its PDFs are delivered as Word files are, never held, and the batch's re-runs of failed
+  documents keep it. A row action's run of one document (force-load, redeliver, reload) is held
+  as before. The worker records "auto-approved" in the job's events; the batch shows the option.
 
 ### 14.3 What is kept while it waits
 
@@ -592,7 +596,9 @@ The page is read-only. It shows the item's file name, its target, and the count 
 
 - The file picker and drop zone take `.docx` and `.pdf`; the copy says "Word or PDF".
 - Two new outcomes: **Awaiting review** (it needs attention, so the "Needs attention" filter shows
-  it) and **Rejected** (final; it counts with the failed ones).
+  it, and the "For review" filter shows only these) and **Rejected** (final; it counts with the
+  failed ones). **Review** is in a column of its own on each held row. The filter picked is kept
+  per batch for the browser tab's session, so returning from a review keeps it.
 - A batch with items awaiting review isn't finished.
 - Each row shows its flag count (§4.9), for Word files too.
 

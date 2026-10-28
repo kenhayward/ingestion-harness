@@ -41,6 +41,8 @@ export const BatchSchema = z
     createdBy: BatchCreatorSchema,
     state: BatchStateSchema,
     force: z.boolean(),
+    /** A PDF is delivered without being held for review (Auto Approve). */
+    autoApprove: z.boolean(),
     createdAt: z.string(),
     startedAt: z.string().nullable(),
   })
@@ -219,6 +221,8 @@ export const DecomposeParamsSchema = z
     force: z.boolean(),
     /** Deliver a held document as reviewed (an approval's run), not decompose the source again. */
     approved: z.boolean().optional(),
+    /** Deliver a PDF without holding it for review (the batch's Auto Approve). */
+    autoApprove: z.boolean().optional(),
   })
   .strict();
 export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;
@@ -272,9 +276,16 @@ export const ConversionTargetSchema = z
   .strict();
 export type ConversionTarget = z.infer<typeof ConversionTargetSchema>;
 
-/** `POST /api/conversions/batches`: the target, and whether this is an explicit update. */
+/**
+ * `POST /api/conversions/batches`: the target, whether this is an explicit update, and whether
+ * its PDFs are delivered without review.
+ */
 export const CreateBatchSchema = z
-  .object({ targetId: TargetIdSchema, force: z.boolean().optional() })
+  .object({
+    targetId: TargetIdSchema,
+    force: z.boolean().optional(),
+    autoApprove: z.boolean().optional(),
+  })
   .strict();
 export type CreateBatch = z.infer<typeof CreateBatchSchema>;
 

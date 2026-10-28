@@ -4,7 +4,8 @@
 writes its report beside it (plan ruling R4) and hands a Word file to `deliver_decomposition`
 (phase 2), which decides through the register. A PDF is held for review instead (`hold.py`,
 spec §14.2): `awaiting_review` with its held files, the job succeeding with "held for review",
-unless the register would send nothing, when that outcome is recorded at once. An approved
+unless the register would send nothing, when that outcome is recorded at once, or its batch
+has Auto Approve on (`autoApprove` params), when it is delivered as a Word file is. An approved
 hold (`approved` params, spec §14.4) is delivered as it was reviewed, without reading the PDF
 again, unless the held files or the source are not the reviewed ones, or the register's entry
 for the source has changed since the hold; its held files are deleted once it has an outcome.
@@ -92,6 +93,8 @@ class DecomposeParams(BaseModel):
     force: bool
     #: The reviewer approved the item's held PDF: deliver the held decomposition.
     approved: bool = False
+    #: The batch's Auto Approve: a PDF is delivered at once, never held for review.
+    auto_approve: bool = Field(False, alias="autoApprove")
 
 
 @dataclass(frozen=True)
@@ -284,7 +287,9 @@ def _convert(
     )
     check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
     if source_kind(data) == "pdf":
-        return _hold(job, deps, params, item, data, result)
+        if not params.auto_approve:
+            return _hold(job, deps, params, item, data, result)
+        deps.queue.event(job.id, "info", "auto-approved", {"itemId": item.id})
     return _deliver(
         job,
         deps,

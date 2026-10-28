@@ -156,6 +156,30 @@ describe('conversion batches', () => {
     });
     const plain = BatchSchema.parse((await newBatch(app)).json());
     expect(plain.force).toBe(false);
+    expect(plain.autoApprove).toBe(false);
+  });
+
+  it('an auto-approving batch says so, and its jobs carry it', async () => {
+    const c = await setup();
+    const res = await newBatch(c.app, { targetId: 'manuals', autoApprove: true });
+    expect(res.statusCode).toBe(201);
+    const batch = BatchSchema.parse(res.json());
+    expect(batch).toMatchObject({ force: false, autoApprove: true });
+    const a = ItemSchema.parse((await upload(c.app, batch.id, 'f/a.pdf')).json());
+    expect((await start(c.app, batch.id)).statusCode).toBe(200);
+    const [job] = c.repo.backgroundJobs.filter((j) => j.task === 'decompose');
+    expect(DecomposeParamsSchema.parse(job!.params)).toEqual({
+      batchId: batch.id,
+      itemId: a.id,
+      targetId: 'manuals',
+      sourceKey: 'f/a.pdf',
+      force: false,
+      autoApprove: true,
+    });
+    const detail = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
+    );
+    expect(detail.batch.autoApprove).toBe(true);
   });
 
   it('refuses a target whose sink takes no documents', async () => {

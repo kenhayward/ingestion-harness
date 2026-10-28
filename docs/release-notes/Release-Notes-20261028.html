@@ -162,8 +162,9 @@
       <p class="subtitle">
         Wednesday 28 October 2026: PDFs with printed line numbers read in full, their numbers left
         out everywhere, ruled tables the layout analysis took for pictures read as tables, PDF
-        layout analysis on the GPU, scanned pages no longer failing OCR at random, and publishing
-        targets removable after they were used. PRs #351, #352, #353, #354 and #357.
+        layout analysis on the GPU, scanned pages no longer failing OCR at random, publishing
+        targets removable after they were used, and a For review filter and Auto Approve for
+        conversion batches. PRs #351, #352, #353, #354, #357 and #PRNUM.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -193,6 +194,10 @@
           <li>
             <a href="#remove-used-targets">Removing a publishing target that was used</a>
             <span>— for one whose repository or bucket is gone</span>
+          </li>
+          <li>
+            <a href="#batch-review">Reviewing a conversion batch, and Auto Approve</a>
+            <span>— a For review filter, Review in its own column, and PDFs without review</span>
           </li>
         </ul>
         <h4>Fixes</h4>
@@ -324,6 +329,26 @@
         version without it, what was delivered to it stays listed, and withdrawing those documents
         deletes nothing through it. A target an S3 key consumer is granted, or a withdrawal still to
         run names, still can't be removed until that is done.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="batch-review">Reviewing a conversion batch, and Auto Approve</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PRNUM">#PRNUM</a>
+      </p>
+      <p>
+        A batch's list has a <strong>For review</strong> filter showing only the PDFs awaiting
+        review, and <strong>Review</strong> now has a column of its own, in the same place on every
+        held line, instead of at the end of the line's detail. The filter you pick is kept while the
+        tab is open: approving or rejecting a PDF brings you back to the batch with the same filter,
+        not to All.
+      </p>
+      <p>
+        A new batch's options have an <strong>Auto Approve</strong> switch under Force-load, off to
+        start with. With it on, each PDF in the batch is delivered without being held for review, as
+        if it were approved; its report is still written, and re-running the batch's failed
+        documents keeps the option. The batch says Auto Approve beside its target. A single
+        document's force-load, redeliver or reload is still held for review.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

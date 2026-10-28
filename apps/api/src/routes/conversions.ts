@@ -140,11 +140,13 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           Upload its files with \`POST /api/conversions/batches/{id}/items\`, then start it.
           \`force\` makes every item an explicit update: an already loaded document is updated,
           and a duplicate is created (the target's version check still applies).
+          \`autoApprove\` delivers its PDFs without holding them for review; its re-runs of
+          failed documents do too (a row action's run of one document does not).
         `,
         body: CreateBatchSchema,
         response: {
           201: res('The open batch.', BatchSchema),
-          400: error('The body is not `{ targetId, force? }`.'),
+          400: error('The body is not `{ targetId, force?, autoApprove? }`.'),
           422: CodedError(
             'No such target, or its sink takes no documents.',
             'target_takes_no_documents',
@@ -161,6 +163,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const batch = await app.deps.repo.createBatch({
         targetId: body.data.targetId,
         force: body.data.force ?? false,
+        autoApprove: body.data.autoApprove ?? false,
         createdBy: batchCreator(creatorOf(req)),
       });
       return reply.code(201).send(batch);
@@ -573,6 +576,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         items: (asked as Item[]).map((of) => ({ itemId: randomUUID(), of })),
         targetId: batch.targetId,
         force: body.data.force ?? batch.force,
+        autoApprove: batch.autoApprove,
         createdBy: batchCreator(creatorOf(req)),
         by: creatorOf(req),
       });

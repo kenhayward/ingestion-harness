@@ -35,7 +35,9 @@ export function ConversionHelp() {
         <li>
           <strong>3 Options</strong>: the <strong>Force-load</strong> switch delivers every file as
           an update, even one that is already loaded or a copy of another file. Changes someone made
-          in the target are still never overwritten.
+          in the target are still never overwritten. The <strong>Auto Approve</strong> switch, off
+          to start with, delivers each PDF without holding it for review, as if it were approved;
+          re-running the batch&apos;s failed documents keeps it. The batch says it is on.
         </li>
       </ul>
 
@@ -69,12 +71,15 @@ export function ConversionHelp() {
         someone to check, such as an empty heading it left out or a table with no caption), the
         document in the target, and the actions that apply to it. At first the panel shows the first
         document needing attention. <strong>Find a document</strong> narrows the list by its path.{' '}
-        <strong>Needs attention</strong> shows only the documents someone should look at,{' '}
-        <strong>Failed</strong> the ones that failed, and <strong>Done</strong> the ones that went
-        through, were already loaded, or were detached or had the target&apos;s state accepted. A
-        refusal that a later run has moved on from is <strong>Superseded by a later run</strong>,
-        and done too: act on the document from the later batch. A screen reader hears how many are
-        done each time another settles.
+        <strong>For review</strong> shows only the PDFs awaiting review, with{' '}
+        <strong>Review</strong> in the same place on each line. <strong>Needs attention</strong>{' '}
+        shows only the documents someone should look at, <strong>Failed</strong> the ones that
+        failed, and <strong>Done</strong> the ones that went through, were already loaded, or were
+        detached or had the target&apos;s state accepted. A refusal that a later run has moved on
+        from is <strong>Superseded by a later run</strong>, and done too: act on the document from
+        the later batch. A screen reader hears how many are done each time another settles. The
+        filter you picked is kept while the tab is open, so coming back from a review shows the same
+        documents.
       </p>
       <ul>
         <li>

@@ -99,7 +99,13 @@ class World:
         )
 
     def upload(
-        self, data: bytes, source_key: str, *, batch: str = BATCH_A, force: bool = False
+        self,
+        data: bytes,
+        source_key: str,
+        *,
+        batch: str = BATCH_A,
+        force: bool = False,
+        auto_approve: bool = False,
     ) -> ClaimedJob:
         """An item uploaded to `batch` and its queued job, as the API's start writes them."""
         self._n += 1
@@ -124,6 +130,7 @@ class World:
                 "targetId": TARGET,
                 "sourceKey": source_key,
                 "force": force,
+                **({"autoApprove": True} if auto_approve else {}),
             },
         )
         self.queue.uploaders[job.id] = USER
@@ -335,6 +342,28 @@ def test_a_hold_for_an_item_that_moved_on_is_deleted(monkeypatch: pytest.MonkeyP
     assert outcome == Complete(note="two-pages.pdf: had moved on; held for review not recorded")
     assert _held(world, job) == []
     assert world.item(job).outcome == "decomposing"
+
+
+def test_an_auto_approved_pdf_is_delivered_not_held() -> None:
+    """A batch with Auto Approve on: the PDF goes to the target as a Word file does, with no
+    held files and no review."""
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "reports/two-pages.pdf", auto_approve=True)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Delivering(
+        [], [(TARGET, "d1")], note="handed reports/two-pages.pdf to the bridge"
+    )
+    item = world.item(job)
+    assert item.outcome == "delivering" and item.held_sha256 is None
+    assert _held(world, job) == []
+    [request] = world.bridge.requests
+    assert request.acting_user == USER
+    provenance = request.package.provenance
+    assert provenance.decomposer_version == DECOMPOSER_VERSION * 1000 + 7  # type: ignore[union-attr]
+    assert "auto-approved" in world.messages(job)
 
 
 def test_word_is_never_held() -> None:

@@ -160,6 +160,8 @@ export interface Retry {
   targetId: string;
   /** Deliver as an explicit update (force-load). */
   force: boolean;
+  /** Deliver PDFs without review (the re-run batch's Auto Approve; default false). */
+  autoApprove?: boolean;
   createdBy: Batch['createdBy'];
   /** Who queues the jobs. */
   by: Creator | null;
@@ -301,6 +303,8 @@ export type RegisterAction =
 export interface NewBatch {
   targetId: string;
   force: boolean;
+  /** Its PDFs are delivered without being held for review (default false). */
+  autoApprove?: boolean;
   createdBy: Batch['createdBy'];
 }
 

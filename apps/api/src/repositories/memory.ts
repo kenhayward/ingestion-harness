@@ -1373,13 +1373,14 @@ export class MemoryRepo implements IngestionRepo {
     });
   }
 
-  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+  async createBatch({ targetId, force, autoApprove = false, createdBy }: NewBatch): Promise<Batch> {
     const batch: Batch = {
       id: randomUUID(),
       targetId,
       createdBy: { ...createdBy },
       state: 'open',
       force,
+      autoApprove,
       createdAt: new Date().toISOString(),
       startedAt: null,
     };
@@ -1464,6 +1465,7 @@ export class MemoryRepo implements IngestionRepo {
           targetId: batch.targetId,
           sourceKey: item.sourceKey,
           force: batch.force,
+          ...(batch.autoApprove ? { autoApprove: true } : {}),
         },
         by?.name ?? null,
         by?.userId ?? null,
@@ -1509,6 +1511,7 @@ export class MemoryRepo implements IngestionRepo {
       createdBy: { ...createdBy },
       state: 'started',
       force,
+      autoApprove: false,
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
     };
@@ -1587,6 +1590,7 @@ export class MemoryRepo implements IngestionRepo {
     items: asked,
     targetId,
     force,
+    autoApprove = false,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
@@ -1609,6 +1613,7 @@ export class MemoryRepo implements IngestionRepo {
       createdBy: { ...createdBy },
       state: 'started',
       force,
+      autoApprove,
       createdAt: now,
       startedAt: now,
     };
@@ -1635,7 +1640,14 @@ export class MemoryRepo implements IngestionRepo {
       };
       item.jobId = this.queueBackground(
         'decompose',
-        { batchId, itemId, targetId, sourceKey: of.sourceKey, force },
+        {
+          batchId,
+          itemId,
+          targetId,
+          sourceKey: of.sourceKey,
+          force,
+          ...(autoApprove ? { autoApprove: true } : {}),
+        },
         by?.name ?? null,
         by?.userId ?? null,
       );

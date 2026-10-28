@@ -45,13 +45,35 @@ export const BATCH_POLL_MS = 3000;
 /** Rows a page holds before the list is measured (and where it cannot be: tests). */
 export const DOCUMENTS_PER_PAGE = 50;
 
-type Filter = 'all' | 'attention' | 'failed' | 'done';
+type Filter = 'all' | 'review' | 'attention' | 'failed' | 'done';
 const FILTERS: Record<Filter, (item: Item) => boolean> = {
   all: () => true,
+  review: isAwaitingReview,
   attention: needsAttention,
   failed: isFailed,
   done: isDone,
 };
+
+/**
+ * The filter last picked for a batch, kept for the tab's session so coming back to the batch
+ * (from a document's review, say) shows the same documents. Storage may be unavailable.
+ */
+const filterKey = (batchId: string) => `ih.conversion.batch-filter.${batchId}`;
+function storedFilter(batchId: string): Filter {
+  try {
+    const f = sessionStorage.getItem(filterKey(batchId));
+    return f !== null && f in FILTERS ? (f as Filter) : 'all';
+  } catch {
+    return 'all';
+  }
+}
+function storeFilter(batchId: string, f: Filter) {
+  try {
+    sessionStorage.setItem(filterKey(batchId), f);
+  } catch {
+    // Not kept: the batch opens on All next time.
+  }
+}
 
 /**
  * Re-run applies to a failed document of a started batch that was never run again: a document
@@ -132,7 +154,7 @@ export function BatchView({
   const [settled, setSettled] = useState(0);
   const latest = useRef(0);
   const [targets, setTargets] = useState<ConversionTarget[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<Filter>(() => storedFilter(batchId));
   const [report, setReport] = useState<Item | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
@@ -259,6 +281,7 @@ export function BatchView({
   const attention = items.filter(needsAttention);
   const chips: FilterChip<Filter>[] = [
     { value: 'all', label: 'All', count: items.length },
+    { value: 'review', label: 'For review', count: items.filter(isAwaitingReview).length },
     { value: 'attention', label: 'Needs attention', count: attention.length, tone: 'warn' },
     { value: 'failed', label: 'Failed', count: failed.length },
     { value: 'done', label: 'Done', count: items.filter(isDone).length },
@@ -273,6 +296,7 @@ export function BatchView({
   const retryOne = (item: Item) => setRetry({ title: `Re-run ${item.sourceKey}`, items: [item] });
   const pick = (f: Filter) => {
     setFilter(f);
+    storeFilter(batchId, f);
     setPage(0);
   };
 
@@ -296,6 +320,7 @@ export function BatchView({
             )}
             {took && ` · took ${took}`}
             {batch.force && <span className="force-tag">Force-load</span>}
+            {batch.autoApprove && <span className="force-tag">Auto Approve</span>}
           </p>
         </div>
         <div className="batch-head-actions">
@@ -397,11 +422,13 @@ export function BatchView({
               <p className="muted batch-list-empty">
                 {needle
                   ? 'No document matches.'
-                  : filter === 'attention'
-                    ? 'Nothing needs attention.'
-                    : filter === 'failed'
-                      ? 'Nothing failed.'
-                      : 'No document here yet.'}
+                  : filter === 'review'
+                    ? 'Nothing awaits review.'
+                    : filter === 'attention'
+                      ? 'Nothing needs attention.'
+                      : filter === 'failed'
+                        ? 'Nothing failed.'
+                        : 'No document here yet.'}
               </p>
             ) : (
               <table className="batch-table" aria-label="Documents">
@@ -409,6 +436,7 @@ export function BatchView({
                   <col className="status-col" />
                   <col className="doc-col" />
                   <col className="outcome-col" />
+                  <col className="review-col" />
                   <col className="detail-col" />
                   <col className="took-col" />
                   <col className="open-col" />
@@ -419,6 +447,7 @@ export function BatchView({
                     <th scope="col">State</th>
                     <th scope="col">Document</th>
                     <th scope="col">Outcome</th>
+                    <th scope="col">Review</th>
                     <th scope="col">Detail</th>
                     <th scope="col">Took</th>
                     <th scope="col">In the target</th>
@@ -549,12 +578,12 @@ const flagsOf = (item: Item) =>
       ? 'No flags'
       : plural(item.flagCount, 'flag');
 
-/** The link to a held item's review page. */
-function ReviewLink({ item }: { item: Item }) {
+/** The link to a held item's review page (`button`: drawn as one, in the list's Review column). */
+function ReviewLink({ item, button = false }: { item: Item; button?: boolean }) {
   if (item.outcome !== 'awaiting_review') return null;
   return (
     <a
-      className="review-link"
+      className={button ? 'button primary review-link' : 'review-link'}
       href={`#/conversion/items/${encodeURIComponent(item.id)}/review`}
       aria-label={`Review ${item.sourceKey}`}
     >
@@ -595,6 +624,9 @@ function DocumentRow({
       <td className="outcome-cell">
         <StatusPill {...OUTCOME[item.outcome]} />
       </td>
+      <td className="review-cell">
+        <ReviewLink item={item} button />
+      </td>
       <td className="detail-cell">
         {item.resolution && (
           <span className="conversion-resolution">{RESOLUTION[item.resolution]} </span>
@@ -602,12 +634,6 @@ function DocumentRow({
         {item.detail ?? (item.outcome === 'rejected' ? item.reviewNote : null)}
         {OUTCOME_NOTE[item.outcome] && <span className="muted"> {OUTCOME_NOTE[item.outcome]}</span>}
         {flagsOf(item) && <span className="muted"> {flagsOf(item)}</span>}
-        {item.outcome === 'awaiting_review' && (
-          <>
-            {' '}
-            <ReviewLink item={item} />
-          </>
-        )}
         {item.rerunIn && (
           <>
             {' '}

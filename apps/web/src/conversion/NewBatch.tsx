@@ -51,6 +51,7 @@ export function NewBatch({ api }: { api: Api }) {
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [target, setTarget] = useState('');
   const [force, setForce] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   /** Files left out of what was picked: not Word or PDF, hidden or lock files. */
   const [leftOut, setLeftOut] = useState(0);
@@ -153,7 +154,7 @@ export function NewBatch({ api }: { api: Api }) {
     };
     let batchId: string;
     try {
-      batchId = (await api.createConversionBatch({ targetId: target, force })).id;
+      batchId = (await api.createConversionBatch({ targetId: target, force, autoApprove })).id;
     } catch (err) {
       setError(`The batch could not be opened: ${(err as Error).message}`);
       done();
@@ -286,6 +287,21 @@ export function NewBatch({ api }: { api: Api }) {
           <p className="muted new-batch-note">
             Delivers every file as an explicit update, even one already loaded or a copy of another
             file. Changes made in the target are still never overwritten.
+          </p>
+          <label className="conv-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={autoApprove}
+              disabled={busy}
+              onChange={(e) => setAutoApprove(e.target.checked)}
+            />
+            <span className="conv-switch-track" aria-hidden="true" />
+            Auto Approve
+          </label>
+          <p className="muted new-batch-note">
+            Delivers each PDF without holding it for review, as if it were approved. Its report is
+            still written. Leave it off to check each PDF before it reaches the target.
           </p>
         </div>
 
