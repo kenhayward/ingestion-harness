@@ -331,8 +331,12 @@
       </p>
       <p>
         Each page's transcription is kept, so running the same PDF again reads the same text, and an
-        extraction and a conversion of the same PDF share them. Scores for the OCR route, on the
-        Word/PDF twins rendered as images, follow once they have been run against the OCR model.
+        extraction and a conversion of the same PDF share them. Scored on the Word/PDF twins
+        rendered as images, the OCR route finds 97 of 107 headings and almost all of the text
+        (recall 0.99, precision 0.95); its weak points are table cells (58% right, against 86% for
+        born-digital PDFs) and heading levels where chapters sit under unnumbered top entries. Two
+        fixes came out of that scoring: numbered plain lines are read as headings, and a scanned
+        contents page is dropped like a born-digital one.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

@@ -155,3 +155,48 @@ def test_spans_set_the_width() -> None:
     assert cells[(0, 1)].col_span == 2
     assert "".join(r[0] for r in cells[(1, 1)].lines[0]) == "c"
     assert "".join(r[0] for r in cells[(1, 2)].lines[0]) == "d"
+
+
+def test_numbered_plain_lines_are_headings() -> None:
+    """olmOCR writes headings as plain lines, numbered as typed (spec 15.3)."""
+    blocks = parse_transcript(
+        "3.2. Pump performance\nThe pump delivers a steady flow.\n\n4 Results\n\nAll passed."
+    )
+    assert [type(b) for b in blocks] == [TxHeading, TxParagraph, TxHeading, TxParagraph]
+    first, _, second, _ = blocks
+    assert isinstance(first, TxHeading) and first.typed and first.level == 2
+    assert _text(first) == "3.2. Pump performance"
+    assert isinstance(second, TxHeading) and second.level == 1
+
+
+def test_a_lone_numbered_item_is_a_heading() -> None:
+    blocks = parse_transcript("1. Introduction\n\nThis report covers it.")
+    assert [type(b) for b in blocks] == [TxHeading, TxParagraph]
+
+
+def test_numbered_lists_and_sentences_stay() -> None:
+    blocks = parse_transcript(
+        "1. Weigh the sample\n2. Dissolve it\n\n3.5 mg was added to the flask."
+    )
+    assert [type(b) for b in blocks] == [TxListItem, TxListItem, TxParagraph]
+    long = "2.1 " + " ".join(["word"] * 20)
+    assert [type(b) for b in parse_transcript(long)] == [TxParagraph]
+    assert [type(b) for b in parse_transcript("12 samples were tested.")] == [TxParagraph]
+
+
+def test_contents_lines_stay_lines() -> None:
+    """A contents entry (a dot leader, then a page number) is a block of its own, never a
+    heading, so the reader's contents rule can see it (spec 4.3, 15.3)."""
+    blocks = parse_transcript(
+        "CONTENTS\nSUMMARY ........................ 5\n"
+        "3.2 Pump performance ........................ 12\nRESULTS . . . . . . 14"
+    )
+    assert [type(b) for b in blocks] == [TxParagraph] * 4
+    assert [_text(b) for b in blocks][1] == "SUMMARY ........................ 5"
+
+
+def test_simple_inline_math_becomes_text() -> None:
+    (para,) = parse_transcript(
+        r"Assay \( \geq 98\% \), pH \( 7.0 \pm 0.2 \) at \(25^\circ\)C and $x^2$"
+    )
+    assert _text(para) == r"Assay ≥ 98%, pH 7.0 ± 0.2 at 25°C and $x^2$"

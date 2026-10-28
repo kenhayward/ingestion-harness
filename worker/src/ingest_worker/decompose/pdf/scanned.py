@@ -31,6 +31,7 @@ from ingest_worker.decompose.pdf.layout import BBox, LayoutCell, LayoutPicture, 
 from ingest_worker.decompose.pdf.pieces import Line, Piece
 from ingest_worker.decompose.pdf.textlayer import Char, PageText
 from ingest_worker.decompose.pdf.transcript import (
+    CONTENTS_ENTRY,
     PixelBox,
     Run,
     TxBlock,
@@ -89,12 +90,21 @@ def _block_text(block: TxBlock) -> str | None:
 def normalise_levels(pages: Mapping[int, list[TxBlock]]) -> dict[int, list[TxBlock]]:
     """The headings' markdown levels moved up so the shallowest across all the scanned pages is
     level 1."""
-    levels = [b.level for blocks in pages.values() for b in blocks if isinstance(b, TxHeading)]
+    # a typed heading's level is its number's (outline.py reads it again from the number)
+    levels = [
+        b.level
+        for blocks in pages.values()
+        for b in blocks
+        if isinstance(b, TxHeading) and not b.typed
+    ]
     if not levels or min(levels) == 1:
         return {page: list(blocks) for page, blocks in pages.items()}
     shift = min(levels) - 1
     return {
-        page: [replace(b, level=b.level - shift) if isinstance(b, TxHeading) else b for b in blocks]
+        page: [
+            replace(b, level=b.level - shift) if isinstance(b, TxHeading) and not b.typed else b
+            for b in blocks
+        ]
         for page, blocks in pages.items()
     }
 
@@ -239,14 +249,21 @@ class _Writer:
             start = end
 
     def block(
-        self, runs: Sequence[Run], *, x0: float = _MARGIN, lead: str | None = None
+        self,
+        runs: Sequence[Run],
+        *,
+        x0: float = _MARGIN,
+        lead: str | None = None,
+        wrap: bool = True,
     ) -> list[Line]:
-        """A block's lines, wrapped to the page's width, `lead` (a list marker) first."""
+        """A block's lines, wrapped to the page's width unless not `wrap`, `lead` (a list
+        marker) first."""
         words = _words(runs)
         if lead is not None:
             words.insert(0, [_Token(ch, frozenset(), None) for ch in lead])
+        width = self.page.width - _MARGIN - x0 if wrap else math.inf
         lines = []
-        for wrapped in _wrap(words, max(self.page.width - _MARGIN - x0, _SIZE * 4)):
+        for wrapped in _wrap(words, max(width, _SIZE * 4)):
             lines.append(self.line(wrapped, x0, self.y))
             self.y += _LINE
         self.y += _BLOCK_GAP
@@ -396,7 +413,9 @@ def recognise_page(
             if lines:
                 pieces.append(text_piece("section_header", lines, level=block.level))
         elif isinstance(block, TxParagraph):
-            lines = writer.block(block.runs)
+            # a contents entry is one line, so the contents rule can read it (spec 4.3)
+            entry = CONTENTS_ENTRY.search(_run_text(block.runs)) is not None
+            lines = writer.block(block.runs, wrap=not entry)
             if lines:
                 pieces.append(text_piece("text", lines))
         elif isinstance(block, TxListItem):

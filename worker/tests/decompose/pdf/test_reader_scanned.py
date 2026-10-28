@@ -265,3 +265,30 @@ def test_bookmarks_leave_scanned_headings_be() -> None:
     )
     titles = [plain_text(s.title) for s in walk(result.document.sections)]
     assert titles == ["Introduction", "Appendix"]
+
+
+def test_a_scanned_contents_page_is_dropped() -> None:
+    leader = "." * 120
+    contents = "\n".join(
+        ["CONTENTS"]
+        + [
+            f"{title} {leader} {page}"
+            for title, page in [
+                ("SUMMARY", 1),
+                ("1 Introduction", 2),
+                ("2 Methods", 2),
+                ("3 Results", 2),
+            ]
+        ]
+    )
+    data = make_pdf([scan(), scan()])
+    result = decompose_pdf(
+        data,
+        layout=layout_of([], 2),
+        transcriber=FakeTranscriber({0: contents, 1: "1 Introduction\n\nThe body."}),
+        cropper=FakeCropper(),
+    )
+    dumped = str(result.document.model_dump())
+    assert "SUMMARY" not in dumped and "....." not in dumped
+    assert "contents" in result.document.report[0].message
+    assert [plain_text(s.title) for s in walk(result.document.sections)] == ["Introduction"]

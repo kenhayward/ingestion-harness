@@ -3,8 +3,8 @@
 **Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
 implemented (2026-10-27)**; results in §13. **5b implemented (2026-10-27)**: PDFs in CT Studio,
 with review, in §14; the owner's run against the real sink is pending. **5c implemented
-(2026-10-27)**: scanned pages, in §15; the rasterised twins' scores and the owner's run are
-pending.
+(2026-10-27)**: scanned pages, in §15, the rasterised twins' scores in §15.8; the owner's run
+is pending.
 
 - The layout service starts with the stack (§14.7; see `deploy/layout/README.md`). On its own:
   `docker compose -f deploy/docker-compose.yml up -d --build layout`.
@@ -396,7 +396,7 @@ before release.
 | 5a | **Born-digital PDFs:** the layout service, the text layer, the mapping, the fidelity checks, a dev tool, the twin scorer | Twins and the owner's real PDFs decompose with no text-accounting failure, and the twin scores are reported to the owner |
 | — | **The owner's decision** on review (§8) | — |
 | 5b | **PDFs in CT Studio:** the job, the API and the Conversion tab, with the review step (§14). **Implemented (2026-10-27)**; the owner's run is pending | A PDF goes through to the fake sink, and to the real sink in the owner's run |
-| 5c | **Scanned pages** through the OCR model (§15). **Implemented (2026-10-27)**; the scores and the owner's run are pending | A scanned sample decomposes with every scanned page flagged |
+| 5c | **Scanned pages** through the OCR model (§15). **Implemented (2026-10-27)**; scores in §15.8; the owner's run is pending | A scanned sample decomposes with every scanned page flagged |
 
 ## 12. Left to the builder
 
@@ -710,3 +710,47 @@ PDFs get the new version too. A re-run of one is an ordinary update behind the v
 - The rasterised twins are scored, and the scores are reported to the owner.
 - In the owner's run, their scanned PDFs decompose, are held for review, and one is approved
   through to the sink.
+
+### 15.8 Results: rasterised twins (2026-10-27)
+
+The four twins of §13, their PDFs rendered to image-only PDFs at 200 dpi, are scored through the
+scanned route against their Word files. OCR is `allenai/olmocr-2-7b` on the owner's endpoint; the
+layout service is the pinned CPU image. The first run is before the fixes below, the second
+after; §13's born-digital scores are beside them.
+
+| | OCR route, first run | OCR route, after the fixes | Born-digital (§13) |
+|---|---|---|---|
+| Headings found | 0/107 | 97/107 | 107/107 |
+| Heading level right | — | 29/97 | 107/107 |
+| Tables found | 164/166 | 164/166 | 155/166 |
+| Table shape right | 58/164 | 52/164 | 112/155 |
+| Extra tables | 8 | 7 | 15 |
+| Cells right | 10523/17252 (61%) | 9998/17252 (58%) | 14762/17252 (86%) |
+| Words recall / precision | 0.988 / 0.804 | 0.990 / 0.953 | 0.991 / 0.994 |
+
+What the first run showed, and what was fixed (2026-10-27):
+
+- **Headings.** olmOCR writes a heading as a plain line ("3.2. Pump performance"), never with
+  `#`, and often with the body text on the next line. A short line that starts with a typed
+  number and doesn't end like a sentence is now a heading; a single-number line inside an
+  ordered list stays an item. **[call]**
+- **Contents pages** were most of the extra words: each entry's dot leader was read into one
+  long paragraph. A contents entry (a leader, then a page number) is now a line of its own, never
+  wrapped and never a heading, so §4.3's contents rule drops the run as on a born-digital page.
+  **[call]**
+- **Inline math made only of symbols** (`\( \geq 98\% \)`, `\pm`, `^\circ`) is now plain text
+  ("≥ 98%"); anything else stays LaTeX. **[call]**
+
+What is left, and why:
+
+- **Heading levels.** In three of the reports the numbered chapters sit under two unnumbered
+  top-level entries, so in Word chapter 1 is level 2. A scan has no bookmarks to say so, and
+  the typed number makes chapter 1 level 1: every level is one too shallow, though the tree below
+  is right. The born-digital route gets these levels from the bookmarks.
+- **Cells.** The model repeats a vertically merged cell's value in every row it spans (e.g.
+  "<0.05" 1009 times where Word holds 796), and its HTML grids are less often the right shape than
+  TableFormer's. The cells score is where the OCR route is weakest; every scanned table is flagged.
+- The fixes moved the shape score slightly down (58 to 52): with the headings found, some tables
+  now split into a different section and pair with a different Word table.
+
+The owner's own scans are next (§15.7): they are decomposed, held for review and read by eye.
