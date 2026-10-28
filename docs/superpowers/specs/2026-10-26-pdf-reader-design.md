@@ -251,6 +251,13 @@ were wrong. **[call]**
   are numbers when a list's markers count from the start (1, 2, 3; a, b, c; i, ii, iii). A list
   whose numbers don't (one continued from the page before, "4." "5.") keeps each number as text
   in its item. **[call]** (2026-10-27)
+- (2026-10-28) **A bullet Docling took for a picture is given back to its item.** A picture on a
+  born-digital page at most 24 points each way, with no image object under it and only bullet
+  glyphs (the ones a list marker may be) among its chars, joins the body text item whose line it
+  is on and which starts at most 36 points to its right: the item takes in the picture's box and
+  becomes a list item, so its bullet is dropped as a marker. With no such item, the picture stays.
+  On the ICH Q1 draft, Docling took the Symbol-font bullet before line 1714 for a picture, which
+  was cropped to an image of a dot and flagged as a rendered drawing.
 
 ### 4.6 Tables
 
