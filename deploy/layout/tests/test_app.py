@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from layout_service.app import AnalysisFailed, create_app, require_success
+from layout_service.app import AnalysisFailed, DeviceUnavailable, create_app, require_success
 
 
 class FakeAnalyser:
@@ -137,3 +137,36 @@ def test_any_status_but_success_is_a_failed_analysis(status: str) -> None:
 
 def test_a_successful_conversion_passes() -> None:
     require_success("success", timed_out=False)
+
+
+def test_a_device_failure_is_503_so_the_worker_falls_back() -> None:
+    class OutOfVram(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
+            raise DeviceUnavailable("CUDA out of memory")
+
+    res = post(TestClient(create_app(OutOfVram())))
+    assert res.status_code == 503
+    assert res.json() == {"error": "layout device unavailable: CUDA out of memory"}
+
+
+def test_a_fatal_device_failure_ends_the_service_after_answering() -> None:
+    ended: list[bool] = []
+
+    class Lost(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
+            raise DeviceUnavailable("CUDA error: an illegal memory access", fatal=True)
+
+    res = post(TestClient(create_app(Lost(), on_fatal=lambda: ended.append(True))))
+    assert res.status_code == 503
+    assert ended == [True]
+
+
+def test_out_of_memory_does_not_end_the_service() -> None:
+    ended: list[bool] = []
+
+    class OutOfVram(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
+            raise DeviceUnavailable("CUDA out of memory")
+
+    post(TestClient(create_app(OutOfVram(), on_fatal=lambda: ended.append(True))))
+    assert ended == []

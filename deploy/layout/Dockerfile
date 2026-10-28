@@ -14,13 +14,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU-only torch first, so the Docling install below does not pull the CUDA build.
-RUN uv pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 torchvision==0.29.1
+# torch first, from PyTorch's own index: the CPU build by default, so the Docling install below
+# does not pull the CUDA one; `--build-arg TORCH_INDEX=cu130` makes the GPU image (`layout-gpu`
+# in docker-compose.yml, the pdf-reader design, section 16): same versions, CUDA 13 wheels.
+ARG TORCH_INDEX=cpu
+RUN uv pip install --index-url https://download.pytorch.org/whl/${TORCH_INDEX}     torch==2.14.1 torchvision==0.29.1
 
 WORKDIR /app
 # Everything installs at the versions in uv.lock, so the same PDF gives the same output across
 # builds. torch, torchvision and the CUDA packages they pull on Linux are left out of the export:
-# the CPU build above stays (torch is locked at the same version, which the build checks).
+# the build above stays (torch is locked at the same version, which the build checks).
 COPY pyproject.toml uv.lock ./
 RUN uv export --frozen --extra docling --no-dev --no-hashes --no-emit-project -o /tmp/locked.txt \
     && grep -E '^(torch|torchvision)==' /tmp/locked.txt | sort > /tmp/locked-torch.txt \
