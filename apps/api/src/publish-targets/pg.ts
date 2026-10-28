@@ -2,7 +2,7 @@ import type pg from 'pg';
 import type { TargetView } from '@ih/bridge-contract';
 import {
   DEFAULT_TARGET_ID,
-  targetInUse,
+  blocksRemoval,
   type PublishTargetKind,
   type PublishTargetView,
   type TargetChoice,
@@ -165,13 +165,14 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         await client.query('ROLLBACK');
         return 'seeded';
       }
-      if (targetInUse((await this.usageOf(id, client)).get(id) ?? EMPTY_USAGE)) {
+      if (blocksRemoval((await this.usageOf(id, client)).get(id) ?? EMPTY_USAGE)) {
         await client.query('ROLLBACK');
         return 'in_use';
       }
       // The bridge removes it while this row is locked: a job output or graph copy recorded
       // against it meanwhile waits for the lock, then commits naming the now inert target (the
-      // foreign key holds; it is not refused). A recipe naming it takes no lock at all.
+      // foreign key holds; it is not refused). A recipe naming it takes no lock at all: its
+      // documents go to review, as they do for any recipe naming a removed target.
       if (onBridge && !(await onBridge())) {
         await client.query('ROLLBACK');
         return 'refused';

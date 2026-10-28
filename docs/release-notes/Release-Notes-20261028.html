@@ -162,8 +162,8 @@
       <p class="subtitle">
         Wednesday 28 October 2026: PDFs with printed line numbers read in full, their numbers left
         out everywhere, ruled tables the layout analysis took for pictures read as tables, PDF
-        layout analysis on the GPU, and scanned pages no longer failing OCR at random. PRs #351,
-        #352, #353 and #354.
+        layout analysis on the GPU, scanned pages no longer failing OCR at random, and publishing
+        targets removable after they were used. PRs #351, #352, #353, #354 and #PRNUM.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -185,6 +185,10 @@
           <li>
             <a href="#ocr-render-race">OCR failing with "Data format error"</a>
             <span>— scanned pages are rendered one at a time</span>
+          </li>
+          <li>
+            <a href="#remove-used-targets">Removing a publishing target that was used</a>
+            <span>— for one whose repository or bucket is gone</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -275,6 +279,22 @@
         once, and failed one of them at random. Pages are now rendered one at a time and still sent
         to the OCR model together, so OCR takes no longer. A job that failed this way succeeds when
         it is run again.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="remove-used-targets">Removing a publishing target that was used</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PRNUM">#PRNUM</a>
+      </p>
+      <p>
+        A publishing target couldn't be removed once anything had used it: a published recipe
+        version naming it, or a document delivered to it, kept it for good. So a target pointing at
+        a repository that was deleted stayed in the list, and every delivery to it failed.
+        Administration, Published outputs now removes a target like that. Its confirm says what
+        happens: documents of a recipe whose version still names it go to review until you publish a
+        version without it, what was delivered to it stays listed, and withdrawing those documents
+        deletes nothing through it. A target an S3 key consumer is granted, or a withdrawal still to
+        run names, still can't be removed until that is done.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

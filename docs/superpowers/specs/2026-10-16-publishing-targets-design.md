@@ -77,8 +77,12 @@ So:
   LLM endpoints, an admin's edit wins and `.env` stops changing it. `default` cannot be removed or
   renamed (its label may change).
 - **Locking.** While any published recipe version names a target, or any delivered output
-  (`job_outputs`, graph versions) records it, the target cannot be removed and its kind,
-  endpoint, region and bucket cannot change (409 naming what uses it). Prefix also locks (keys
+  (`job_outputs`, graph versions) records it, its kind, endpoint, region and bucket cannot
+  change (409 naming what uses it). It can still be removed (2026-10-28: a target whose
+  repository or bucket was deleted only ever fails, and published versions stay published): a
+  version naming a removed target sends its documents to review, and a withdrawal skips what was
+  delivered to it. Only an S3 key consumer's grant or a queued or running withdrawal blocks
+  removal. Prefix also locks (keys
   are recorded with the prefix applied, so changing it would only affect new deliveries; locking
   is simpler and clearer). Label, credentials, path style, encryption and storage class stay
   editable, so rotating a key never needs a new version. To move a type: add a target, publish a

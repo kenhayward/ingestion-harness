@@ -5484,6 +5484,10 @@ button.endpoint-toggle {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* A Remove confirm takes the actions' whole width, under the other buttons. */
+.endpoint-actions > .confirm-text {
+  flex-basis: 100%;
+}
 .endpoint-offered {
   flex: 1 1 380px;
   min-width: 0;

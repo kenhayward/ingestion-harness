@@ -2,7 +2,7 @@ import type { TargetView } from '@ih/bridge-contract';
 import {
   DEFAULT_TARGET_ID,
   publishTargetsOf,
-  targetInUse,
+  blocksRemoval,
   type PublishTargetKind,
   type PublishTargetView,
   type TargetChoice,
@@ -309,7 +309,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     const r = await this.get(id);
     if (!r) return 'missing';
     if (r.kind === 'rdf') return 'seeded';
-    if (targetInUse(await this.usage(id))) return 'in_use';
+    if (blocksRemoval(await this.usage(id))) return 'in_use';
     if (onBridge && !(await onBridge())) return 'refused';
     this.legacy.delete(id);
     this.makeInert(id);

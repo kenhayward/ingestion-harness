@@ -22,6 +22,7 @@ import {
   TargetPatchBodySchema,
   TargetTestBodySchema,
   TargetTestResultSchema,
+  blocksRemoval,
   targetInUse,
   type PublishTargetView,
   type TargetConnection,
@@ -71,6 +72,10 @@ export function usageText(u: TargetUsage): string {
     ...(u.pendingJobs > 0 ? [plural(u.pendingJobs, 'pending withdrawal')] : []),
   ].join(' and ');
 }
+
+/** What keeps a target from being removed, for its 409: key consumers and pending withdrawals. */
+const blockingText = (u: TargetUsage): string =>
+  usageText({ ...u, documentTypes: [], deliveredOutputs: 0, publishedVersions: 0 });
 
 const issuesOf = (e: z.ZodError) => e.issues;
 
@@ -835,13 +840,16 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           'deletePublishTarget',
           'Remove a publishing target',
           md`
-            **Admins only.** Only a target nothing uses: no published recipe version names it,
-            nothing was delivered to it, no S3 key consumer is granted it and no withdrawal still
-            to run names it. The \`default\` target is never removed. It is removed from the
-            bridge first: one the bridge still has unfinished deliveries for stays (409), and
-            nothing is removed while the bridge cannot be reached (502). A removed target is kept
-            inert, never deleted: finished delivery records still name it, and its id is not
-            used again (a new target with the same label gets \`<id>-2\`).
+            **Admins only.** A target in use can be removed, as one whose destination is gone
+            must be: published recipe versions and delivered outputs may name it, but no S3 key
+            consumer may be granted it and no withdrawal still to run may name it (409). A recipe
+            version naming a removed target sends its documents to review until a version
+            without it is published, and a withdrawal skips what was delivered to it. The
+            \`default\` target is never removed. It is removed from the bridge first: one the
+            bridge still has unfinished deliveries for stays (409), and nothing is removed while
+            the bridge cannot be reached (502). A removed target is kept inert, never deleted:
+            finished delivery records still name it, and its id is not used again (a new target
+            with the same label gets \`<id>-2\`).
           `,
         ),
         params: IdParams,
@@ -850,7 +858,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           403: ADMINS_ONLY,
           404: NOT_FOUND,
           409: error(
-            '`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`.',
+            '`default cannot be removed`, `{label} is used by {key consumers or pending withdrawals}`, or `{label} has deliveries on the bridge`.',
           ),
           500: error(
             `\`${REMOVED_ON_BRIDGE}\`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it.`,
@@ -870,8 +878,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(409).send({ error: `${target.label} comes from RDF_ENDPOINT` });
       }
       const usage = await repo.usage(id);
-      if (targetInUse(usage)) {
-        return reply.code(409).send({ error: `${target.label} is used by ${usageText(usage)}` });
+      if (blocksRemoval(usage)) {
+        return reply.code(409).send({ error: `${target.label} is used by ${blockingText(usage)}` });
       }
       // The bridge first, while the row is held: it soft-removes the target and never takes its
       // id again, so it cannot be given back if a recipe or output started naming it meanwhile.
@@ -912,9 +920,16 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (outcome === 'in_use') {
         return reply
           .code(409)
-          .send({ error: `${target.label} is used by ${usageText(await repo.usage(id))}` });
+          .send({ error: `${target.label} is used by ${blockingText(await repo.usage(id))}` });
       }
-      req.log.info({ target: id }, 'publishing target removed');
+      req.log.info(
+        {
+          target: id,
+          documentTypes: usage.documentTypes,
+          deliveredOutputs: usage.deliveredOutputs,
+        },
+        'publishing target removed',
+      );
       return reply.code(204).send();
     },
   );

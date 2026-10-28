@@ -143,11 +143,17 @@ class PgPublishTargetStore:
 
 
 class TargetMissing(DocumentError):
-    """A recipe names a publishing target that does not exist (never a fallback to default)."""
+    """A recipe names a publishing target that does not exist (never a fallback to default).
+    `removed`: an admin removed it; the recipe needs a version without it."""
 
-    def __init__(self, target_id: str) -> None:
-        super().__init__(f"no publishing target {target_id}")
+    def __init__(self, target_id: str, *, removed: bool = False) -> None:
+        super().__init__(
+            f"publishing target {target_id} was removed: publish a recipe version without it"
+            if removed
+            else f"no publishing target {target_id}"
+        )
         self.target_id = target_id
+        self.removed = removed
 
 
 class TargetNotSynced(Exception):
@@ -188,7 +194,7 @@ class LiveTargets:
         self.refresh()
         row = self._rows.get(target_id)
         if row is None or row.inert or row.kind == "rdf":
-            raise TargetMissing(target_id)
+            raise TargetMissing(target_id, removed=row is not None and row.inert)
         if row.synced_at is None:
             raise TargetNotSynced(target_id)
         if row.sink_id != S3_SINK_ID:
@@ -200,6 +206,13 @@ class LiveTargets:
         return Target(
             row.id, d.get("bucket", ""), d.get("prefix", ""), layout, instance_id=row.instance_id
         )
+
+    def removed(self, target_id: str) -> bool:
+        """Whether an admin removed this target (its row stays, inert): what was delivered to it
+        has nothing left to be deleted through."""
+        self.refresh()
+        row = self._rows.get(target_id)
+        return row is not None and row.inert
 
     def rdf(self) -> Target | None:
         """The triple store target (its dataset as the bucket), or None without one.

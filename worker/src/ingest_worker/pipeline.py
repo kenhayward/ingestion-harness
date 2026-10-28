@@ -163,6 +163,10 @@ class Targets(Protocol):
 
     def get(self, target_id: str) -> Target: ...
 
+    def removed(self, target_id: str) -> bool:
+        """Whether the target was removed (an unknown id is not)."""
+        ...
+
     def rdf(self) -> Target | None:
         """The triple store target (`rdf-default`), or None when RDF_ENDPOINT is not set."""
         ...

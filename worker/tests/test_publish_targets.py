@@ -136,6 +136,15 @@ def test_an_unknown_target_is_missing_never_the_default() -> None:
     assert issubclass(TargetMissing, DocumentError)
 
 
+def test_a_removed_target_is_missing_and_says_it_was_removed() -> None:
+    targets, _ = live([row(), row(id="gone-repo", label="Gone", inert=True)])
+    with pytest.raises(TargetMissing, match="publishing target gone-repo was removed"):
+        targets.get("gone-repo")
+    assert targets.removed("gone-repo")
+    assert not targets.removed("default")
+    assert not targets.removed("never-was")
+
+
 def test_refresh_reloads_only_when_the_version_moved() -> None:
     targets, store = live([row()])
     targets.get("default")

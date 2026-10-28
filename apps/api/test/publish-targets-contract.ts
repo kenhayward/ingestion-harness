@@ -299,15 +299,26 @@ export function publishTargetsContract(
         }),
       ).rejects.toThrow('bridge went away');
       expect(await repo.get('finance')).not.toBeNull();
-      await facts.publish('alpha', 1, 'finance');
+      await facts.grant('finance');
       expect(await repo.remove('finance', async () => (asked++, true))).toBe('in_use');
       expect(asked).toBe(1);
     });
 
-    it('refuses to remove a target a published version names', async () => {
+    it('removes a target published versions and delivered outputs name', async () => {
       const { repo, facts } = await make();
       await cacheS3(repo, { id: 'finance' });
       await facts.publish('invoice', 1, 'finance');
+      await facts.publish('memo', 1, ['default', 'finance']);
+      await facts.delivered('finance');
+      expect(await repo.remove('finance')).toBe('deleted');
+      expect(await repo.get('finance')).toBeNull();
+      expect(await repo.cachedIds()).toContainEqual({ id: 'finance', live: false });
+    });
+
+    it('refuses to remove a target an S3 key consumer is granted', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      await facts.grant('finance');
       expect(await repo.remove('finance')).toBe('in_use');
       expect(await repo.get('finance')).not.toBeNull();
     });
@@ -339,7 +350,6 @@ export function publishTargetsContract(
       });
       const listed = (await repo.list()).find((t) => t.id === 'finance');
       expect(listed?.usage).toEqual(usage);
-      expect(await repo.remove('finance')).toBe('in_use');
     });
 
     it('counts withdrawals still to run that name the target', async () => {
@@ -366,7 +376,6 @@ export function publishTargetsContract(
       expect((await repo.usage('finance')).documentTypes).toEqual(['invoice', 'memo']);
       expect((await repo.usage('archive')).publishedVersions).toBe(1);
       expect((await repo.usage('default')).publishedVersions).toBe(0);
-      expect(await repo.remove('archive')).toBe('in_use');
     });
 
     it('counts a recipe naming no target as using the default', async () => {
