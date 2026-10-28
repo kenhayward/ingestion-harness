@@ -161,7 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Wednesday 28 October 2026: PDFs with printed line numbers read in full, their numbers left
-        out everywhere. PR #351.
+        out everywhere, and ruled tables the layout analysis took for pictures read as tables. PRs
+        #351 and #PRNUM.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -172,12 +173,16 @@
             <a href="#pdf-line-numbered">PDFs with printed line numbers</a>
             <span>— read in full, and their numbers left out beside tables and figures too</span>
           </li>
+          <li>
+            <a href="#pdf-ruled-tables">Ruled tables taken for pictures</a>
+            <span>— read from their ruling lines, not delivered as images</span>
+          </li>
         </ul>
         <h4>Other updates</h4>
         <ul>
           <li>
-            The PDF reader is version 5, so a PDF's decomposer version is now 1005: a PDF run again
-            is an ordinary update.
+            The PDF reader is version 6, so a PDF's decomposer version is now 1006 (it was 1005
+            earlier today): a PDF run again is an ordinary update.
           </li>
         </ul>
       </nav>
@@ -209,9 +214,25 @@
         from the pages around them. A figure no longer shows the numbers beside it either: it is
         cropped from where the text starts.
       </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-ruled-tables">Ruled tables taken for pictures</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PRNUM">#PRNUM</a>
+      </p>
       <p>
-        Docling still takes a few tables drawn with heavy rules for pictures. Those are delivered as
-        images, with their text after them; that is not changed here.
+        The layout analysis sometimes takes a table drawn with ruling lines for a picture. It was
+        delivered as an image, with its cells' text after it as loose paragraphs. Such a picture is
+        now read from its ruling lines: its rows and columns are where the rules are, and cells no
+        rule parts are one cell, so a "50 mg" heading over three columns spans them. The table is
+        delivered with its caption, and flagged as read from its ruling lines so a reviewer can
+        check it. A picture that only repeats a table the layout analysis did read, or holds such a
+        table beside the one it missed, is dropped. A picture with anything other than tables in it
+        stays a picture.
+      </p>
+      <p>
+        On the ICH Q1 draft guideline, matrixing tables A1-4 and A1-5 are now tables, and no longer
+        images.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

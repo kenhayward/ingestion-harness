@@ -1,5 +1,5 @@
 """A PDF's text layer: every character with its font, size and box on the displayed page, and
-each page's image objects and URI link annotations.
+each page's image objects, ruling lines and URI link annotations.
 
 Read through pypdfium2's text page and its raw API. Coordinates are in points with the origin at
 the top left of the page as displayed (`/Rotate` applied). A PDF pdfium cannot open, a
@@ -32,6 +32,10 @@ _SCANNED_IMAGE_AREA = 0.5
 _SCAN_COVER = 0.8
 _SCAN_MAX_WORDS = 20
 _FONT_NAME_BYTES = 256
+#: A path object at most this many points thick, ...
+_RULE_THICK = 2.0
+#: ... and at least this many long, is a ruling line.
+_RULE_LONG = 4.0
 #: The codes XML 1.0 can't hold: controls other than tab, LF and CR, surrogates, U+FFFE and U+FFFF.
 _NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
@@ -69,6 +73,8 @@ class PageText:
     images: tuple[Box, ...] = ()
     #: The box and URI of each link annotation with a `/URI` action.
     links: tuple[tuple[Box, str], ...] = ()
+    #: The box of each ruling line: a path object thin one way and long the other.
+    rules: tuple[Box, ...] = ()
     #: Visible glyphs left out because pdfium gave them no text (code 0 or not XML) or no box.
     glyphs_left_out: int = 0
     #: A scanned page's synthetic text layer, from the OCR model's transcription (scanned.py).
@@ -228,7 +234,18 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
     covered = sum((b[2] - b[0]) * (b[3] - b[1]) for b in images)
     area = min(covered / (width * height), 1.0) if width > 0 and height > 0 else 0.0
     links = _links(page, display)
-    return PageText(number, width, height, tuple(chars), area, images, links, left_out)
+    rules = _rules(page, display)
+    return PageText(
+        number,
+        width,
+        height,
+        tuple(chars),
+        area,
+        images,
+        links,
+        rules=rules,
+        glyphs_left_out=left_out,
+    )
 
 
 def _no_text(code: int) -> bool:
@@ -277,6 +294,20 @@ def _image_boxes(
         clipped = (max(x0, 0.0), max(y0, 0.0), min(x1, width), min(y1, height))
         if clipped[0] < clipped[2] and clipped[1] < clipped[3]:
             boxes.append(clipped)
+    return tuple(boxes)
+
+
+def _rules(page: object, display: Callable[[float, float], tuple[float, float]]) -> tuple[Box, ...]:
+    """The displayed box of each path object thin enough one way and long enough the other to be
+    a ruling line: a stroked line, or a thin filled rectangle as Word draws a table's borders."""
+    import pypdfium2.raw as raw
+
+    boxes: list[Box] = []
+    for obj in page.get_objects(filter=[raw.FPDF_PAGEOBJ_PATH]):  # type: ignore[attr-defined]
+        box = _displayed(display, *obj.get_bounds())
+        width, height = box[2] - box[0], box[3] - box[1]
+        if min(width, height) <= _RULE_THICK and max(width, height) >= _RULE_LONG:
+            boxes.append(box)
     return tuple(boxes)
 
 

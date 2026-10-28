@@ -646,7 +646,11 @@ def build_table(
             )
         built.append(Row(cells=cells))
 
-    message = "Table grid inferred from layout"
+    message = (
+        "Table grid read from its ruling lines; the layout analysis took it for a picture"
+        if piece.table.ruled
+        else "Table grid inferred from layout"
+    )
     if _last_page(piece) != piece.page:
         message += f"; joined across pages {piece.page + 1}–{_last_page(piece) + 1}"  # noqa: RUF001
     if moved:

@@ -60,6 +60,8 @@ class LayoutTable:
     captions: tuple[str, ...]
     #: Docling's label: `table`, or `document_index` for a table of contents.
     label: str = "table"
+    #: Read from a picture's ruling lines (drawn.py), not Docling's table structure.
+    ruled: bool = False
 
 
 @dataclass(frozen=True)
