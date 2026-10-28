@@ -44,7 +44,7 @@ from ingest_worker.decompose.pdf.transcript import PageTranscriber, parse_transc
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
 #: The PDF reader's version, part of the decomposer version for a PDF.
-PDF_READER_VERSION = 3
+PDF_READER_VERSION = 4
 
 #: A PDF with more pages fails (spec section 10).
 MAX_PAGES = 500
