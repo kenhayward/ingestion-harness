@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import io
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -101,7 +102,17 @@ def parse_olmocr(raw: str) -> tuple[str, dict[str, Any]]:
     return _TABLE.sub(_flatten_table, body).strip(), meta
 
 
+#: PDFium is not thread-safe, and OCR renders its pages from a thread pool: two documents
+#: opened at once fail at random ("Data format error"), so a process renders one page at a time.
+_PDFIUM = threading.Lock()
+
+
 def render_page_png(pdf: bytes, index: int, longest_dim: int, rotation: int = 0) -> bytes:
+    with _PDFIUM:
+        return _render_png(pdf, index, longest_dim, rotation)
+
+
+def _render_png(pdf: bytes, index: int, longest_dim: int, rotation: int) -> bytes:
     import pypdfium2 as pdfium
 
     doc = pdfium.PdfDocument(pdf)
@@ -120,6 +131,11 @@ def render_preview_jpeg(
     pdf: bytes, index: int, longest_dim: int = 1400, quality: int = 80
 ) -> bytes:
     """Page preview for the review screen (JPEG keeps 60-page scans to a few MB)."""
+    with _PDFIUM:
+        return _render_jpeg(pdf, index, longest_dim, quality)
+
+
+def _render_jpeg(pdf: bytes, index: int, longest_dim: int, quality: int) -> bytes:
     import pypdfium2 as pdfium
 
     doc = pdfium.PdfDocument(pdf)
