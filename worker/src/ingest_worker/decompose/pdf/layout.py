@@ -9,11 +9,15 @@ order with groups flattened, boxes in points with a top-left origin, pages 0-bas
 
 from __future__ import annotations
 
+import io
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
 import httpx
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PyPdfError
+from pypdf.generic import RectangleObject
 
 from ingest_worker.decompose.package import DecompositionRejected
 
@@ -312,9 +316,16 @@ def _detail(response: httpx.Response) -> str:
 
 
 def analyse_document(
-    analyser: LayoutAnalyser, pdf: bytes, page_count: int, *, chunk: int = 20
+    analyser: LayoutAnalyser,
+    pdf: bytes,
+    page_count: int,
+    *,
+    chunk: int = 20,
+    margins: Mapping[int, float] | None = None,
 ) -> LayoutDoc:
-    """The whole document, analysed `chunk` pages at a time and joined in page order."""
+    """The whole document, analysed `chunk` pages at a time and joined in page order; each page
+    in `margins` (0-based) is sent without its left margin up to that x (`without_margins`)."""
+    pdf, cut = without_margins(pdf, margins or {})
     items: list[LayoutItem] = []
     for first in range(1, page_count + 1, chunk):
         last = min(first + chunk - 1, page_count)
@@ -322,4 +333,44 @@ def analyse_document(
         prefix = "" if first == 1 else f"p{first}:"
         doc = analyser.analyse(pdf, first, last)
         items.extend(parse_docling(doc, page_offset=first - 1, ref_prefix=prefix).items)
-    return LayoutDoc(tuple(items))
+    return LayoutDoc(
+        tuple(_moved(item, cut[item.page]) if item.page in cut else item for item in items)
+    )
+
+
+def without_margins(pdf: bytes, margins: Mapping[int, float]) -> tuple[bytes, dict[int, float]]:
+    """The PDF with the left of each page in `margins` cropped off up to that x (points from the
+    left of the page as displayed), and the margins it was cropped by: an upright page's only.
+    A PDF pypdf can't rewrite is sent whole."""
+    if not margins:
+        return pdf, {}
+    try:
+        writer = PdfWriter(clone_from=PdfReader(io.BytesIO(pdf)))
+        cut: dict[int, float] = {}
+        for index, x in sorted(margins.items()):
+            page = writer.pages[index]
+            if page.rotation % 360:
+                continue
+            box = page.cropbox
+            cropped = RectangleObject([float(box.left) + x, box.bottom, box.right, box.top])
+            page.cropbox = page.mediabox = cropped
+            cut[index] = x
+        if not cut:
+            return pdf, {}
+        out = io.BytesIO()
+        writer.write(out)
+    except (PyPdfError, ValueError, KeyError, IndexError):
+        return pdf, {}
+    return out.getvalue(), cut
+
+
+def _moved(item: LayoutItem, dx: float) -> LayoutItem:
+    """The item of a page cropped by `dx` on the left, in the whole page's coordinates."""
+
+    def box(b: BBox) -> BBox:
+        return (b[0] + dx, b[1], b[2] + dx, b[3])
+
+    if isinstance(item, LayoutTable):
+        cells = tuple(replace(c, bbox=box(c.bbox)) if c.bbox is not None else c for c in item.cells)
+        return replace(item, bbox=box(item.bbox), cells=cells)
+    return replace(item, bbox=box(item.bbox))

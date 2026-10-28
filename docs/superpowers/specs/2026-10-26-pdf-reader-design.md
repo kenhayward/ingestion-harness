@@ -178,6 +178,33 @@ Dropping is where body text could go silently, so it is guarded: **[call]**
   it and carry on its count go too (the body can start in the top band). A numbered list fails
   the last test against the body text beside it; a table's cells are never looked at, so a first
   column of numbers stays. Only born-digital pages are looked at. (2026-10-27)
+  (2026-10-28) Once at least three pages show a column that way, a page with too few numbered
+  lines to show it alone (a table or a figure fills it) loses the leading numbers that line up
+  with the column of the nearest such page before or after it, numbered above the last line
+  number before it and below the first after it, increasing, with every other char on the page
+  right of them. A picture on a page whose numbers were dropped is cropped without their column
+  when its region reaches into it.
+- (2026-10-28) **Line-numbered pages are sent to the layout service without their margin.**
+  Docling reads a page of numbered lines as a table of contents (`document_index`) or a table, and
+  takes the numbers into its figures: on the ICH Q1 draft it labelled 89 of 108 pages
+  `document_index`, and three quarters of the text was dropped as contents. So the column is found
+  from the text layer before layout (the rule above, by text-layer lines), and each upright page
+  whose leading numbers line up with it, with no other char and no image object left of the text,
+  is sent with its CropBox moved right to where the text starts. Docling's boxes on those pages are
+  moved back by the same amount. The numbers, in no Docling item, become orphan lines and are
+  dropped by the rule above. A PDF pypdf can't rewrite is sent whole.
+- (2026-10-28) Cropping is not enough on its own: on that draft Docling still labelled 26 cropped
+  body pages `document_index`. **A `document_index` item is contents only if it reads as
+  contents:** at least three rows (or lines), and at least half of them a title followed by a page
+  number no higher than the document's last page. A table that doesn't is kept as paragraphs:
+  its chars in lines, and lines less than 1.5 line heights apart in one paragraph (as orphan lines
+  are). Those pages are listed in the dropped-text `info` line ("Kept as paragraphs: text the
+  layout analysis took for contents on pages …"); a text item that doesn't stays as it is. Its
+  headings come out as paragraphs, since the PDF has no bookmarks to find them by.
+- (2026-10-28) The text layer can run a line number into the word after it ("2734indicating"),
+  and a word goes whole to the item most of its chars are in, so the number can land in a table's
+  cell. In a table's cells, a leading number that lies wholly left of the table's box is looked
+  at as a line number too; any other number in a cell never is.
 - A contents list is dropped only as a block: lines ending in a page number, most with dot leaders,
   under a contents heading or forming a run of them. A single such line in the body is kept.
   A run without a contents heading starts on a line with a dot leader, and a run's page numbers

@@ -17,7 +17,12 @@ from ingest_worker.decompose.package import DecompositionFailed
 from ingest_worker.decompose.pdf.build import build_document, pdf_properties
 from ingest_worker.decompose.pdf.crop import PageCropper, PdfiumCropper, RotatedCropper
 from ingest_worker.decompose.pdf.fidelity import check_pdf
-from ingest_worker.decompose.pdf.furniture import Dropped, drop_furniture, dropped_flag
+from ingest_worker.decompose.pdf.furniture import (
+    Dropped,
+    drop_furniture,
+    dropped_flag,
+    line_number_margins,
+)
 from ingest_worker.decompose.pdf.layout import (
     LayoutAnalyser,
     LayoutDoc,
@@ -44,7 +49,7 @@ from ingest_worker.decompose.pdf.transcript import PageTranscriber, parse_transc
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
 #: The PDF reader's version, part of the decomposer version for a PDF.
-PDF_READER_VERSION = 4
+PDF_READER_VERSION = 5
 
 #: A PDF with more pages fails (spec section 10).
 MAX_PAGES = 500
@@ -87,7 +92,8 @@ def decompose_pdf(
             text.unmapped_symbols,
         )
         scanned = []
-    layout_doc = analyse_document(layout, data, pages, chunk=chunk)
+    margins = line_number_margins(text)
+    layout_doc = analyse_document(layout, data, pages, chunk=chunk, margins=margins)
     recognised: dict[int, RecognisedPage] = {}
     scanned_furniture: dict[int, int] = {}
     rotations: dict[int, int] = {}

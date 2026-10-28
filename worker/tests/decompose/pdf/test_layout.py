@@ -33,6 +33,7 @@ two pictures), and numbers pages from the PDF's own first page whatever range wa
 
 from __future__ import annotations
 
+import io
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pypdf import PdfReader
 
 from ingest_worker.decompose.package import DecompositionRejected
 from ingest_worker.decompose.pdf.layout import (
@@ -49,10 +51,12 @@ from ingest_worker.decompose.pdf.layout import (
     LayoutUnavailable,
     analyse_document,
     parse_docling,
+    without_margins,
 )
 
 from . import docling
 from .fakes import FakeLayout
+from .make_pdf import Page, Run, make_pdf
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -255,3 +259,36 @@ def _malformed(kind: str) -> dict[str, Any]:
 def test_a_malformed_node_is_rejected(kind: str) -> None:
     with pytest.raises(DecompositionRejected, match=r"^layout response malformed: "):
         parse_docling(_malformed(kind))
+
+
+def test_pages_with_margins_are_sent_cropped_and_moved_back() -> None:
+    """Spec 4.3: an upright page's line-number margin is cropped off before the layout service
+    sees it, and the boxes it answers with are moved back into the whole page's coordinates."""
+    data = make_pdf([Page(runs=[Run("Body", 72, 100)]), Page(rotate=90), Page()])
+    sent: list[bytes] = []
+
+    class Recording(FakeLayout):
+        def analyse(self, pdf: bytes, first: int, last: int) -> dict[str, Any]:
+            sent.append(pdf)
+            return super().analyse(pdf, first, last)
+
+    def respond(first: int, last: int) -> dict[str, Any]:
+        items = [docling.text("text", page, (12.0, 750.0, 100.0, 740.0)) for page in (1, 2, 3)] + [
+            docling.table(1, (12.0, 700.0, 100.0, 600.0), [(0, 0)], rows=1, cols=1)
+        ]
+        return docling.doc([(595, 842)] * 3, items)
+
+    result = analyse_document(Recording(respond), data, 3, margins={0: 60.0, 1: 60.0})
+    [pdf] = sent
+    boxes = [[float(v) for v in page.cropbox] for page in PdfReader(io.BytesIO(pdf)).pages]
+    assert boxes == [[60.0, 0.0, 595.0, 842.0], [0.0, 0.0, 595.0, 842.0], [0.0, 0.0, 595.0, 842.0]]
+    texts = [item for item in result.items if isinstance(item, LayoutText)]
+    assert [t.bbox[0] for t in texts] == [72.0, 12.0, 12.0]  # the turned page isn't cropped
+    [table] = [item for item in result.items if isinstance(item, LayoutTable)]
+    assert table.bbox[0] == 72.0
+    assert table.cells[0].bbox is not None and table.cells[0].bbox[0] == 60.0
+
+
+def test_without_margins_sends_a_pdf_it_cannot_rewrite_whole() -> None:
+    assert without_margins(b"%PDF- not really", {0: 60.0}) == (b"%PDF- not really", {})
+    assert without_margins(b"%PDF-", {}) == (b"%PDF-", {})

@@ -5,9 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from ingest_worker.decompose.model import Property
-from ingest_worker.decompose.pdf.furniture import Dropped, drop_furniture, dropped_flag
+from ingest_worker.decompose.pdf.furniture import (
+    Dropped,
+    drop_furniture,
+    dropped_flag,
+    line_number_margins,
+)
 from ingest_worker.decompose.pdf.layout import parse_docling
-from ingest_worker.decompose.pdf.pieces import Piece, attach_text
+from ingest_worker.decompose.pdf.pieces import Line, Piece, attach_text
 from ingest_worker.decompose.pdf.textlayer import read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
@@ -274,10 +279,53 @@ def test_table_after_a_contents_heading_is_dropped() -> None:
 
 def test_document_index_table_is_dropped() -> None:
     pages, items = _table_page(CONTENTS_ROWS, label="document_index")
-    pieces, text, ledger = build(pages, items)
+    pieces, text, ledger = build(pages + PADDING, items)
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Body"]
     assert dropped.contents_pages == (0,)
+    assert dropped.not_contents == ()
+
+
+def test_document_index_that_does_not_read_as_contents_is_kept_as_paragraphs() -> None:
+    """Docling labels a page of numbered lines `document_index` too (spec 4.3, 2026-10-28)."""
+    lines = [
+        "Stability data were",
+        "collected at each",
+        "station over time.",
+        "",
+        "A new",
+        "paragraph",
+    ]
+    runs = [Run(line, 72, 200 + 14 * k) for k, line in enumerate(lines) if line]
+    rows = [(k, 0) for k, line in enumerate(lines) if line]
+    table = docling.table(1, bl(60, 185, 400, 290), rows, rows=len(lines), cols=1)
+    table["label"] = "document_index"
+    for cell, (k, _) in zip(table["data"]["table_cells"], rows, strict=True):
+        cell["bbox"] = {"l": 60, "t": 188 + 14 * k, "r": 400, "b": 202 + 14 * k}
+        cell["bbox"]["coord_origin"] = "TOPLEFT"
+    pieces, text, ledger = build([Page(runs=runs), *PADDING], [table])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert [[line.text for line in p.lines] for p in kept] == [lines[:3], lines[4:]]
+    assert all(p.table is None and p.label == "text" for p in kept)
+    assert dropped.contents_pages == ()
+    assert dropped.not_contents == (0,)
+    owners = {o for entry in ledger.entries(0).values() for o in entry}
+    assert owners == {kept[0].ref, kept[1].ref}
+    flag = dropped_flag(dropped)
+    assert flag is not None
+    assert flag.message == (
+        "Kept as paragraphs: text the layout analysis took for contents on page 1"
+    )
+
+
+def test_document_index_text_that_does_not_read_as_contents_is_kept() -> None:
+    lines = ["2104 Table A1-4 Examples of matrixing", "2105 on time points", "2106 for a product"]
+    runs = [Run(line, 72, 200 + 14 * k) for k, line in enumerate(lines)]
+    item = docling.text("document_index", 1, bl(60, 188, 400, 236))
+    pieces, text, ledger = build([Page(runs=runs), *PADDING], [item])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == lines
+    assert dropped.contents_pages == ()
 
 
 def test_data_table_without_a_contents_heading_is_kept() -> None:
@@ -478,3 +526,89 @@ def test_line_numbers_carry_on_into_the_top_band() -> None:
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Opening line", *BODY]
     assert dropped.line_numbers == {0: 6}
+
+
+def _numbered_document(middle: list[Run], *, vouching: int = 3) -> list[Page]:
+    """`vouching` pages of five numbered lines each, counting on from 2190, with `middle` as
+    the second page: its own numbers, if any, are the caller's, and 2195 and 2196 are left for
+    them."""
+    pages = [Page(runs=numbered(BODY, first=2190 + 5 * k + 2 * (k > 0))) for k in range(vouching)]
+    return [pages[0], Page(runs=middle), *pages[1:]]
+
+
+def _figure_page(first: int = 2195, x: float = 40) -> list[Run]:
+    """Two numbered lines (a caption and the line after the figure) and a figure's labels."""
+    labels = [Run(f"Step {k} of the process", 200, 260 + 14 * k) for k in range(8)]
+    return [
+        Run(str(first), x, 200, size=8),
+        Run("Figure 2: Process flow", 72, 200),
+        *labels,
+        Run(str(first + 1), x, 400, size=8),
+        Run("The figure shows it", 72, 400),
+    ]
+
+
+def test_a_page_with_few_line_numbers_takes_them_from_the_pages_around_it() -> None:
+    """A figure fills the page: too few numbered lines to show it alone, but the pages around it
+    number their lines in the same column, and its numbers come between theirs."""
+    pages = _numbered_document(_figure_page())
+    items = [docling.picture(2, bl(30, 240, 500, 390))]  # reaching into the margin
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {0: 5, 1: 2, 2: 5, 3: 5}
+    page = [line.text for p in kept if p.page == 1 for line in p.lines]
+    assert "Figure 2: Process flow" in page and "2195" not in " ".join(page)
+    [picture] = [p for p in kept if p.picture is not None]
+    assert 50 < picture.bbox[0] < 72  # cropped without the column of numbers
+
+
+def test_numbers_out_of_the_sequence_are_kept() -> None:
+    pages = _numbered_document(_figure_page(first=1))
+    pieces, text, ledger = build(pages)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert 1 not in dropped.line_numbers
+    assert "1" in texts(kept)
+
+
+def test_two_pages_of_line_numbers_vouch_for_no_other() -> None:
+    pages = _numbered_document(_figure_page(), vouching=2)
+    pieces, text, ledger = build(pages)
+    _, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {0: 5, 2: 5}
+
+
+def test_margins_of_line_numbers_are_found_from_the_text_layer() -> None:
+    plain = Page(runs=[Run("No numbers here", 72, 200)])
+    pictured = Page(runs=_figure_page(first=2205), images=[Img(30, 240, 400, 100)])
+    pages = [*_numbered_document(_figure_page()), plain, pictured]
+    margins = line_number_margins(read_text_layer(make_pdf(pages)))
+    assert set(margins) == {0, 1, 2, 3}  # not the page with none, nor the image in the margin
+    assert all(50 < x < 72 for x in margins.values())
+
+
+def test_no_margins_without_enough_pages_of_line_numbers() -> None:
+    pages = _numbered_document(_figure_page(), vouching=2)
+    assert line_number_margins(read_text_layer(make_pdf(pages))) == {}
+
+
+def test_a_line_number_run_into_a_table_cell_is_dropped() -> None:
+    """The text layer can run a line number into the word after it, which then goes whole to
+    the table that word is in: a number left of the table's box is still a line number."""
+    rows = [(k, 0) for k in range(len(BODY))]
+    table = docling.table(1, bl(60, 188, 400, 262), rows, rows=len(BODY), cols=1)
+    for cell, (k, _) in zip(table["data"]["table_cells"], rows, strict=True):
+        cell["bbox"] = {"l": 60, "t": 188 + 14 * k, "r": 400, "b": 202 + 14 * k}
+        cell["bbox"]["coord_origin"] = "TOPLEFT"
+    pieces, text, ledger = build([Page(runs=numbered(BODY))], [table])
+    [grid] = [p for p in pieces if p.table is not None]
+    [stray] = [p for p in pieces if p.lines and p.lines[0].text == "2190"]
+    [first] = grid.cells[(0, 0)]  # type: ignore[index]
+    joined = Line(0, stray.lines[0].chars + first.chars, (40, first.bbox[1], *first.bbox[2:]))
+    grid.cells[(0, 0)] = [joined]  # type: ignore[index]
+    stray.lines.pop(0)
+    for c in joined.chars:
+        ledger.reassign(0, c.index, grid.ref)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert dropped.line_numbers == {0: 5}
+    [grid] = [p for p in kept if p.table is not None]
+    assert [line.text for line in grid.cells[(0, 0)]] == ["Stability data"]  # type: ignore[index]
