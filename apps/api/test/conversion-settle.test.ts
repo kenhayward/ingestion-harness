@@ -66,6 +66,7 @@ async function delivered(over: { persistentId?: string | null } = {}) {
       | 'unversioned'
       | 'gone'
       | 'unconfirmed'
+      | 'partWay'
       | 'links'
       | 'reloadable'
       | 'rerunIn'

@@ -105,6 +105,14 @@ export const ItemSchema = z
      */
     unconfirmed: z.boolean(),
     /**
+     * The item's register entry failed because the sink refused its key as part-way (details
+     * `reason: delivery_part_way`): an earlier delivery under that key stopped part-way and may
+     * have left topics, or a partly updated document, in the target. The worker sends it again
+     * only under that key, which the sink never takes, so only detach frees it (owner's call,
+     * 2026-10-28): the next run then creates a new document, so check the target first.
+     */
+    partWay: z.boolean(),
+    /**
      * Links the target gave with the refusal or failure of the item's register entry (the bridge
      * error's `details.links`, e.g. the document and the component that blocked it): web
      * addresses only, at most five, labels cut to 100 characters. Read from the entry while it is

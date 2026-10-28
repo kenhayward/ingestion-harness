@@ -57,13 +57,15 @@ export const canReload = (item: Item) => item.reloadable;
 /**
  * Detach: as `canResolve`, an unresolved document whose versions were never recorded (§8),
  * which no update can be checked against, so there is nothing to accept, one gone from the
- * target, or a failed create the target may have taken (`unconfirmed`), which is only ever sent
- * again under its old key.
+ * target, a failed create the target may have taken (`unconfirmed`), which is only ever sent
+ * again under its old key, or one the sink refused as part-way (`partWay`), which it never takes
+ * under that key again.
  */
 export const canDetach = (item: Item) =>
   canResolve(item) ||
   (item.gone && item.registerEntryId !== null && !item.resolution) ||
   (item.unconfirmed && item.registerEntryId !== null && !item.resolution) ||
+  (item.partWay && item.registerEntryId !== null && !item.resolution) ||
   (item.outcome === 'unresolved' &&
     item.unversioned &&
     item.registerEntryId !== null &&
@@ -470,7 +472,7 @@ function DetachDialog({
           CT Studio forgets this document, which the target no longer has. The next run of{' '}
           <span className="mono">{item.sourceKey}</span> creates a new document of its own.
         </p>
-      ) : item.unconfirmed ? (
+      ) : item.unconfirmed || item.partWay ? (
         <p>
           CT Studio forgets this document&apos;s last delivery, which failed part-way and may have
           left a partial document in the target. Check the target and remove anything it left first.

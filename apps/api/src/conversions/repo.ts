@@ -7,7 +7,7 @@ import {
   type Item,
   type ItemCounts,
 } from '@ih/shared';
-import { isDocumentMissing } from '@ih/bridge-contract';
+import { isDeliveryPartWay, isDocumentMissing } from '@ih/bridge-contract';
 import type { RegisterEntry } from '../repositories/types.js';
 import type { AcceptPlan } from './accept.js';
 
@@ -75,8 +75,8 @@ export interface ConversionRepo {
    * (`pending`) while a delivery for the entry is in flight, or a run of its source to a target
    * on its tenant is unfinished (a rerun queued, say); `missing` when it is gone or detached
    * already; `not_refused` unless it is `changed`, unversioned (`isUnversioned`), gone from
-   * the target (`isGone`) or a create the target may have taken (`isUnconfirmed`), so a live
-   * document is never detached.
+   * the target (`isGone`), a create the target may have taken (`isUnconfirmed`) or refused as
+   * part-way (`isPartWay`), so a live document is never detached.
    */
   detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
@@ -222,6 +222,14 @@ export const isUnconfirmed = (
   entry.persistentId === null &&
   entry.lastError !== null &&
   entry.lastError.details?.[REFUSED_BEFORE_ACCEPTANCE] !== true;
+
+/**
+ * An entry the sink refused as part-way (`Item.partWay`, owner's call 2026-10-28): it failed with
+ * the sink's `delivery_part_way` marker, create or update. The worker resends only under that
+ * key, which the sink never takes again, so detach takes it.
+ */
+export const isPartWay = (entry: Pick<RegisterEntry, 'state' | 'lastError'>): boolean =>
+  entry.state === 'failed' && isDeliveryPartWay(entry.lastError);
 
 /** The most links an item carries from a bridge error (`Item.links`). */
 const MAX_LINKS = 5;

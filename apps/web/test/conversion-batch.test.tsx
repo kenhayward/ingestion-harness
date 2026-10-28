@@ -539,6 +539,24 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.detachConversionItem).toHaveBeenCalledWith(stuck.id);
   });
 
+  it('an update the sink refused as part-way offers detach, saying to check the target first', async () => {
+    const stuck = item('ich.pdf', 'failed', {
+      registerEntryId: crypto.randomUUID(),
+      partWay: true,
+      detail: 'the bridge refused it: an earlier delivery stopped part-way',
+    });
+    const detached = { ...stuck, resolution: 'detached' as const, partWay: false };
+    const api = batchApi([stuck], { detachConversionItem: vi.fn(async () => detached) });
+    view(api);
+    await findRow('ich.pdf');
+
+    await userEvent.click(panelFor('ich.pdf').getByRole('button', { name: 'Detach ich.pdf' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Detach ich.pdf?' }));
+    expect(dialog.getByText(/may have left a partial document in the target/)).toBeVisible();
+    await userEvent.click(dialog.getByRole('button', { name: 'Detach' }));
+    expect(api.detachConversionItem).toHaveBeenCalledWith(stuck.id);
+  });
+
   it("a refused document's panel links what the target names, web addresses only", async () => {
     const locked = item('locked.docx', 'changed_in_target', {
       registerEntryId: crypto.randomUUID(),
