@@ -15,6 +15,7 @@ from dataclasses import replace
 from ingest_worker.decompose import Decomposition, in_document_order
 from ingest_worker.decompose.package import DecompositionFailed
 from ingest_worker.decompose.pdf.build import build_document, pdf_properties
+from ingest_worker.decompose.pdf.bullets import bullets_from_pictures
 from ingest_worker.decompose.pdf.crop import PageCropper, PdfiumCropper, RotatedCropper
 from ingest_worker.decompose.pdf.drawn import tables_from_drawings
 from ingest_worker.decompose.pdf.fidelity import check_pdf
@@ -50,7 +51,7 @@ from ingest_worker.decompose.pdf.transcript import PageTranscriber, parse_transc
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
 #: The PDF reader's version, part of the decomposer version for a PDF.
-PDF_READER_VERSION = 6
+PDF_READER_VERSION = 7
 
 #: A PDF with more pages fails (spec section 10).
 MAX_PAGES = 500
@@ -96,6 +97,7 @@ def decompose_pdf(
     margins = line_number_margins(text)
     layout_doc = analyse_document(layout, data, pages, chunk=chunk, margins=margins)
     layout_doc = tables_from_drawings(layout_doc, text)
+    layout_doc = bullets_from_pictures(layout_doc, text)
     recognised: dict[int, RecognisedPage] = {}
     scanned_furniture: dict[int, int] = {}
     rotations: dict[int, int] = {}

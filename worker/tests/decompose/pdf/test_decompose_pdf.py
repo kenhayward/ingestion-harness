@@ -184,7 +184,7 @@ def test_same_pdf_same_document() -> None:
 
 
 def test_reader_constants() -> None:
-    assert pdf_reader.PDF_READER_VERSION == 6
+    assert pdf_reader.PDF_READER_VERSION == 7
     assert pdf_reader.MAX_PAGES == 500
 
 
