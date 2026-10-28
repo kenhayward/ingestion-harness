@@ -15,8 +15,8 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMo
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.io import DocumentStream
 
-from layout_service.app import AnalysisFailed, DeviceUnavailable, require_success
-from layout_service.device import is_device_error, prepare
+from layout_service.app import AnalysisFailed, require_success
+from layout_service.device import failure, prepare
 
 # The pins; the Dockerfile downloads exactly these revisions into MODELS_DIR.
 LAYOUT_REVISION = "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8"
@@ -53,17 +53,26 @@ class DoclingAnalyser:
     def analyse(self, pdf: bytes, first: int, last: int, timeout: float) -> dict:
         source = DocumentStream(name="document.pdf", stream=BytesIO(pdf))
         with self._lock:
-            self._set_timeout(timeout)
             try:
+                # Loads the models on the first request: on a GPU, out of memory can be here too.
+                self._set_timeout(timeout)
                 result = self._converter.convert(source, page_range=(first, last))
             except Exception as error:
-                if is_device_error(error):
-                    raise DeviceUnavailable(_reason(error)) from error
-                raise AnalysisFailed(_reason(error)) from error
+                self._free()
+                raise failure(self._device, error) from error
         # A timeout ends the conversion early with a partial document: it is refused, as is
-        # anything short of full success.
-        require_success(result.status.value, timed_out=result.has_timeout_errors())
+        # anything short of full success (on a GPU, left to the CPU service: `failure`).
+        try:
+            require_success(result.status.value, timed_out=result.has_timeout_errors())
+        except AnalysisFailed as error:
+            self._free()
+            raise failure(self._device, str(error)) from error
         return result.document.export_to_dict()
+
+    def _free(self) -> None:
+        """After a failure on a GPU, the memory the failed conversion held is given back."""
+        if self._device == "cuda":
+            torch.cuda.empty_cache()
 
     def _set_timeout(self, timeout: float) -> None:
         """Docling's `document_timeout` for the next conversion. It is set on the cached
@@ -79,7 +88,3 @@ class DoclingAnalyser:
             f"layout {LAYOUT_REVISION[:8]}; tables {TABLES_REVISION[:8]}; {self._device}"
         )
 
-
-def _reason(error: Exception) -> str:
-    text = str(error).strip()
-    return text.splitlines()[0][:200] if text else type(error).__name__

@@ -141,3 +141,12 @@ def test_layout_analyser_builds_from_the_settings() -> None:
     both = layout_analyser("http://layout-gpu:8000", "http://layout:8000")
     assert isinstance(both, FallbackLayoutAnalyser)
     assert isinstance(layout_analyser(None, "http://layout:8000"), HttpLayoutAnalyser)
+
+
+def test_a_hung_primary_is_given_up_on_sooner_than_the_fallback() -> None:
+    both = layout_analyser("http://layout-gpu:8000", "http://layout:8000")
+    assert isinstance(both, FallbackLayoutAnalyser)
+    assert isinstance(both.primary, HttpLayoutAnalyser)
+    assert isinstance(both.fallback, HttpLayoutAnalyser)
+    assert both.primary.timeout_s == 120.0
+    assert both.fallback.timeout_s == 600.0

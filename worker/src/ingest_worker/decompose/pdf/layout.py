@@ -257,6 +257,7 @@ class HttpLayoutAnalyser:
         self, base_url: str, client: httpx.Client | None = None, timeout_s: float = 600.0
     ) -> None:
         self._base = base_url.rstrip("/")
+        self.timeout_s = timeout_s
         self._client = client or httpx.Client(timeout=timeout_s)
         self._fingerprint: str | None = None
 
@@ -329,6 +330,10 @@ class FallbackLayoutAnalyser:
         return self.run(lambda analyser: analyser.fingerprint())
 
 
+#: How long the primary of a `FallbackLayoutAnalyser` may take over one request.
+PRIMARY_TIMEOUT_S = 120.0
+
+
 def layout_analyser(url: str | None, fallback_url: str | None) -> LayoutAnalyser | None:
     """The worker's analyser from `LAYOUT_URL` and `LAYOUT_FALLBACK_URL`; None: neither is set."""
     urls = [u for u in (url, fallback_url) if u]
@@ -336,7 +341,11 @@ def layout_analyser(url: str | None, fallback_url: str | None) -> LayoutAnalyser
         return None
     if len(urls) == 1:
         return HttpLayoutAnalyser(urls[0])
-    return FallbackLayoutAnalyser(HttpLayoutAnalyser(urls[0]), HttpLayoutAnalyser(urls[1]))
+    # The GPU reads a 20-page chunk in under 10 s: a primary taking 2 minutes is hung, and the
+    # document is read on the fallback (which keeps the CPU's 10 minutes).
+    return FallbackLayoutAnalyser(
+        HttpLayoutAnalyser(urls[0], timeout_s=PRIMARY_TIMEOUT_S), HttpLayoutAnalyser(urls[1])
+    )
 
 
 def _renumbered(document: dict[str, Any], shift: int) -> dict[str, Any]:
