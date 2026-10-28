@@ -62,7 +62,7 @@ def test_a_docx_converts_to_a_pdf_with_its_pages() -> None:
     assert len(pages) == 2
     assert "HEADER Acme protocol" in pages[0] and "Batch 42" in pages[0]
     assert "RESULTS" in pages[1]
-    assert converter.fingerprint().startswith("gotenberg-8.37.0-")
+    assert converter.fingerprint().startswith("gotenberg-8.38.1-")
 
 
 def test_a_broken_docx_is_rejected() -> None:
