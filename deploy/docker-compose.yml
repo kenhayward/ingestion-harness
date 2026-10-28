@@ -151,6 +151,26 @@ services:
       retries: 12
       start_period: 60s
 
+  layout-gpu:
+    # The layout service on this host's NVIDIA GPU (the pdf-reader design, section 16): the same
+    # Docling and weights, built with CUDA torch (TORCH_INDEX), in full precision, so its boxes
+    # are the CPU's to within 0.002 points, about 7x faster on an RTX 5090. Only in the `gpu`
+    # profile; turned on by three lines in .env:
+    #   COMPOSE_PROFILES=gpu (with any other profiles, comma-separated)
+    #   LAYOUT_URL=http://layout-gpu:8000
+    #   LAYOUT_FALLBACK_URL=http://layout:8000
+    # `layout` keeps running: a document is read on it when this one is down, its GPU out of
+    # memory (other programs share it) or failing. About 2 GB of GPU memory; a 21 GB image.
+    extends: { service: layout }
+    profiles: [gpu]
+    image: ${IMAGE_PREFIX:-ingestion-harness}/layout-gpu:${IMAGE_TAG:-dev}
+    build:
+      context: ./layout
+      args:
+        TORCH_INDEX: cu130
+    gpus: all
+    mem_limit: 8g
+
   converter:
     # Word (.docx) to PDF for the worker (docs/design/word-documents.md, ADR 0009): Gotenberg's
     # LibreOffice-only image, pinned to an exact release. It parses untrusted documents, so it
@@ -356,6 +376,9 @@ services:
       CONVERTER_URL: ${CONVERTER_URL-http://converter:3000}
       # PDF layout analysis (the pdf-reader design, section 4.1); empty disables it.
       LAYOUT_URL: ${LAYOUT_URL-http://layout:8000}
+      # The layout service a document is read on when LAYOUT_URL's is down (section 16: the CPU
+      # one behind layout-gpu); empty: none.
+      LAYOUT_FALLBACK_URL: ${LAYOUT_FALLBACK_URL:-}
       ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
       ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
       ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
@@ -373,6 +396,8 @@ services:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
       bridge: { condition: service_healthy }
+      # Started with the worker when the gpu profile is on; otherwise not part of the stack.
+      layout-gpu: { condition: service_started, required: false }
       converter: { condition: service_healthy }
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
