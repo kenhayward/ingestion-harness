@@ -187,6 +187,13 @@
             <span>— scanned pages are rendered one at a time</span>
           </li>
         </ul>
+        <h4>Fixes</h4>
+        <ul>
+          <li>
+            <a href="#detach-part-way">Detach for a delivery that stopped part-way</a>
+            <span>— no more clearing the sink by hand</span>
+          </li>
+        </ul>
         <h4>Other updates</h4>
         <ul>
           <li>
@@ -275,6 +282,28 @@
         once, and failed one of them at random. Pages are now rendered one at a time and still sent
         to the OCR model together, so OCR takes no longer. A job that failed this way succeeds when
         it is run again.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="fixes">Fixes</h2>
+
+      <h3 id="detach-part-way">Detach for a delivery that stopped part-way</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/356">#356</a>,
+        <a href="https://github.com/kenhayward/3ds-sink/pull/37">3ds-sink #37</a>
+      </p>
+      <p>
+        When a delivery stops part-way, the sink refuses every later delivery under the same key,
+        and CT Studio only ever sends a document again under its key. An update refused that way (a
+        long document's, say) was stuck: running it again, forced or not, failed the same way, and
+        the row offered no Detach, so the only way out was clearing the sink's record by hand.
+      </p>
+      <p>
+        The sink now marks that refusal, and CT Studio offers <strong>Detach</strong> on the row.
+        The dialog says to check the target first and remove anything the delivery left; the next
+        run then creates a new document. Needs both changes deployed: the sink's mark is only on
+        refusals made after its update, so a row that failed before it gets Detach once the document
+        is run again.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

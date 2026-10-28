@@ -138,6 +138,7 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         unconfirmed: false,
+        partWay: false,
         links: [],
         reloadable: false,
         rerunIn: null,
@@ -348,6 +349,7 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         unconfirmed: false,
+        partWay: false,
         links: [],
         reloadable: false,
         rerunIn: null,
@@ -452,6 +454,7 @@ export function conversionsContract(
           unversioned: false,
           gone: false,
           unconfirmed: false,
+          partWay: false,
           links: [],
           reloadable: false,
           rerunIn: null,
@@ -1046,9 +1049,70 @@ export function conversionsContract(
       expect(ItemSchema.parse(detached.item)).toMatchObject({
         resolution: 'detached',
         unconfirmed: false,
+        partWay: false,
       });
       expect(await facts.actions(entryId)).toMatchObject([
         { action: 'detach', details: { persistentId: null, sourceKey: a.sourceKey } },
+      ]);
+    });
+
+    it('detaches a document the sink refused as part-way, create or update, and no other refusal', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const partWay = bridgeError('content_rejected', 'an earlier delivery stopped part-way', {
+        reason: 'delivery_part_way',
+        repositoryId: 'R1',
+      });
+      // Not part-way: another content_rejected, the marker on another code, or not failed.
+      for (const seed of [
+        { state: 'failed', lastError: bridgeError('content_rejected', 'no', { reason: 'other' }) },
+        {
+          state: 'failed',
+          lastError: bridgeError('not_found', 'no', { reason: 'delivery_part_way' }),
+        },
+        { state: 'pending', lastError: partWay },
+      ] as const) {
+        const other = await facts.entry({
+          ...changedSeed(`${a.sourceKey}#${JSON.stringify(seed)}`, batch.id),
+          persistentId: 'doc-1',
+          ...seed,
+        });
+        await facts.settleItem(a.id, 'failed', other);
+        expect((await repo.getItem(a.id))?.partWay, JSON.stringify(seed)).toBe(false);
+      }
+
+      // An update: the entry has its document and its versions, so nothing else frees it.
+      const entryId = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'failed',
+        persistentId: 'doc-1',
+        lastError: partWay,
+      });
+      await facts.settleItem(a.id, 'failed', entryId);
+      expect(ItemSchema.parse(await repo.getItem(a.id))).toMatchObject({
+        partWay: true,
+        unconfirmed: false,
+        unversioned: false,
+        gone: false,
+        resolution: null,
+      });
+      expect((await repo.listItems(batch.id))[0]?.partWay).toBe(true);
+
+      const detached = await repo.detachRegisterEntry({
+        itemId: a.id,
+        entryId,
+        targetIds: ['manuals'],
+        by: ADA,
+        detail: () => 'detached',
+      });
+
+      if (!detached.ok) throw new Error(detached.reason);
+      expect(detached.entry.state).toBe('detached');
+      expect(ItemSchema.parse(detached.item)).toMatchObject({
+        resolution: 'detached',
+        partWay: false,
+      });
+      expect(await facts.actions(entryId)).toMatchObject([
+        { action: 'detach', details: { persistentId: 'doc-1', sourceKey: a.sourceKey } },
       ]);
     });
 

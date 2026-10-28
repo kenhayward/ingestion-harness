@@ -539,6 +539,14 @@ fails part-way, or the response is lost. None of these may lead to a second copy
   *unresolved* until it is resolved in the target.
 - **A later run of an `incomplete` entry** is an update behind the version check, against the
   components reported so far, like any other.
+- (owner, 2026-10-28) **A key the sink refuses as part-way.** A sink that may have left
+  something it cannot account for (an earlier delivery under the key stopped part-way, or is
+  still running) refuses the key as `content_rejected` with `details.reason:
+  'delivery_part_way'`, and never takes that key again. The worker only resends under it, so the
+  entry, create or update, would be stuck, force or not. Such an entry (failed, with that marker)
+  is *part-way*, the item says `partWay`, and the row offers detach: the dialog says to check the
+  target and remove anything the delivery left first. The next run then creates a new document
+  under a new key. **[call]**
 
 ## 9. Contract changes
 

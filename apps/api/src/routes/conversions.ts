@@ -1036,7 +1036,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           a create the target may have taken (the item's \`unconfirmed\`: no document, and a
           failed delivery the target may have started, which the worker only ever sends again
           under the same idempotency key, so a sink that refuses that key as part-way would
-          leave it stuck) (\`not_refused\`), so a live document is never detached, from an old
+          leave it stuck), or the sink refused its key as part-way (the item's \`partWay\`: an
+          earlier delivery under it stopped part-way, so the sink never takes it again)
+          (\`not_refused\`), so a live document is never detached, from an old
           row or a stale page. Recorded with who and when; the item's detail says it was detached.
         `,
         params: ItemParams,
@@ -1049,8 +1051,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           409: res(
             'The item has no register entry (`no_register_entry`: never delivered, or detached ' +
               'already), a delivery for it or a run of its file is in flight (`in_flight`), or ' +
-              'its document is neither refused as changed in the target, unversioned, gone nor ' +
-              'an unconfirmed create (`not_refused`).',
+              'its document is neither refused as changed in the target, unversioned, gone, ' +
+              'an unconfirmed create nor refused as part-way (`not_refused`).',
             ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight', 'not_refused']) }),
           ),
         },

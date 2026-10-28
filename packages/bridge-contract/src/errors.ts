@@ -101,6 +101,20 @@ export function documentMissing(persistentId: string, message: string): BridgeEr
   return bridgeError('not_found', message, { reason: DOCUMENT_MISSING, persistentId });
 }
 
+/** The `details.reason` of a sink's refusal of a key whose earlier delivery stopped part-way. */
+export const DELIVERY_PART_WAY = 'delivery_part_way';
+
+/**
+ * Whether `error` is a sink's refusal of a key whose earlier delivery stopped part-way (or is
+ * still running): `content_rejected` with `details.reason` `delivery_part_way`. The sink never
+ * delivers that key again, so a producer that only resends under it is stuck until it detaches.
+ */
+export function isDeliveryPartWay(
+  error: Pick<BridgeError, 'code' | 'details'> | null | undefined,
+): boolean {
+  return error?.code === 'content_rejected' && error.details?.reason === DELIVERY_PART_WAY;
+}
+
 /** Whether `error` is the missing-document marker for exactly `persistentId`. */
 export function isDocumentMissing(
   error: Pick<BridgeError, 'code' | 'details'> | null | undefined,
