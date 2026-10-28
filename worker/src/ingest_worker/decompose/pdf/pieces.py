@@ -221,7 +221,7 @@ def words_of(page: PageText) -> list[list[Char]]:
     return words
 
 
-def _lines(page: int, chars: list[Char]) -> list[Line]:
+def lines_of(page: int, chars: list[Char]) -> list[Line]:
     """Chars grouped by baseline into lines, top to bottom, each left to right."""
     clusters: list[list[Char]] = []
     for c in sorted(chars, key=lambda c: (c.baseline, c.x0)):
@@ -377,7 +377,7 @@ def _piece(index: int, item: object, owned: dict[_Target, list[Char]]) -> Piece 
         cells: dict[tuple[int, int], list[Line]] = {}
         for key in _cell_keys(item):
             chars = owned.get((index, key), [])
-            cells[key] = _lines(item.page, chars) if chars else []
+            cells[key] = lines_of(item.page, chars) if chars else []
         if not any(cells.values()):
             return None
         return Piece(
@@ -386,12 +386,12 @@ def _piece(index: int, item: object, owned: dict[_Target, list[Char]]) -> Piece 
     chars = owned.get((index, None), [])
     if isinstance(item, LayoutPicture):
         # a picture is kept with no text inside it: it is an image all the same
-        lines = _lines(item.page, chars) if chars else []
+        lines = lines_of(item.page, chars) if chars else []
         return Piece(item.ref, "picture", item.page, item.bbox, lines, None, None, picture=item)
     if not chars:
         return None
     assert isinstance(item, LayoutText)
-    lines = _lines(item.page, chars)
+    lines = lines_of(item.page, chars)
     return Piece(
         item.ref, item.label, item.page, item.bbox, lines, item.level, item.group, layer=item.layer
     )
@@ -415,7 +415,7 @@ def _orphans(
         runs: list[list[Line]] = []
         for column in _columns(loose[number]):
             column_runs: list[list[Line]] = []
-            for line in _lines(number, column):
+            for line in lines_of(number, column):
                 if column_runs:
                     previous = column_runs[-1][-1]
                     height = previous.bbox[3] - previous.bbox[1]

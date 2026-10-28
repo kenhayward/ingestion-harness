@@ -6,19 +6,27 @@ on enough pages, or it reads as a page number ("8", "A3 8", "Page 8 of 120"). A 
 the body is ignored. A picture in a band with no image object under it, over nothing but
 furniture text, is dropped too. Printed line numbers are dropped from the start of the lines:
 short numbers in one narrow column left of all other text on the page, on at least half its
-lines, increasing down the page. Contents are a `document_index` item,
-a contents heading with the contents lines after it, or a run of contents lines with dot leaders
-that starts on a leader line; a run's page numbers never go back nor past the last page. One
-contents-like line in the body is kept. Dropped chars are recorded in the ledger.
+lines, increasing down the page. Once three pages show that, a page with fewer (a table or a
+figure fills it) loses those in the same column as the pages around it and numbered between
+theirs, and a picture reaching into the column is cropped without it. The layout analysis is
+sent the pages without that margin (`line_number_margins`). Contents are a `document_index` item
+that reads as contents (else a table of it is kept as paragraphs: Docling gives that label to a
+page of numbered lines too), a contents heading with the contents lines after it, or a run of
+contents lines with dot leaders that starts on a leader line; a run's page numbers never go back
+nor past the last page. One contents-like line in the body is kept. Dropped chars are recorded
+in the ledger.
 """
 
 from __future__ import annotations
 
 import math
 import re
+from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from itertools import pairwise
+from statistics import median
 
 from ingest_worker.decompose.model import Flag, Property
 from ingest_worker.decompose.pdf.layout import BBox
@@ -28,6 +36,7 @@ from ingest_worker.decompose.pdf.pieces import (
     Ledger,
     Line,
     Piece,
+    lines_of,
 )
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 
@@ -55,6 +64,8 @@ _BOUNDARY_LABELS = frozenset({"section_header", "title", "caption"})
 _PAGE_NUMBER = re.compile(r"\d{1,4}")
 #: A contents table needs this many entry rows.
 _TABLE_ROWS = 3
+#: Lines closer than this many line heights are one paragraph (as orphan lines are, pieces.py).
+_PARAGRAPH_GAP = 1.5
 #: A printed page number, perhaps with an annex or part prefix: "8", "- 8 -", "A3 8", "A3-8",
 #: "Page 8 of 120", "8/120", "iv".
 _PAGE_LABEL = re.compile(
@@ -70,6 +81,9 @@ _LINE_NUMBER_SHARE = 0.5
 _LINE_NUMBER_X = 3.0
 #: ... and all other text on the page at least this many ems to their right.
 _LINE_NUMBER_GAP = 0.5
+#: A document with at least this many such pages numbers its lines: a page with fewer of them
+#: (beside a table or a figure) is read against the pages around it.
+_LINE_NUMBER_PAGES = 3
 
 
 @dataclass(frozen=True)
@@ -82,6 +96,9 @@ class Dropped:
     line_numbers: dict[int, int] = field(default_factory=dict)
     #: Page index (0-based) to the number of furniture pictures dropped from it.
     pictures: dict[int, int] = field(default_factory=dict)
+    #: Page indexes (0-based, ascending) where a region the layout analysis took for contents
+    #: didn't read as contents, and was kept as paragraphs.
+    not_contents: tuple[int, ...] = ()
 
 
 def _key(text: str) -> str:
@@ -167,12 +184,13 @@ def drop_furniture(
             remaining.append(_with(piece, kept))
 
     remaining, pictures = _drop_pictures(remaining, text, ledger)
-    remaining, contents_pages = _drop_contents(remaining, ledger, len(text.pages))
+    remaining, contents_pages, as_text = _drop_contents(remaining, ledger, len(text.pages))
     dropped = Dropped(
         dict(sorted(furniture.items())),
         tuple(sorted(contents_pages)),
         line_numbers,
         pictures,
+        tuple(sorted(set(as_text))),
     )
     return remaining, dropped, list(properties.values())
 
@@ -232,7 +250,7 @@ def _furniture_picture(piece: Piece, page: PageText, ledger: Ledger) -> bool:
 class _Number:
     """A line's leading number: where the line is, the number's chars and its value."""
 
-    at: tuple[int, int]  # (piece index, line index)
+    at: tuple[int, tuple[int, int] | None, int]  # (piece index, table cell, line index)
     chars: tuple[Char, ...]
     value: int
 
@@ -280,15 +298,41 @@ def _x1(n: _Number) -> float:
     return n.x1
 
 
-def _column(numbers: list[_Number]) -> list[_Number]:
+@dataclass(frozen=True)
+class _Column:
+    """A page's line numbers, top down, and the edge they line up on."""
+
+    numbers: list[_Number]
+    edge: Callable[[_Number], float]
+    at: float
+
+    def holds(self, n: _Number) -> bool:
+        return abs(self.edge(n) - self.at) <= _LINE_NUMBER_X
+
+
+def _column(numbers: list[_Number]) -> _Column:
     """The most numbers whose right edges, or else left edges, line up."""
     best: list[_Number] = []
+    best_edge: Callable[[_Number], float] = _x1
     for edge in (_x1, _x0):
         for anchor in numbers:
             group = [n for n in numbers if abs(edge(n) - edge(anchor)) <= _LINE_NUMBER_X]
             if len(group) > len(best):
-                best = group
-    return best
+                best, best_edge = group, edge
+    best.sort(key=lambda n: n.chars[0].baseline)
+    return _Column(best, best_edge, median(best_edge(n) for n in best) if best else 0.0)
+
+
+def _increasing(numbers: list[_Number]) -> bool:
+    return all(b.value > a.value for a, b in pairwise(numbers))
+
+
+def _clear_of(numbers: list[_Number], others: list[Char]) -> float | None:
+    """Where the text right of the numbers may start, if all `others` start there or later."""
+    right = max(n.x1 for n in numbers)
+    size = max(c.size for n in numbers for c in n.chars)
+    edge = right + _LINE_NUMBER_GAP * size
+    return None if others and min(c.x0 for c in others) < edge else edge
 
 
 def _band_numbers(column: list[_Number], banded: list[_Number]) -> list[_Number]:
@@ -314,6 +358,62 @@ def _band_numbers(column: list[_Number], banded: list[_Number]) -> list[_Number]
     return out
 
 
+def line_number_margins(text: TextLayer) -> dict[int, float]:
+    """Where the text right of each page's printed line numbers starts, for the pages whose
+    left margin holds nothing but them: the layout analysis is sent those pages without it
+    (`layout.without_margins`). Docling reads a page of numbered lines as a table of contents
+    or a table, and takes the numbers into its figures.
+
+    The pages that show the document numbers its lines are those `_drop_line_numbers` takes
+    alone, read here from the text layer; at least `_LINE_NUMBER_PAGES` of them are needed.
+    Any page whose leading numbers line up with the column of such a page before or after it
+    then has its margin left out, if no other char and no image is in it."""
+    pages = [p for p in text.pages if p.kind == "born_digital"]
+    numbers: dict[int, list[_Number]] = {}
+    shown: dict[int, list[Char]] = {}
+    columns: dict[int, _Column] = {}
+    for page in pages:
+        shown[page.index] = [c for c in page.chars if c.visible and not c.text.isspace()]
+        found = []
+        for j, line in enumerate(lines_of(page.index, shown[page.index])):
+            chars = _leading_number(line)
+            if chars is not None:
+                found.append(_Number((0, None, j), chars, int("".join(c.text for c in chars))))
+        numbers[page.index] = found
+        body = [n for n in found if not _in_band(page, (n.chars[0].y0 + n.chars[0].y1) / 2)]
+        column = _column(body)
+        if len(column.numbers) < _LINE_NUMBERS or not _increasing(column.numbers):
+            continue
+        taken = {c.index for n in column.numbers for c in n.chars}
+        if (
+            _clear_of(column.numbers, [c for c in shown[page.index] if c.index not in taken])
+            is None
+        ):
+            continue
+        lines = _line_count([c for c in shown[page.index] if not _in_band(page, (c.y0 + c.y1) / 2)])
+        if len(column.numbers) < _LINE_NUMBER_SHARE * lines:
+            continue
+        columns[page.index] = column
+    if len(columns) < _LINE_NUMBER_PAGES:
+        return {}
+    order = sorted(columns)
+    margins: dict[int, float] = {}
+    for page in pages:
+        if page.index in columns:
+            near = [columns[page.index]]
+        else:
+            at = bisect_left(order, page.index)
+            near = [columns[order[k]] for k in (at - 1, at) if 0 <= k < len(order)]
+        held = [n for n in numbers[page.index] if any(c.holds(n) for c in near)]
+        if not held:
+            continue
+        taken = {c.index for n in held for c in n.chars}
+        edge = _clear_of(held, [c for c in shown[page.index] if c.index not in taken])
+        if edge is not None and all(image[0] >= edge for image in page.images):
+            margins[page.index] = edge
+    return margins
+
+
 def _drop_line_numbers(
     pieces: list[Piece], text: TextLayer, ledger: Ledger
 ) -> tuple[list[Piece], dict[int, int]]:
@@ -322,8 +422,9 @@ def _drop_line_numbers(
     A page's line numbers are the leading numbers of its text lines out of the margin bands
     that stand in one column: at least `_LINE_NUMBERS` of them, on at least half the page's
     lines, increasing down the page, with every other char on the page well to their right. A
-    numbered list fails that last test against the body text beside it, and a table's cells are
-    never looked at, so a first column of numbers stays."""
+    numbered list fails that last test against the body text beside it. In a table's cells only
+    a number left of the table is looked at (a word the text layer runs into the cell's text), so
+    a first column of numbers stays."""
     pages = {p.index: p for p in text.pages if p.kind == "born_digital"}
 
     def body(page: PageText, c: Char) -> bool:
@@ -334,69 +435,129 @@ def _drop_line_numbers(
     banded: dict[int, list[_Number]] = defaultdict(list)  # in a margin band
     for i, piece in enumerate(pieces):
         page = pages.get(piece.page)
-        if not _is_text(piece) or page is None:
+        if page is None or not (_is_text(piece) or piece.table is not None):
             continue
-        for j, line in enumerate(piece.lines):
+        entries: list[tuple[tuple[int, int] | None, int, Line]]
+        entries = [(None, j, line) for j, line in enumerate(piece.lines)]
+        for cell, cell_lines in (piece.cells or {}).items():
+            entries += [(cell, j, line) for j, line in enumerate(cell_lines)]
+        for key, j, line in entries:
             chars = _leading_number(line)
-            if chars is not None:
-                value = int("".join(c.text for c in chars))
-                into = numbers if all(body(page, c) for c in chars) else banded
-                into[piece.page].append(_Number((i, j), chars, value))
+            if chars is None or (key is not None and chars[-1].x1 > piece.bbox[0]):
+                continue
+            value = int("".join(c.text for c in chars))
+            into = numbers if all(body(page, c) for c in chars) else banded
+            into[piece.page].append(_Number((i, key, j), chars, value))
 
-    doomed: dict[tuple[int, int], set[int]] = {}
-    counts: dict[int, int] = {}
+    def others(page: PageText, numbers: list[_Number]) -> list[Char]:
+        taken = {c.index for n in numbers for c in n.chars}
+        return [c for c in page.chars if body(page, c) and c.index not in taken]
+
+    found_on: dict[int, list[_Number]] = {}  # each page's line numbers, top down
+    columns: dict[int, _Column] = {}  # the pages that show the document numbers its lines
+    clear: dict[int, float] = {}  # where the text right of a page's line numbers starts
     for number, found in sorted(numbers.items()):
         page = pages[number]
-        column = sorted(_column(found), key=lambda n: n.chars[0].baseline)
-        if len(column) < _LINE_NUMBERS:
+        column = _column(found)
+        if len(column.numbers) < _LINE_NUMBERS or not _increasing(column.numbers):
             continue
-        values = [n.value for n in column]
-        if any(b <= a for a, b in pairwise(values)):
+        edge = _clear_of(column.numbers, others(page, column.numbers))
+        if edge is None:
             continue
-        taken = {c.index for n in column for c in n.chars}
-        others = [c for c in page.chars if body(page, c) and c.index not in taken]
-        right = max(n.x1 for n in column)
-        size = max(c.size for n in column for c in n.chars)
-        if others and min(c.x0 for c in others) < right + _LINE_NUMBER_GAP * size:
+        lines = _line_count([c for c in page.chars if body(page, c)])
+        if len(column.numbers) < _LINE_NUMBER_SHARE * lines:
             continue
-        if len(column) < _LINE_NUMBER_SHARE * _line_count([c for c in page.chars if body(page, c)]):
-            continue
-        column += _band_numbers(column, banded[number])
-        for n in column:
-            doomed[n.at] = {c.index for c in n.chars}
-        counts[number] = len(column)
+        columns[number] = column
+        clear[number] = edge
+        found_on[number] = column.numbers + _band_numbers(column.numbers, banded[number])
 
+    # A page with too few line numbers to show it alone (a table or a figure fills it) has them
+    # where a page around it has its column, numbered between that page's and the next one's.
+    if len(columns) >= _LINE_NUMBER_PAGES:
+        order = sorted(columns)
+        for number in sorted(numbers.keys() | banded.keys()):
+            if number in columns:
+                continue
+            at = bisect_left(order, number)
+            before = columns[order[at - 1]] if at > 0 else None
+            after = columns[order[at]] if at < len(order) else None
+            low = max(n.value for n in found_on[order[at - 1]]) if before else -1
+            high = min(n.value for n in found_on[order[at]]) if after else math.inf
+            near = [c for c in (before, after) if c is not None]
+            taken = sorted(
+                (
+                    n
+                    for n in [*numbers[number], *banded[number]]
+                    if low < n.value < high and any(c.holds(n) for c in near)
+                ),
+                key=lambda n: n.chars[0].baseline,
+            )
+            if not taken or not _increasing(taken):
+                continue
+            edge = _clear_of(taken, others(pages[number], taken))
+            if edge is not None:
+                clear[number] = edge
+                found_on[number] = taken
+
+    doomed = {n.at: {c.index for c in n.chars} for found in found_on.values() for n in found}
+    counts = {number: len(found) for number, found in sorted(found_on.items())}
     if not doomed:
         return pieces, {}
     out: list[Piece] = []
     for i, piece in enumerate(pieces):
-        if not any((i, j) in doomed for j in range(len(piece.lines))):
+        edge = clear.get(piece.page)
+        if piece.picture is not None and edge is not None and piece.bbox[0] < edge < piece.bbox[2]:
+            # the layout analysis can take the column into a picture: it is cropped without it
+            _, y0, x1, y1 = piece.bbox
+            out.append(replace(piece, bbox=(edge, y0, x1, y1)))
+            continue
+        if not any(at[0] == i for at in doomed):
             out.append(piece)
             continue
-        kept: list[Line] = []
-        for j, line in enumerate(piece.lines):
-            gone = doomed.get((i, j))
-            if gone is None:
-                kept.append(line)
-                continue
-            rest = tuple(c for c in line.chars if c.index not in gone)
-            shown = [c for c in rest if not c.text.isspace()]
-            if not shown:
-                gone = {c.index for c in line.chars}  # the blanks go with the number
-            for c in line.chars:
-                if c.index in gone:
-                    ledger.drop(line.page, c.index, "line-number")
-            if shown:
-                box = (
-                    min(c.x0 for c in shown),
-                    min(c.y0 for c in shown),
-                    max(c.x1 for c in shown),
-                    max(c.y1 for c in shown),
-                )
-                kept.append(Line(line.page, rest, box))
+        if piece.cells is not None:
+            cells = {
+                key: _without_numbers(lines, i, key, doomed, ledger)
+                for key, lines in piece.cells.items()
+            }
+            out.append(replace(piece, cells=cells))
+            continue
+        kept = _without_numbers(piece.lines, i, None, doomed, ledger)
         if kept:
             out.append(replace(piece, lines=kept))
     return out, counts
+
+
+def _without_numbers(
+    lines: list[Line],
+    piece: int,
+    cell: tuple[int, int] | None,
+    doomed: dict[tuple[int, tuple[int, int] | None, int], set[int]],
+    ledger: Ledger,
+) -> list[Line]:
+    """The lines of a piece (or of one of its cells) without their doomed line numbers, the
+    numbers dropped in the ledger; a line left with nothing shown goes, its blanks too."""
+    kept: list[Line] = []
+    for j, line in enumerate(lines):
+        gone = doomed.get((piece, cell, j))
+        if gone is None:
+            kept.append(line)
+            continue
+        rest = tuple(c for c in line.chars if c.index not in gone)
+        shown = [c for c in rest if not c.text.isspace()]
+        if not shown:
+            gone = {c.index for c in line.chars}  # the blanks go with the number
+        for c in line.chars:
+            if c.index in gone:
+                ledger.drop(line.page, c.index, "line-number")
+        if shown:
+            box = (
+                min(c.x0 for c in shown),
+                min(c.y0 for c in shown),
+                max(c.x1 for c in shown),
+                max(c.y1 for c in shown),
+            )
+            kept.append(Line(line.page, rest, box))
+    return kept
 
 
 def _is_contents(line: Line) -> bool:
@@ -444,7 +605,7 @@ def _is_heading(piece: Piece) -> bool:
 
 def _drop_contents(
     pieces: list[Piece], ledger: Ledger, page_count: int
-) -> tuple[list[Piece], set[int]]:
+) -> tuple[list[Piece], set[int], list[int]]:
     # The text lines in reading order as (piece index, line index); a table or picture is a None
     # that ends a run.
     seq: list[tuple[int, int] | None] = []
@@ -491,12 +652,18 @@ def _drop_contents(
 
     doomed: set[tuple[int, int]] = set()
     tables: set[int] = set()
+    as_text: set[int] = set()  # a region taken for contents that doesn't read as contents
     for i, piece in enumerate(pieces):
         if piece.label == "document_index" and _is_text(piece):
-            doomed.update((i, j) for j in range(len(piece.lines)))
+            if _reads_as_index([line.text for line in piece.lines], page_count):
+                doomed.update((i, j) for j in range(len(piece.lines)))
         elif piece.table is not None:
             after_heading = i > 0 and _is_heading(pieces[i - 1])
-            if piece.table.label == "document_index" or (
+            if piece.table.label == "document_index" and not _reads_as_index(
+                _row_texts(piece), page_count
+            ):
+                as_text.add(i)
+            elif piece.table.label == "document_index" or (
                 after_heading and _reads_as_entries(piece)
             ):
                 tables.add(i)
@@ -535,6 +702,9 @@ def _drop_contents(
     pages: set[int] = set()
     out: list[Piece] = []
     for i, piece in enumerate(pieces):
+        if i in as_text:
+            out.extend(_paragraphs(piece, ledger))
+            continue
         if i in tables:
             for cell_lines in (piece.cells or {}).values():
                 for line in cell_lines:
@@ -553,7 +723,57 @@ def _drop_contents(
                 kept.append(line)
         if kept:
             out.append(_with(piece, kept))
-    return out, pages
+    return out, pages, sorted(pieces[i].page for i in as_text)
+
+
+def _row_texts(piece: Piece) -> list[str]:
+    """A table's rows, top down, each its cells' text left to right."""
+    rows: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for (row, col), lines in (piece.cells or {}).items():
+        cell = " ".join(line.text for line in lines).strip()
+        if cell:
+            rows[row].append((col, cell))
+    return [" ".join(cell for _, cell in sorted(rows[row])) for row in sorted(rows)]
+
+
+def _reads_as_index(rows: list[str], page_count: int) -> bool:
+    """Whether a region Docling labelled `document_index` reads as contents: at least half its
+    rows (or lines) a title and then a page number of the document. Docling also gives that label
+    to a page of numbered lines."""
+    entries = 0
+    for row in rows:
+        match = _CONTENTS_LINE.match(row)
+        entries += match is not None and int(match["page"]) <= page_count
+    return len(rows) >= _TABLE_ROWS and entries >= _RUN_LEADERS * len(rows)
+
+
+def _paragraphs(piece: Piece, ledger: Ledger) -> list[Piece]:
+    """A table's text as paragraphs: its chars in lines, and lines closer than
+    `_PARAGRAPH_GAP` line heights in one paragraph, each owning its chars."""
+    chars = [c for lines in (piece.cells or {}).values() for line in lines for c in line.chars]
+    runs: list[list[Line]] = []
+    for line in lines_of(piece.page, chars):
+        if runs:
+            previous = runs[-1][-1]
+            height = previous.bbox[3] - previous.bbox[1]
+            if line.bbox[1] - previous.bbox[3] < _PARAGRAPH_GAP * height:
+                runs[-1].append(line)
+                continue
+        runs.append([line])
+    out: list[Piece] = []
+    for n, run in enumerate(runs):
+        box = (
+            min(line.bbox[0] for line in run),
+            min(line.bbox[1] for line in run),
+            max(line.bbox[2] for line in run),
+            max(line.bbox[3] for line in run),
+        )
+        ref = f"{piece.ref}/text-{n}"
+        for line in run:
+            for c in line.chars:
+                ledger.reassign(line.page, c.index, ref)
+        out.append(Piece(ref, "text", piece.page, box, run, None, None))
+    return out
 
 
 def _ranges(pages: list[int]) -> str:
@@ -592,6 +812,11 @@ def dropped_flag(d: Dropped) -> Flag | None:
     if d.contents_pages:
         where = f"contents and lists on {_ranges(list(d.contents_pages))}"
         parts.append(where if parts else "Dropped " + where)
+    if d.not_contents:
+        parts.append(
+            "Kept as paragraphs: text the layout analysis took for contents on "
+            + _ranges(list(d.not_contents))
+        )
     if not parts:
         return None
     return Flag(code="structure_inferred", severity="info", at=None, message="; ".join(parts))
