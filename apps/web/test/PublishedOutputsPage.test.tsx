@@ -348,7 +348,27 @@ describe('PublishedOutputsPage', () => {
     page([external({ usage: { ...NO_USE, consumers: 1 } })]);
     const r = await open('Finance lake');
     expect(within(r).getByRole('button', { name: 'Remove' })).toBeDisabled();
-    expect(r).toHaveTextContent('In use: a recipe version, output, key or withdrawal names it');
+    expect(r).toHaveTextContent('An S3 key consumer or a pending withdrawal names it');
+  });
+
+  it('removes a target recipes and outputs still name, saying what happens to them', async () => {
+    const usage = {
+      ...NO_USE,
+      publishedVersions: 2,
+      documentTypes: ['invoice', 'memo'],
+      deliveredOutputs: 3,
+    };
+    const api = page([external({ usage })], { deletePublishTarget: vi.fn(async () => undefined) });
+    const r = await open('Finance lake');
+    await userEvent.click(within(r).getByRole('button', { name: 'Remove' }));
+    expect(r).toHaveTextContent(
+      'invoice and memo deliver to it: their new documents go to review until you publish versions without it.',
+    );
+    expect(r).toHaveTextContent(
+      'Its 3 delivered outputs stay listed; withdrawing them deletes nothing through it.',
+    );
+    await userEvent.click(within(r).getByRole('button', { name: 'Confirm remove Finance lake' }));
+    await waitFor(() => expect(api.deletePublishTarget).toHaveBeenCalledWith('finance-lake'));
   });
 
   it('shows the failing step of a connection test', async () => {
@@ -669,7 +689,9 @@ describe('AdminDialog Published outputs tab', () => {
     expect(api.updatePublishTarget).toHaveBeenCalledWith('fake-target', {
       destination: { space: 'reports', name: '{field:sender}' },
     });
-    expect(within(r).getByRole('button', { name: /Remove/ })).toBeDisabled();
+    // A recipe naming it does not keep it: its repository may be gone.
+    await userEvent.click(within(r).getByRole('button', { name: /Remove/ }));
+    expect(r).toHaveTextContent('letter delivers to it: its new documents go to review');
   });
 
   it('a sink target whose sink is not available now shows that, and only its label saves', async () => {

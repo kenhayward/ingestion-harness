@@ -5,6 +5,7 @@ which delivers the type's withdrawn jobs again."""
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
@@ -60,6 +61,8 @@ class RepublishParams(_Strict):
     template_id: str = Field(alias="templateId", min_length=1)
 
 
+log = logging.getLogger(__name__)
+
 #: Job events (`{objects, graphs}` / `{jobs}`).
 WITHDRAWN = "withdrawn"
 REPUBLISHED = "republished"
@@ -75,7 +78,8 @@ def _params(job: ClaimedJob, model: type[_Strict], task: str) -> Any:
 def run_withdraw(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> tuple[int, int]:
     """Remove the target objects, every listed version copy and each graph named, each through
     the publishing target it was delivered to (every target is resolved first: a missing one
-    deletes nothing). Idempotent: what is already gone is no error, so a retry after a crash
+    deletes nothing). What was delivered to a removed target is skipped: there is nothing left
+    to delete it through (its repository may be gone too). Idempotent: what is already gone is no error, so a retry after a crash
     completes the withdrawal. What was delivered again since the withdrawal was queued is
     spared: an object a live output of the same target has, a version with a row, and a graph
     with a current version (checked under the graph's lock)."""
@@ -86,14 +90,22 @@ def run_withdraw(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> tuple[
         raise DocumentError("no publishing targets: nothing can be withdrawn")
     if bridge is None:
         raise RuntimeError("no delivery bridge is configured: nothing can be withdrawn")
+    removed = set[str]()
     for name in dict.fromkeys(
         [o.target for o in params.objects] + [g.target for g in params.graphs]
     ):
-        targets.get(name)
+        if targets.removed(name):
+            removed.add(name)
+        else:
+            targets.get(name)
+    if removed:
+        log.info("withdrawal %s skips removed targets %s", job.id, ", ".join(sorted(removed)))
     # Through the target each object was delivered to: the bridge deletes it with that target's
     # connection, whether it was delivered before the bridge existed or by one of its deliveries.
     by_target: dict[str, list[tuple[str, str]]] = {}
     for o in params.objects:
+        if o.target in removed:
+            continue
         if source is not None and source.object_live(o.target, o.bucket, o.key):
             continue
         by_target.setdefault(o.target, []).append((o.bucket, o.key))
@@ -124,6 +136,8 @@ def _withdraw_graph(
     """One graph's copies, each entry's through its own target, and the graph itself (once),
     sparing a version published since."""
     for g in entries:
+        if targets.removed(g.target):
+            continue
         target = targets.get(g.target)
         copies = [
             (target.bucket, target.prefix + graph_version_key(g.sha256, g.template_id, version))

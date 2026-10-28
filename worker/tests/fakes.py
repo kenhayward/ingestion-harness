@@ -841,6 +841,8 @@ class FakeTargets:
         self.targets = targets
         self.gets: list[str] = []
         self.triple_store = rdf
+        #: Ids an admin removed: missing, and `removed`.
+        self.removed_ids: set[str] = set()
 
     def rdf(self) -> Target | None:
         return self.triple_store
@@ -850,10 +852,15 @@ class FakeTargets:
 
     def get(self, target_id: str) -> Target:
         self.gets.append(target_id)
+        if target_id in self.removed_ids:
+            raise TargetMissing(target_id, removed=True)
         try:
             return self.targets[target_id]
         except KeyError:
             raise TargetMissing(target_id) from None
+
+    def removed(self, target_id: str) -> bool:
+        return target_id in self.removed_ids
 
 
 class FakeBridge:

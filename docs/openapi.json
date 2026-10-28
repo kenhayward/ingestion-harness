@@ -92531,7 +92531,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default` target is never removed. It is removed from the\nbridge first: one the bridge still has unfinished deliveries for stays (409), and\nnothing is removed while the bridge cannot be reached (502). A removed target is kept\ninert, never deleted: finished delivery records still name it, and its id is not\nused again (a new target with the same label gets `<id>-2`).",
+        "description": "**Admins only.** A target in use can be removed, as one whose destination is gone\nmust be: published recipe versions and delivered outputs may name it, but no S3 key\nconsumer may be granted it and no withdrawal still to run may name it (409). A recipe\nversion naming a removed target sends its documents to review until a version\nwithout it is published, and a withdrawal skips what was delivered to it. The\n`default` target is never removed. It is removed from the bridge first: one the\nbridge still has unfinished deliveries for stays (409), and nothing is removed while\nthe bridge cannot be reached (502). A removed target is kept inert, never deleted:\nfinished delivery records still name it, and its id is not used again (a new target\nwith the same label gets `<id>-2`).",
         "parameters": [
           {
             "schema": {
@@ -92683,7 +92683,7 @@
             }
           },
           "409": {
-            "description": "`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`.",
+            "description": "`default cannot be removed`, `{label} is used by {key consumers or pending withdrawals}`, or `{label} has deliveries on the bridge`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -92708,7 +92708,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`."
+                  "description": "`default cannot be removed`, `{label} is used by {key consumers or pending withdrawals}`, or `{label} has deliveries on the bridge`."
                 }
               }
             }

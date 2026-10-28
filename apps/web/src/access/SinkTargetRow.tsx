@@ -3,6 +3,7 @@ import { targetInUse, type PublishTargetView, type SinkInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { connectionStatus } from './ConnectionPicker.js';
+import { RemoveTarget } from './RemoveTarget.js';
 import { SinkTargetFields, sinkTargetComplete, type SinkTargetValue } from './SinkTargetFields.js';
 
 const same = (a: Record<string, string>, b: Record<string, string>) =>
@@ -34,7 +35,6 @@ export function SinkTargetRow({
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
   useEffect(() => {
     setLabel(t.label);
     setValue({
@@ -146,35 +146,12 @@ export function SinkTargetRow({
             >
               Save
             </button>
-            {!confirmRemove && (
-              <button
-                type="button"
-                className="danger"
-                disabled={inUse}
-                onClick={() => setConfirmRemove(true)}
-              >
-                <Icon name="trash" />
-                Remove
-              </button>
-            )}
+            <RemoveTarget
+              target={t}
+              busy={busy}
+              onRemove={() => void act(() => api.deletePublishTarget(t.id))}
+            />
           </div>
-          {confirmRemove && (
-            <p className="confirm-text">
-              Remove {t.label}?{' '}
-              <button
-                type="button"
-                className="danger"
-                aria-label={`Confirm remove ${t.label}`}
-                disabled={busy}
-                onClick={() => void act(() => api.deletePublishTarget(t.id))}
-              >
-                Remove
-              </button>{' '}
-              <button type="button" onClick={() => setConfirmRemove(false)}>
-                Cancel
-              </button>
-            </p>
-          )}
         </form>
       )}
     </section>

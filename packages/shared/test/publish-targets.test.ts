@@ -10,6 +10,7 @@ import {
   TargetTestBodySchema,
   TargetTestResultSchema,
   targetInUse,
+  blocksRemoval,
 } from '../src/publish-targets.js';
 
 const fixture = JSON.parse(
@@ -140,6 +141,20 @@ describe('target bodies', () => {
     expect(targetInUse({ ...none, consumers: 1 })).toBe(true);
     expect(targetInUse({ ...none, deliveredOutputs: 1 })).toBe(true);
     expect(targetInUse({ ...none, publishedVersions: 1 })).toBe(true);
+  });
+  it('only a key grant or a withdrawal still to run blocks removal', () => {
+    const none = {
+      publishedVersions: 0,
+      documentTypes: [],
+      deliveredOutputs: 0,
+      consumers: 0,
+      pendingJobs: 0,
+    };
+    expect(blocksRemoval(none)).toBe(false);
+    expect(blocksRemoval({ ...none, publishedVersions: 2, documentTypes: ['a'] })).toBe(false);
+    expect(blocksRemoval({ ...none, deliveredOutputs: 5 })).toBe(false);
+    expect(blocksRemoval({ ...none, consumers: 1 })).toBe(true);
+    expect(blocksRemoval({ ...none, pendingJobs: 1 })).toBe(true);
   });
   it('test bodies: an id alone, else full settings (no label needed)', () => {
     expect(TargetTestBodySchema.safeParse({ id: 'finance-lake' }).success).toBe(true);

@@ -379,6 +379,38 @@ def test_a_withdrawal_naming_a_missing_target_goes_to_review(tmp_path: Path) -> 
     assert default.get_optional("published", "pvp/letter/v1/fields/doc.csv") == b"x"
 
 
+def test_a_withdrawal_skips_what_was_delivered_to_a_removed_target(tmp_path: Path) -> None:
+    """A removed target (its repository deleted, say) has nothing left to delete through: the
+    rest is withdrawn, and the graph is still dropped from the triple store."""
+    deps, default = setup(tmp_path)
+    default.put("published", "pvp/letter/v1/fields/doc.csv", b"x", "text/csv")
+    assert isinstance(deps.targets, FakeTargets)
+    deps.targets.removed_ids.add("gone-repo")
+    store_of(deps).graphs[GRAPH] = b"<a> <b> <c> ."
+    params = {
+        "objects": [
+            {"bucket": "published", "key": "pvp/letter/v1/fields/doc.csv", "target": "default"},
+            {"bucket": "repo", "key": "doc-1", "target": "gone-repo"},
+        ],
+        "graphs": [
+            {
+                "sha256": SHA,
+                "templateId": "letter",
+                "graphIri": GRAPH,
+                "target": "gone-repo",
+                "versions": [1],
+            }
+        ],
+    }
+    queue = FakeQueue(jobs=[background("withdraw", params)])
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    assert not default.objects
+    assert GRAPH not in store_of(deps).graphs
+    [data] = [d for _, _, m, d in queue.event_details if m == "withdrawn"]
+    assert data == {"objects": 1, "graphs": 1}
+
+
 def test_republish_delivers_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:
     deps, default = setup(tmp_path)
     finance = two_targets(deps)

@@ -558,21 +558,21 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect((await c.call('DELETE', '/publish-targets/nope')).statusCode).toBe(404);
   });
 
-  it('names up to three document types using it', async () => {
+  it('removes a target published recipe versions still name', async () => {
     const c = await setup();
-    await cacheS3(c.targets, financeTarget());
-    for (const id of ['alpha', 'beta', 'gamma', 'delta']) {
+    await c.call('POST', '/publish-targets', externalBody());
+    for (const id of ['alpha', 'beta']) {
       await c.templates.create(id, 1, { ...letter(1, 'finance-lake'), id }, 'draft');
       await c.templates.publish(id, 1, 'Ken');
     }
-    const res = await c.call('DELETE', '/publish-targets/finance-lake');
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('Finance lake is used by alpha, beta, delta and 1 more');
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
+    expect(await c.targets.get('finance-lake')).toBeNull();
+    expect(c.bridge.targets.has('finance-lake')).toBe(false);
   });
 
-  it('counts delivered outputs when no published version names it', async () => {
+  it('removes a target outputs were delivered to', async () => {
     const c = await setup();
-    await cacheS3(c.targets, financeTarget());
+    await c.call('POST', '/publish-targets', externalBody());
     c.repo.outputs.set('j1', [
       {
         outputId: 'document',
@@ -584,9 +584,8 @@ describe('DELETE /api/publish-targets/:id', () => {
         targetId: 'finance-lake',
       },
     ]);
-    const res = await c.call('DELETE', '/publish-targets/finance-lake');
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('Finance lake is used by 1 delivered output');
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
+    expect(await c.targets.get('finance-lake')).toBeNull();
   });
 
   it('counts a withdrawal still to run that names it', async () => {
@@ -607,6 +606,9 @@ describe('DELETE /api/publish-targets/:id', () => {
     c.repo.backgroundJobs.push(withdraw('succeeded'));
     expect((await c.targets.usage('finance-lake')).pendingJobs).toBe(0);
     c.repo.backgroundJobs.push(withdraw('queued'), withdraw('running'));
+    // A recipe naming it does not block removal, so the refusal names only the withdrawals.
+    await c.templates.create('alpha', 1, { ...letter(1, 'finance-lake'), id: 'alpha' }, 'draft');
+    await c.templates.publish('alpha', 1, 'Ken');
     const res = await c.call('DELETE', '/publish-targets/finance-lake');
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('Finance lake is used by 2 pending withdrawals');
@@ -643,11 +645,21 @@ describe('DELETE /api/publish-targets/:id', () => {
   it('never removes from the bridge a target used meanwhile', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());
-    // Named by a recipe after the route's own usage check: the removal's check, which holds the
-    // row while the bridge is asked, still sees it, so the bridge is never asked (a removed
+    // Named by a withdrawal after the route's own usage check: the removal's check, which holds
+    // the row while the bridge is asked, still sees it, so the bridge is never asked (a removed
     // target's id could not be put back there).
-    await c.templates.create('alpha', 1, { ...letter(1, 'finance-lake'), id: 'alpha' }, 'draft');
-    await c.templates.publish('alpha', 1, 'Ken');
+    c.repo.backgroundJobs.push({
+      id: 'w-queued',
+      task: 'withdraw' as const,
+      priority: 0,
+      maxAttempts: 100,
+      params: {
+        objects: [{ bucket: 'finance-lake', key: 'ingest/a.json', target: 'finance-lake' }],
+        graphs: [],
+      },
+      status: 'queued',
+      createdBy: null,
+    });
     vi.spyOn(c.targets, 'usage').mockResolvedValueOnce({
       publishedVersions: 0,
       documentTypes: [],
@@ -658,7 +670,7 @@ describe('DELETE /api/publish-targets/:id', () => {
     const deleted = vi.spyOn(c.bridge, 'deleteTarget');
     const res = await c.call('DELETE', '/publish-targets/finance-lake');
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('Finance lake is used by alpha');
+    expect(res.json().error).toBe('Finance lake is used by 1 pending withdrawal');
     expect(deleted).not.toHaveBeenCalled();
     expect(c.bridge.targets.has('finance-lake')).toBe(true);
     expect(await c.targets.get('finance-lake')).not.toBeNull();
@@ -1022,15 +1034,18 @@ describe('a target layout (files, or package for archives)', () => {
     ]);
   });
 
-  it('a target is in use when a list names it, and cannot be removed', async () => {
+  it('a target a list names is in use, and can still be removed', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());
     await publishLetter(c, 1, ['default', 'finance-lake']);
-    const res = await c.call('DELETE', '/publish-targets/finance-lake');
-    expect(res.statusCode).toBe(409);
+    const { targets } = (await c.call('GET', '/publish-targets')).json() as {
+      targets: PublishTargetView[];
+    };
+    expect(targets.find((t) => t.id === 'finance-lake')?.usage.publishedVersions).toBe(1);
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
   });
 
-  it('a target is in use while an archive row records it', async () => {
+  it('a target an archive row records can be removed', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody({ layout: 'package' }));
     const job = (
@@ -1052,8 +1067,7 @@ describe('a target layout (files, or package for archives)', () => {
         isPrimary: false,
       },
     ]);
-    const res = await c.call('DELETE', '/publish-targets/finance-lake');
-    expect(res.statusCode).toBe(409);
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
   });
 
   it('an rdf target refuses layout package', async () => {

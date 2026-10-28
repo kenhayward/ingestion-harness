@@ -93,6 +93,15 @@ export function targetInUse(u: TargetUsage): boolean {
   return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0 || u.pendingJobs > 0;
 }
 
+/**
+ * What keeps a target from being removed: an S3 key consumer granted it, or a queued or running
+ * withdrawal naming it. A recipe version naming it does not (its documents go to review until a
+ * version without it is published), nor does a delivered output (the removed row stays, inert).
+ */
+export function blocksRemoval(u: TargetUsage): boolean {
+  return u.consumers > 0 || u.pendingJobs > 0;
+}
+
 /** A connection id on the delivery bridge (where a target's credentials live). */
 export const ConnectionIdSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'a connection id');
 

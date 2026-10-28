@@ -89,7 +89,10 @@ worker that starts first waits (`TargetNotSynced`, keeping its attempts) until t
 the target. Every delivered object,
 graph version and withdrawal records or names its target, so older outputs are read (through the
 bridge) and withdrawn where they were written even after the recipe moves on. S3 keys for the data
-lake ([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
+lake ([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target. A removed target is
+kept inert (`inert_at`), never deleted; one recipes or outputs still name can be removed (only a key
+grant or a pending withdrawal blocks it): a recipe version naming it sends its documents to review,
+and a withdrawal skips what was delivered to it.
 
 **Sink administration** ([design](design/sink-administration.md)): a sink that declares
 administration (contract version 3) is administered from its target row under Published outputs

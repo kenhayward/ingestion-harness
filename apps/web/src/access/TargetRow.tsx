@@ -11,6 +11,7 @@ import {
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { ConnectionPicker, connectionStatus } from './ConnectionPicker.js';
+import { RemoveTarget } from './RemoveTarget.js';
 
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -31,8 +32,6 @@ function destinationText(d: Record<string, string>): string {
     .map(([k, v]) => `${k}: ${v}`)
     .join(' · ');
 }
-
-const REMOVE_BLOCKED = 'In use: a recipe version, output, key or withdrawal names it';
 
 function whereFrom(t: PublishTargetView): string {
   if (t.editedAt !== null) return `edited by ${t.updatedBy ?? 'an admin'}`;
@@ -77,7 +76,6 @@ export function TargetRow({
   const [sse, setSse] = useState<string>(t.sse ?? 'none');
   const [kms, setKms] = useState(t.kmsKeyId ?? '');
   const [storageClass, setStorageClass] = useState(t.storageClass ?? '');
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TargetTestResult | null>(null);
@@ -310,39 +308,14 @@ export function TargetRow({
             <button type="button" disabled={busy || gone || otherSink} onClick={() => void test()}>
               Test connection
             </button>
-            {t.id !== 'default' && !tripleStore && !confirmRemove && (
-              <button
-                type="button"
-                className="danger"
-                disabled={locked}
-                title={locked ? REMOVE_BLOCKED : undefined}
-                onClick={() => setConfirmRemove(true)}
-              >
-                <Icon name="trash" />
-                Remove
-              </button>
-            )}
-            {t.id !== 'default' && !tripleStore && locked && (
-              <small className="muted">{REMOVE_BLOCKED}</small>
+            {t.id !== 'default' && !tripleStore && (
+              <RemoveTarget
+                target={t}
+                busy={busy}
+                onRemove={() => void act(() => api.deletePublishTarget(t.id))}
+              />
             )}
           </div>
-          {confirmRemove && (
-            <p className="confirm-text">
-              Remove {t.label}?{' '}
-              <button
-                type="button"
-                className="danger"
-                aria-label={`Confirm remove ${t.label}`}
-                disabled={busy}
-                onClick={() => void act(() => api.deletePublishTarget(t.id))}
-              >
-                Remove
-              </button>{' '}
-              <button type="button" onClick={() => setConfirmRemove(false)}>
-                Cancel
-              </button>
-            </p>
-          )}
         </form>
       )}
     </section>

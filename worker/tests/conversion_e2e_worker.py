@@ -59,6 +59,9 @@ class OneTarget:
             raise TargetMissing(target_id)
         return self._target
 
+    def removed(self, target_id: str) -> bool:
+        return False
+
     def rdf(self) -> Target | None:
         return None
 

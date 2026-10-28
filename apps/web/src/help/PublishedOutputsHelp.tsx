@@ -79,7 +79,17 @@ export function PublishedOutputsHelp() {
         While a published recipe version, a delivered output or an S3 key consumer uses a target,
         its bucket, prefix and layout are locked: add a new target and publish a new version of the
         recipe instead. The label, connection and encryption settings can always change, so rotated
-        keys need no new version. A target that is in use cannot be removed.
+        keys need no new version.
+      </p>
+
+      <h3>Removing a target</h3>
+      <p>
+        A target can be removed even after it was used, as one whose bucket or repository was
+        deleted must be. Documents of a recipe whose version still names it go to review until a
+        version without it is published, and a withdrawal deletes nothing through it. What was
+        delivered to it stays listed. A target an S3 key consumer is granted, or a withdrawal still
+        to run names, can&apos;t be removed until that is done. A removed target&apos;s name is
+        never used again.
       </p>
 
       <h3>S3 keys for the data lake</h3>
