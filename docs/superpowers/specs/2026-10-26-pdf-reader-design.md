@@ -841,13 +841,19 @@ torch:
 `LAYOUT_FALLBACK_URL` makes the worker's analyser a `FallbackLayoutAnalyser`
 (`decompose/pdf/layout.py`). A document is read by one service from its first page to its last:
 
-- If the primary is unavailable (unreachable, a timeout, a 5xx) on any chunk, the whole document
-  is read again on the fallback, and the primary is left alone for 60 s; the next document after
-  that tries it again. **[call]**
-- A GPU failure (out of memory, since other programs share the GPU, or a CUDA error) is a 503
-  from the service (`DeviceUnavailable`, `device.is_device_error`), not the 422 of a PDF it can't
-  read, so it falls back too.
-- A document the primary refuses (4xx) is not retried: the CPU would refuse it as well.
+- If the primary is unavailable (unreachable, a 5xx, or no answer within 120 s a request,
+  `PRIMARY_TIMEOUT_S`; the fallback keeps 600 s) on any chunk, the whole document is read again
+  on the fallback, and the primary is left alone for 60 s; the next document after that tries
+  it again. **[call]**
+- On a GPU, every failed conversion is a 503 (`DeviceUnavailable`, `device.failure`), never the
+  422 of a PDF at fault: Docling catches a stage's CUDA error (out of memory, since other programs
+  share the GPU) and reports only a failed conversion, so the CPU service decides whether a PDF is
+  refused. The models' first load is covered too: a GPU without room for them answers 503 and
+  tries again on the next request. On the CPU nothing is a device error.
+- After out of memory the service frees its GPU cache. Any other CUDA error loses the GPU to the
+  process: the service answers 503 and exits, and Docker restarts it.
+- A document the primary refuses (4xx; on a GPU, only a request the service rejects before
+  reading, such as a non-PDF) is not retried: the CPU would refuse it as well.
 - Both down: the job is retried as before.
 
 ### 16.4 Left for later
