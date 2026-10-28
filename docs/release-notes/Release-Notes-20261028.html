@@ -210,6 +210,10 @@
             <a href="#pdf-text-direction">PDFs refused by the fidelity check</a>
             <span>— sideways labels, rescaled type and tables also given as pictures</span>
           </li>
+          <li>
+            <a href="#sink-note-markers">Tables refused for a note marker in no cell</a>
+            <span>— markers written with a bracket, such as 1)</span>
+          </li>
         </ul>
         <h4>Other updates</h4>
         <ul>
@@ -415,6 +419,22 @@
         Q3B(R2), Q8(R2), Q11 and the Q12 annexes, which failed the check too: all 46 quality
         guidelines in the set tried. The 36 that decomposed before come out the same. Run the others
         again.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="sink-note-markers">Tables refused for a note marker in no cell</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/3ds-sink/pull/38">3ds-sink #38</a>
+      </p>
+      <p>
+        Two ICH guidelines, Q3A(R2) and Q14, decomposed but their delivery was refused with "table …
+        has a note whose marker 1 is in no cell". Their tables mark a note as a superscript
+        <code>1)</code>, and one cell has <code>1)2)</code> for two notes. CT Studio reads those as
+        notes 1 and 2, but the sink only took a superscript of exactly <code>1</code> as the marker.
+        The sink now splits a superscript on spaces, commas, semicolons and brackets as CT Studio
+        does, and writes each note's footnote where its marker is; the brackets are dropped, since
+        publishing numbers the footnotes. A superscript with anything that is no marker, such as an
+        exponent, stays text. Deliver the two documents again; they don't need converting again.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
