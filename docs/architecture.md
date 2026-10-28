@@ -13,6 +13,7 @@
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the bridge writes, as the `rdf-default` target ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md), [ADR 0017](adr/0017-delivery-bridge.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
 | `layout` | Docling, pinned weights ([deploy/layout/README.md](../deploy/layout/README.md)) | PDF layout analysis for the worker's PDF reader (`LAYOUT_URL`), on an internal network shared only with the worker, with no route out. The deploy scripts start it with the stack ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §14.7); the worker does not depend on it, and retries a PDF while it can't be reached. A worker without `LAYOUT_URL` fails a PDF item at once. |
+| `layout-gpu` | The `layout` image built with CUDA torch, opt-in (`COMPOSE_PROFILES=gpu`) | The same analysis on the host's NVIDIA GPU, in full precision (about 7x faster on an RTX 5090), on the same internal network. With `LAYOUT_URL=http://layout-gpu:8000` and `LAYOUT_FALLBACK_URL=http://layout:8000` the worker reads a document on it and, if it is down or out of GPU memory, reads the whole document again on `layout` ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §16). |
 
 ## Job lifecycle
 

@@ -6,6 +6,9 @@ uvicorn factory) imports the Docling-backed one.
 
 from __future__ import annotations
 
+import os
+import threading
+from collections.abc import Callable
 from typing import Annotated, Protocol
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -21,6 +24,20 @@ MAX_SECONDS = 600
 
 class AnalysisFailed(Exception):
     """The analyser could not convert this PDF (corrupt, or a page range it chokes on)."""
+
+
+class DeviceUnavailable(Exception):
+    """The GPU failed (out of memory, a driver error), not the PDF: another service can read it.
+    `fatal`: the GPU can't be used again in this process (a CUDA error other than out of memory)."""
+
+    def __init__(self, reason: str, *, fatal: bool = False) -> None:
+        super().__init__(reason)
+        self.fatal = fatal
+
+
+def _exit_soon() -> None:
+    """Ends the process once the answer is sent, so the container restarts with a fresh GPU."""
+    threading.Timer(1.0, os._exit, (1,)).start()
 
 
 def require_success(status: str, *, timed_out: bool) -> None:
@@ -44,7 +61,11 @@ class Analyser(Protocol):
 
 
 def create_app(
-    analyser: Analyser, *, max_pages: int = MAX_PAGES, max_bytes: int = MAX_BYTES
+    analyser: Analyser,
+    *,
+    max_pages: int = MAX_PAGES,
+    max_bytes: int = MAX_BYTES,
+    on_fatal: Callable[[], None] = _exit_soon,
 ) -> FastAPI:
     app = FastAPI(title="layout", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -74,6 +95,11 @@ def create_app(
         except AnalysisFailed as error:
             # 422, not 5xx: the worker retries server errors, and this PDF will fail again.
             return JSONResponse({"error": f"layout analysis failed: {error}"}, status_code=422)
+        except DeviceUnavailable as error:
+            # 503: the worker reads the document on its fallback service, or retries the job.
+            if error.fatal:
+                on_fatal()
+            return JSONResponse({"error": f"layout device unavailable: {error}"}, status_code=503)
         return {"pages": pages, "document": document}
 
     @app.get("/health")
