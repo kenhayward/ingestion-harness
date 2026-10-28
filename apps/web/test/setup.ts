@@ -8,5 +8,7 @@ Range.prototype.getBoundingClientRect ??= () => new DOMRect();
 
 afterEach(() => {
   cleanup();
-  localStorage.clear(); // remembered selections must not leak between tests
+  // Remembered selections must not leak between tests.
+  localStorage.clear();
+  sessionStorage.clear();
 });

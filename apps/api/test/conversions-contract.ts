@@ -239,6 +239,26 @@ export function conversionsContract(
       expect(await repo.startBatch(batch.id, null)).toEqual({ ok: false, reason: 'not_open' });
     });
 
+    it('keeps an auto-approving batch so, and its jobs carry it', async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({
+        targetId: 'manuals',
+        force: false,
+        autoApprove: true,
+        createdBy: ADA,
+      });
+      expect(batch.autoApprove).toBe(true);
+      expect((await repo.getBatch(batch.id))?.autoApprove).toBe(true);
+      const a = item(batch.id, 'a.pdf');
+      await repo.addItem(a);
+      const started = await repo.startBatch(batch.id, null);
+      if (!started.ok) throw new Error(started.reason);
+      const params = DecomposeParamsSchema.parse((await facts.job(started.jobIds[0]!))!.params);
+      expect(params).toMatchObject({ force: false, autoApprove: true });
+      const plain = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      expect(plain.autoApprove).toBe(false);
+    });
+
     it('does not start a batch with no items, or a missing one', async () => {
       const { repo } = await make();
       const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
@@ -417,6 +437,15 @@ export function conversionsContract(
       force,
       createdBy: ADA,
       by: { name: 'Ada', userId: ADA.id },
+    });
+
+    it('re-runs auto-approving when asked', async () => {
+      const { repo, facts, items } = await failedPair();
+      const done = await repo.retryItems({ ...retryOf(items.slice(0, 1)), autoApprove: true });
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.batch.autoApprove).toBe(true);
+      const job = await facts.job(done.items[0]!.jobId!);
+      expect(DecomposeParamsSchema.parse(job!.params).autoApprove).toBe(true);
     });
 
     it('re-runs failed items as one started batch, each from its stored file', async () => {

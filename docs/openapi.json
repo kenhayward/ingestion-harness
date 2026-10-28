@@ -11998,7 +11998,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "An open batch for one target that takes documents (`GET /api/conversions/targets`).\nUpload its files with `POST /api/conversions/batches/{id}/items`, then start it.\n`force` makes every item an explicit update: an already loaded document is updated,\nand a duplicate is created (the target's version check still applies).",
+        "description": "An open batch for one target that takes documents (`GET /api/conversions/targets`).\nUpload its files with `POST /api/conversions/batches/{id}/items`, then start it.\n`force` makes every item an explicit update: an already loaded document is updated,\nand a duplicate is created (the target's version check still applies).\n`autoApprove` delivers its PDFs without holding them for review; its re-runs of\nfailed documents do too (a row action's run of one document does not).",
         "requestBody": {
           "required": true,
           "content": {
@@ -12011,6 +12011,9 @@
                     "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                   },
                   "force": {
+                    "type": "boolean"
+                  },
+                  "autoApprove": {
                     "type": "boolean"
                   }
                 },
@@ -12071,6 +12074,9 @@
                     "force": {
                       "type": "boolean"
                     },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -12087,6 +12093,7 @@
                     "createdBy",
                     "state",
                     "force",
+                    "autoApprove",
                     "createdAt",
                     "startedAt"
                   ],
@@ -12097,7 +12104,7 @@
             }
           },
           "400": {
-            "description": "The body is not `{ targetId, force? }`.",
+            "description": "The body is not `{ targetId, force?, autoApprove? }`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12122,7 +12129,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "The body is not `{ targetId, force? }`."
+                  "description": "The body is not `{ targetId, force?, autoApprove? }`."
                 }
               }
             }
@@ -12338,6 +12345,9 @@
                           "force": {
                             "type": "boolean"
                           },
+                          "autoApprove": {
+                            "type": "boolean"
+                          },
                           "createdAt": {
                             "type": "string"
                           },
@@ -12400,6 +12410,7 @@
                           "createdBy",
                           "state",
                           "force",
+                          "autoApprove",
                           "createdAt",
                           "startedAt",
                           "itemCount",
@@ -13238,6 +13249,9 @@
                     "force": {
                       "type": "boolean"
                     },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -13254,6 +13268,7 @@
                     "createdBy",
                     "state",
                     "force",
+                    "autoApprove",
                     "createdAt",
                     "startedAt"
                   ],
@@ -13745,6 +13760,9 @@
                         "force": {
                           "type": "boolean"
                         },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -13761,6 +13779,7 @@
                         "createdBy",
                         "state",
                         "force",
+                        "autoApprove",
                         "createdAt",
                         "startedAt"
                       ],
@@ -14429,6 +14448,9 @@
                         "force": {
                           "type": "boolean"
                         },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -14445,6 +14467,7 @@
                         "createdBy",
                         "state",
                         "force",
+                        "autoApprove",
                         "createdAt",
                         "startedAt"
                       ],
@@ -17125,6 +17148,9 @@
                         "force": {
                           "type": "boolean"
                         },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -17141,6 +17167,7 @@
                         "createdBy",
                         "state",
                         "force",
+                        "autoApprove",
                         "createdAt",
                         "startedAt"
                       ],
@@ -17738,6 +17765,9 @@
                         "force": {
                           "type": "boolean"
                         },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -17754,6 +17784,7 @@
                         "createdBy",
                         "state",
                         "force",
+                        "autoApprove",
                         "createdAt",
                         "startedAt"
                       ],
@@ -18908,6 +18939,9 @@
                         "force": {
                           "type": "boolean"
                         },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -18924,6 +18958,7 @@
                         "createdBy",
                         "state",
                         "force",
+                        "autoApprove",
                         "createdAt",
                         "startedAt"
                       ],

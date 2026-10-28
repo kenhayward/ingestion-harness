@@ -8386,6 +8386,9 @@ button.evidence-chip[aria-expanded='true'] {
 .batch-table .outcome-col {
   width: 150px;
 }
+.batch-table .review-col {
+  width: 84px;
+}
 .batch-table .detail-col {
   width: 30%;
 }
@@ -8428,6 +8431,15 @@ button.evidence-chip[aria-expanded='true'] {
 }
 .batch-table .detail-cell .conversion-resolution {
   margin: 0;
+}
+/* Review sits in its own column, so it is in the same place on every held row. */
+.batch-table .review-cell {
+  padding: 0 6px;
+}
+.batch-table .review-cell a.button {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: var(--ih-text-xs);
 }
 @container (max-width: 720px) {
   .batch-table .detail-col,

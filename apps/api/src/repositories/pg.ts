@@ -254,11 +254,13 @@ interface BatchRow {
   created_by: Batch['createdBy'];
   state: Batch['state'];
   force: boolean;
+  auto_approve: boolean;
   created_at: Date;
   started_at: Date | null;
 }
 
-const BATCH_COLUMNS = 'id, target_id, created_by, state, force, created_at, started_at';
+const BATCH_COLUMNS =
+  'id, target_id, created_by, state, force, auto_approve, created_at, started_at';
 
 const toBatch = (r: BatchRow): Batch => ({
   id: r.id,
@@ -266,6 +268,7 @@ const toBatch = (r: BatchRow): Batch => ({
   createdBy: r.created_by,
   state: r.state,
   force: r.force,
+  autoApprove: r.auto_approve,
   createdAt: r.created_at.toISOString(),
   startedAt: r.started_at?.toISOString() ?? null,
 });
@@ -1350,11 +1353,12 @@ export class PgRepo implements IngestionRepo {
     };
   }
 
-  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+  async createBatch({ targetId, force, autoApprove = false, createdBy }: NewBatch): Promise<Batch> {
     const { rows } = await this.pool.query<BatchRow>(
-      `INSERT INTO decomposition_batches (target_id, force, created_by) VALUES ($1, $2, $3)
+      `INSERT INTO decomposition_batches (target_id, force, auto_approve, created_by)
+       VALUES ($1, $2, $3, $4)
        RETURNING ${BATCH_COLUMNS}`,
-      [targetId, force, JSON.stringify(createdBy)],
+      [targetId, force, autoApprove, JSON.stringify(createdBy)],
     );
     return toBatch(rows[0]!);
   }
@@ -1460,7 +1464,9 @@ export class PgRepo implements IngestionRepo {
            INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
            SELECT 'decompose', $2, $3,
                   jsonb_build_object('batchId', $1::uuid, 'itemId', i.id, 'targetId', $4::text,
-                                     'sourceKey', i.source_key, 'force', $5::boolean),
+                                     'sourceKey', i.source_key, 'force', $5::boolean)
+                    || CASE WHEN $8::boolean THEN '{"autoApprove": true}'::jsonb
+                            ELSE '{}'::jsonb END,
                   $6, $7
              FROM items i
            RETURNING id, (params->>'itemId')::uuid AS item_id
@@ -1478,6 +1484,7 @@ export class PgRepo implements IngestionRepo {
           batch.force,
           by?.name ?? null,
           by?.userId ?? null,
+          batch.auto_approve,
         ],
       );
       if (!queued.rows.length) return { ok: false, reason: 'empty' };
@@ -1653,6 +1660,7 @@ export class PgRepo implements IngestionRepo {
     items: asked,
     targetId,
     force,
+    autoApprove = false,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
@@ -1679,10 +1687,11 @@ export class PgRepo implements IngestionRepo {
         return { ok: false, reason: 'already_rerun', itemId: ids.find((id) => done.has(id))! };
       }
       const batch = await client.query<BatchRow>(
-        `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
-         VALUES ($1, $2, $3, $4, 'started', now())
+        `INSERT INTO decomposition_batches
+           (id, target_id, force, auto_approve, created_by, state, started_at)
+         VALUES ($1, $2, $3, $4, $5, 'started', now())
          RETURNING ${BATCH_COLUMNS}`,
-        [batchId, targetId, force, JSON.stringify(createdBy)],
+        [batchId, targetId, force, autoApprove, JSON.stringify(createdBy)],
       );
       const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
       const made: Item[] = [];
@@ -1693,7 +1702,14 @@ export class PgRepo implements IngestionRepo {
           [
             priority,
             maxAttempts,
-            JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force }),
+            JSON.stringify({
+              batchId,
+              itemId,
+              targetId,
+              sourceKey: of.sourceKey,
+              force,
+              ...(autoApprove ? { autoApprove: true } : {}),
+            }),
             by?.name ?? null,
             by?.userId ?? null,
           ],

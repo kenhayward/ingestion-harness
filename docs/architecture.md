@@ -225,7 +225,9 @@ or review step.
     with the document and its page map, under `decompositions/{batchId}/{itemId}.held/`. The item
     is then `awaiting_review`, recording the manifest's sha256 and the register entry the hold
     was decided against, and the job succeeds with "held for review". Any other answer is the
-    item's outcome at once, as for Word.
+    item's outcome at once, as for Word. A batch with **Auto Approve** on
+    (`decomposition_batches.auto_approve`, migration `202610281200_decomposition_auto_approve`;
+    its jobs carry `autoApprove`) holds nothing: its PDFs are delivered as Word files are.
   - An approved hold comes back as a `decompose` job marked `approved`. The worker delivers the
     held decomposition as it was reviewed, without reading the PDF again: with the decomposer
     version it was read with, acting as whoever started the batch. It fails the item, sending

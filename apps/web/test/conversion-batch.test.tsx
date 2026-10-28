@@ -132,6 +132,73 @@ describe('the Conversion tab: the batch view', () => {
     expect(listedKeys()).toEqual(['held.pdf']);
   });
 
+  it('says when a batch auto-approves', async () => {
+    const api = batchApi([item('ok.pdf', 'created')], {
+      getConversionBatch: vi.fn(async () => ({
+        batch: conversionBatch({ id: BATCH_ID, ...STARTED, autoApprove: true }),
+        items: [item('ok.pdf', 'created')],
+      })),
+    });
+    view(api);
+    await findRow('ok.pdf');
+    expect(screen.getByText('Auto Approve')).toHaveClass('force-tag');
+  });
+
+  it('shows only the documents awaiting review under For review', async () => {
+    view(
+      batchApi([
+        item('ok.pdf', 'created'),
+        item('held.pdf', 'awaiting_review', { held: true }),
+        item('bad.docx', 'failed', { detail: 'unreadable' }),
+      ]),
+    );
+    await findRow('held.pdf');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^For review/ })).toHaveTextContent('1');
+    await userEvent.click(show.getByRole('button', { name: /^For review/ }));
+    expect(listedKeys()).toEqual(['held.pdf']);
+  });
+
+  it('says so when nothing awaits review', async () => {
+    view(batchApi([item('ok.pdf', 'created')]));
+    await findRow('ok.pdf');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    await userEvent.click(show.getByRole('button', { name: /^For review/ }));
+    expect(screen.getByText('Nothing awaits review.')).toBeInTheDocument();
+  });
+
+  it('keeps the filter picked when the batch is opened again (back from a review)', async () => {
+    const api = batchApi([
+      item('ok.pdf', 'created'),
+      item('held.pdf', 'awaiting_review', { held: true }),
+    ]);
+    const first = view(api);
+    await findRow('held.pdf');
+    const show = () => within(screen.getByRole('group', { name: 'Show' }));
+    await userEvent.click(show().getByRole('button', { name: /^For review/ }));
+    first.unmount();
+    view(api);
+    await findRow('held.pdf');
+    expect(show().getByRole('button', { name: /^For review/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(listedKeys()).toEqual(['held.pdf']);
+  });
+
+  it('puts Review in a column of its own, not in the detail', async () => {
+    view(
+      batchApi([
+        item('held.pdf', 'awaiting_review', { held: true, flagCount: 3 }),
+        item('ok.docx', 'created'),
+      ]),
+    );
+    await findRow('held.pdf');
+    const review = within(rowOf('held.pdf')).getByRole('link', { name: 'Review held.pdf' });
+    expect(review.closest('td')).toHaveClass('review-cell');
+    expect(rowOf('ok.docx').querySelector('.review-cell')).not.toBeNull();
+  });
+
   it('shows each flag count, and a Review link on a held row', async () => {
     const held = item('held.pdf', 'awaiting_review', { held: true, flagCount: 12 });
     view(

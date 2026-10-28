@@ -1097,14 +1097,20 @@ describe("accepting the target's state", () => {
 });
 
 /** A started batch of uploaded items, as the Conversion tab makes it. */
-async function startedBatch(c: Ctx, keys: string[], cookie?: string, force = false) {
+async function startedBatch(
+  c: Ctx,
+  keys: string[],
+  cookie?: string,
+  force = false,
+  autoApprove = false,
+) {
   const batch = BatchSchema.parse(
     (
       await c.app.inject({
         method: 'POST',
         url: '/api/conversions/batches',
         headers: headers(cookie),
-        payload: { targetId: 'manuals', force },
+        payload: { targetId: 'manuals', force, autoApprove },
       })
     ).json(),
   );
@@ -1197,6 +1203,18 @@ describe('re-running failed documents', () => {
     const rerun = BatchDetailSchema.parse(plain.json());
     expect(rerun.batch.force).toBe(false);
     expect((jobOf(c, rerun.items[0]!)!.params as { force: boolean }).force).toBe(false);
+  });
+
+  it('re-runs an auto-approving batch auto-approving', async () => {
+    const c = await setup();
+    const { batch, items } = await startedBatch(c, ['qa/a.docx'], undefined, false, true);
+    failed(c, ...items);
+    const res = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
+      itemIds: [items[0]!.id],
+    });
+    const rerun = BatchDetailSchema.parse(res.json());
+    expect(rerun.batch.autoApprove).toBe(true);
+    expect(DecomposeParamsSchema.parse(jobOf(c, rerun.items[0]!)!.params).autoApprove).toBe(true);
   });
 
   it('re-runs only failed documents of this batch, and once while unfinished', async () => {
