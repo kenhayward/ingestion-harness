@@ -161,8 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Wednesday 28 October 2026: PDFs with printed line numbers read in full, their numbers left
-        out everywhere, and ruled tables the layout analysis took for pictures read as tables. PRs
-        #351 and #352.
+        out everywhere, ruled tables the layout analysis took for pictures read as tables, and PDF
+        layout analysis on the GPU. PRs #351, #352 and #353.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -176,6 +176,10 @@
           <li>
             <a href="#pdf-ruled-tables">Ruled tables taken for pictures</a>
             <span>— read from their ruling lines, not delivered as images</span>
+          </li>
+          <li>
+            <a href="#pdf-gpu">PDF layout analysis on the GPU</a>
+            <span>— optional, about 7 times faster, with the CPU behind it</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -233,6 +237,25 @@
       <p>
         On the ICH Q1 draft guideline, matrixing tables A1-4 and A1-5 are now tables, and no longer
         images.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-gpu">PDF layout analysis on the GPU</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/353">#353</a>
+      </p>
+      <p>
+        Reading a PDF's layout is most of the time a PDF takes to decompose: about 5 minutes for a
+        100-page report with 70 tables. On a host with an NVIDIA GPU, CT Studio can now run it there:
+        that report takes 43 seconds on an RTX 5090, and its output is the same as on the CPU. It is
+        off unless turned on, with three lines in the deployment's settings (the layout service's
+        README has them).
+      </p>
+      <p>
+        The CPU layout service keeps running behind it. If the GPU service is down, runs out of GPU
+        memory (other programs, such as a local model server, share the GPU) or fails, the document
+        is read again on the CPU from its first page, so it is never part read on one and part on
+        the other.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
