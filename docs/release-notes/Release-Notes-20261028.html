@@ -201,11 +201,15 @@
             <a href="#detach-part-way">Detach for a delivery that stopped part-way</a>
             <span>— no more clearing the sink by hand</span>
           </li>
+          <li>
+            <a href="#pdf-text-direction">PDFs refused by the fidelity check</a>
+            <span>— sideways labels, rescaled type and tables also given as pictures</span>
+          </li>
         </ul>
         <h4>Other updates</h4>
         <ul>
           <li>
-            The PDF reader is version 7, so a PDF's decomposer version is now 1007 (it was 1005
+            The PDF reader is version 8, so a PDF's decomposer version is now 1008 (it was 1005
             earlier today): a PDF run again is an ordinary update.
           </li>
         </ul>
@@ -346,6 +350,46 @@
         run then creates a new document. Needs both changes deployed: the sink's mark is only on
         refusals made after its update, so a row that failed before it gets Detach once the document
         is run again.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-text-direction">PDFs refused by the fidelity check</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/359">#359</a>
+      </p>
+      <p>
+        Six ICH guidelines failed with "decomposition failed at …: '1' missing" or "'an' extra". The
+        check that every word of the PDF reaches the document was right each time: the reader had
+        mixed up the order of some characters. There were four causes:
+      </p>
+      <ul>
+        <li>
+          A label running up or down the side of a figure ("Risk Management tools" on ICH Q9) was
+          read across the page, so its letters came out of order. Such text is now read in the
+          direction it runs.
+        </li>
+        <li>
+          Some PDFs draw a line in very large type shrunk to normal size ("Final version" on the
+          cover of ICH Q5A). Its size was taken as it was before shrinking, so it seemed tall enough
+          to take in the lines below it, and their letters were interleaved. Its size is now taken
+          as printed.
+        </li>
+        <li>
+          On the Q3E Class 3 monographs, a table of fatty acids whose structures are drawn in it
+          came both as a table and as a picture, with the table's text given to the picture. The
+          text now goes to the table's cells, and the picture keeps the structures.
+        </li>
+        <li>
+          In the diagrams of Q8(R2), labels are printed twice in the same place to make them bold,
+          and two labels overlap. A label printed twice is now read once, and overlapping labels are
+          read one after the other.
+        </li>
+      </ul>
+      <p>
+        Q1E, Q3E and its Class 3 monographs, Q5A(R2), Q9(R1) and Q14 now decompose, and so do
+        Q3B(R2), Q8(R2), Q11 and the Q12 annexes, which failed the check too: all 46 quality
+        guidelines in the set tried. The 36 that decomposed before come out the same. Run the others
+        again.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

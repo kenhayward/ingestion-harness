@@ -136,6 +136,25 @@ accounted for. It is left out, and each page's visible ones are counted in one `
 carriage return, a lone surrogate, U+FFFE or U+FFFF. A font with no Unicode mapping can give its
 raw code, U+0002 say, and a delivered document holding one is refused by the sink.
 
+(2026-10-28) **Size and direction.** pdfium gives a char's size as its font's, before the
+matrix it is drawn with scales it, so a PDF can draw 327-point type shrunk 22 times beside
+16-point type, as the same print (the "Final version" line on the cover of ICH Q5A(R2)). A char
+whose matrix scales it more than 10% off the page's usual scale takes the size it would have at
+the usual scale; any other keeps pdfium's. Each char also has the way its text runs on the
+displayed page, to the nearest quarter turn, from its matrix: a label up or down the side of a
+figure runs at 90 or 270 degrees. Its chars make lines of their own, in the order they read,
+by the x of their baselines; and superscripts are measured across the line as it runs. Before,
+the 327-point char's line took in the two below it and a vertical label's chars were sorted by
+x, and the fidelity check refused both.
+
+(2026-10-28) **Text printed over itself.** A glyph drawn with the same text in the same box (to
+half a point) as one drawn before it on the page is read once, and counted on the page
+(`overprinted`): diagrams make labels bold by printing them twice (Q8(R2)'s Ishikawa diagram),
+and pdfium merges only a copy drawn soon after the first. And a line whose chars sit on two
+baselines with a glyph on one overlapping one on the other by half the narrower's width or more
+is two lines, one per baseline: two labels printed over each other. A superscript or subscript
+sits beside its word's glyphs, not over them, and stays in its line.
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
@@ -277,6 +296,11 @@ Docling's table grid and spans are the starting point, then:
   items Docling gave inside it are dropped so its chars go to its cells, and the picture is
   dropped. On the ICH Q1 draft, Docling gave table A1-4 both as a table and as a picture of it,
   and one picture over table A1-5, a line of text and the key table under it.
+  (2026-10-28) A picture that stays (drawings other than its rules, or an image under it) over a
+  table Docling did read, sharing 80% of the smaller box, still has the text items Docling gave
+  inside that table dropped: they would take the cells' chars, the smallest box winning. The
+  picture stays an image. On the Q3E Class 3 monographs, a table of fatty acids with their
+  structures drawn in a column came as both.
 - **Tables split across pages are joined.** A table that ends a page and one that starts the next
   page, with the same columns and nothing between them but furniture, are one table. Header rows
   repeated at the top of the continuation are removed.

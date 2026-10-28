@@ -41,6 +41,11 @@ DropReason = Literal[
 
 #: Chars share a line when their baselines differ by at most this many times the font size.
 _BASELINE_TOLERANCE = 0.5
+#: Chars whose baselines are this many points apart or less are on one baseline ...
+_SAME_BASELINE = 1.0
+#: ... and two glyphs on two baselines of a line overlapping along it by this fraction of the
+#: narrower's width make it two lines.
+_OVER = 0.5
 #: A mark needs a size at most this fraction of the line's usual size ...
 _MARK_SIZE = 0.85
 #: ... and a baseline this fraction of that size away from the line's.
@@ -111,10 +116,11 @@ class Line:
 
 
 def _usual(chars: list[Char]) -> tuple[float, float]:
-    """The line's most common size, and the baseline of the chars of that size."""
+    """The line's most common size, and where the baseline of the chars of that size is across
+    it (`Char.across`)."""
     counts = Counter(round(c.size, 1) for c in chars)
     size = max(counts, key=lambda s: (counts[s], s))
-    baseline = median(c.baseline for c in chars if round(c.size, 1) == size)
+    baseline = median(c.across for c in chars if round(c.size, 1) == size)
     return size, baseline
 
 
@@ -125,9 +131,9 @@ def _marks(c: Char, size: float, baseline: float) -> frozenset[_Mark]:
     if c.italic:
         marks.add("italic")
     if c.size <= _MARK_SIZE * size:
-        if baseline - c.baseline >= _MARK_SHIFT * size:  # y grows downward
+        if baseline - c.across >= _MARK_SHIFT * size:  # across grows downward
             marks.add("superscript")
-        elif c.baseline - baseline >= _MARK_SHIFT * size:
+        elif c.across - baseline >= _MARK_SHIFT * size:
             marks.add("subscript")
     return frozenset(marks)
 
@@ -222,21 +228,61 @@ def words_of(page: PageText) -> list[list[Char]]:
 
 
 def lines_of(page: int, chars: list[Char]) -> list[Line]:
-    """Chars grouped by baseline into lines, top to bottom, each left to right."""
+    """Chars grouped by baseline into lines, top to bottom, each left to right; text that runs up
+    or down the page (`Char.angle`) in lines of its own after them, each in the direction it
+    reads."""
     clusters: list[list[Char]] = []
-    for c in sorted(chars, key=lambda c: (c.baseline, c.x0)):
+    for c in sorted(chars, key=lambda c: (c.angle, c.across, c.along)):
         if clusters:
             current = clusters[-1]
             reach = _BASELINE_TOLERANCE * max(max(x.size for x in current), c.size)
-            if c.baseline - current[0].baseline <= reach:
+            if c.angle == current[0].angle and c.across - current[0].across <= reach:
                 current.append(c)
                 continue
         clusters.append([c])
     lines = []
     for cluster in clusters:
-        cluster.sort(key=lambda c: c.x0)
-        lines.append(Line(page, tuple(cluster), _union([_char_box(c) for c in cluster])))
+        for part in _overlapping(cluster):
+            part.sort(key=lambda c: c.along)
+            lines.append(Line(page, tuple(part), _union([_char_box(c) for c in part])))
     return lines
+
+
+def _overlapping(cluster: list[Char]) -> list[list[Char]]:
+    """The cluster as one line, or as one per baseline when text on two baselines is printed
+    over itself: a glyph on one overlaps one on another along the line by half the narrower's
+    width or more (two labels of a diagram, say). A superscript or subscript sits beside the
+    glyphs of its word, not over them, and stays in its line."""
+    rows: list[list[Char]] = []
+    for c in sorted(cluster, key=lambda c: c.across):
+        if rows and c.across - rows[-1][0].across <= _SAME_BASELINE:
+            rows[-1].append(c)
+        else:
+            rows.append([c])
+    if len(rows) < 2:
+        return [cluster]
+    for i, row in enumerate(rows):
+        for other in rows[i + 1 :]:
+            if any(_over(a, b) for a in row for b in other):
+                return rows
+    return [cluster]
+
+
+def _over(a: Char, b: Char) -> bool:
+    """Whether two glyphs overlap along their line by half the narrower one's width or more."""
+    a0, a1, b0, b1 = a.along, _along_end(a), b.along, _along_end(b)
+    narrower = min(a1 - a0, b1 - b0)
+    return (
+        not a.text.isspace()
+        and not b.text.isspace()
+        and narrower > 0
+        and (min(a1, b1) - max(a0, b0) >= _OVER * narrower)
+    )
+
+
+def _along_end(c: Char) -> float:
+    """Where the char ends along its line (`Char.along`)."""
+    return c.along + (c.x1 - c.x0 if c.angle in (0, 180) else c.y1 - c.y0)
 
 
 def _centre(c: Char) -> tuple[float, float]:
@@ -336,7 +382,9 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
 
 
 def _same_line(a: Char, b: Char) -> bool:
-    return abs(a.baseline - b.baseline) <= _BASELINE_TOLERANCE * max(a.size, b.size)
+    return a.angle == b.angle and abs(a.across - b.across) <= _BASELINE_TOLERANCE * max(
+        a.size, b.size
+    )
 
 
 def _blank_target(words: list[list[Char]], wholes: list[_Target | None], n: int) -> _Target | None:
