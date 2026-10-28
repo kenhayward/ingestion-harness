@@ -4,7 +4,8 @@ each page's image objects and URI link annotations.
 Read through pypdfium2's text page and its raw API. Coordinates are in points with the origin at
 the top left of the page as displayed (`/Rotate` applied). A PDF pdfium cannot open, a
 password-protected one included, is rejected; one that opens with an empty password is read.
-A glyph pdfium gives no text (code 0) or no box can't be accounted for: it is left out, and the
+A glyph pdfium gives no text (code 0, or a code XML 1.0 can't hold: a font with no Unicode mapping
+can give its raw code, a control) or no box can't be accounted for: it is left out, and the
 visible ones are counted per page and flagged (`left_out_flags`).
 """
 
@@ -31,6 +32,8 @@ _SCANNED_IMAGE_AREA = 0.5
 _SCAN_COVER = 0.8
 _SCAN_MAX_WORDS = 20
 _FONT_NAME_BYTES = 256
+#: The codes XML 1.0 can't hold: controls other than tab, LF and CR, surrogates, U+FFFE and U+FFFF.
+_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 #: x0, y0, x1, y1 in points on the page as displayed, top-left origin (as `layout.BBox`).
 Box = tuple[float, float, float, float]
@@ -66,7 +69,7 @@ class PageText:
     images: tuple[Box, ...] = ()
     #: The box and URI of each link annotation with a `/URI` action.
     links: tuple[tuple[Box, str], ...] = ()
-    #: Visible glyphs left out because pdfium gave them no text (code 0) or no box.
+    #: Visible glyphs left out because pdfium gave them no text (code 0 or not XML) or no box.
     glyphs_left_out: int = 0
     #: A scanned page's synthetic text layer, from the OCR model's transcription (scanned.py).
     recognised: bool = False
@@ -189,7 +192,7 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
             obj = raw.FPDFText_GetTextObject(handle, i)
             visible = not (obj and raw.FPDFTextObj_GetTextRenderMode(obj) == _INVISIBLE_RENDER_MODE)
             code = raw.FPDFText_GetUnicode(handle, i)
-            if code == 0 or not raw.FPDFText_GetCharBox(handle, i, *box):
+            if _no_text(code) or not raw.FPDFText_GetCharBox(handle, i, *box):
                 left_out += visible
                 continue
             raw.FPDFText_GetCharOrigin(handle, i, *origin)
@@ -226,6 +229,11 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
     area = min(covered / (width * height), 1.0) if width > 0 and height > 0 else 0.0
     links = _links(page, display)
     return PageText(number, width, height, tuple(chars), area, images, links, left_out)
+
+
+def _no_text(code: int) -> bool:
+    """pdfium gave a glyph no text: code 0, or one XML 1.0 can't hold (the sink refuses it)."""
+    return code == 0 or code > 0x10FFFF or bool(_NOT_XML.match(chr(code)))
 
 
 def left_out_flags(text: TextLayer) -> list[Flag]:

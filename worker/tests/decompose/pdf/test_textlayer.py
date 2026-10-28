@@ -155,6 +155,17 @@ def test_visible_glyphs_with_no_text_are_counted_per_page() -> None:
     ]
 
 
+def test_codes_xml_forbids_are_left_out_as_no_text() -> None:
+    """A font with no Unicode mapping can give its raw code: a control XML 1.0 can't hold."""
+    text = read_text_layer(make_pdf([Page([Run("A\x02B\x1fC\x0bD\tE", 72, 100)])]))
+    page = text.pages[0]
+    assert "".join(c.text for c in page.chars) == "ABCD\tE"
+    assert page.glyphs_left_out == 3
+    assert [f.message for f in left_out_flags(text)] == [
+        "3 glyphs on page 1 had no text and were left out"
+    ]
+
+
 def test_stamp_over_scan_is_scanned() -> None:
     """Spec 15.2: one image over 80% of the page and at most 20 visible words is a scan."""
 

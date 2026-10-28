@@ -130,6 +130,12 @@ and baseline. It is used for:
   reader's symbol table (°, ±, µ, ≤, ≥), and flagged `symbol_unmapped` when they can't be;
 - **superscript note markers**, so "3 b" is read as "3" with a superscript "b" note reference.
 
+**Glyphs with no text.** A glyph the text layer gives no text (code 0) or no box can't be
+accounted for. It is left out, and each page's visible ones are counted in one `info` line (§4.9).
+(2026-10-27) So is a glyph whose code XML 1.0 can't hold: a control other than tab, line feed or
+carriage return, a lone surrogate, U+FFFE or U+FFFF. A font with no Unicode mapping can give its
+raw code, U+0002 say, and a delivered document holding one is refused by the sink.
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.

@@ -78,9 +78,10 @@ nothing.
 
 ## CT Studio's page
 
-- **Where.** Administration > Published outputs: a target row whose sink declares administration
-  has *Administer* beside Save and Remove (`SinkTargetRow`), which opens `SinkAdminDialog` for that
-  sink. Sinks that do not declare it show nothing new. The dialog's sections, chosen with a
+- **Where.** Administration > Published outputs: each sink that declares administration has an
+  *Administer <system>* button in the header beside Manage connections (`PublishedOutputsPage`),
+  which opens `SinkAdminDialog` for that sink. It is the whole system's, not one target's, so no
+  target row carries it. Sinks that do not declare it show nothing new. The dialog's sections, chosen with a
   segmented control, are those the sink offers: **Instances** (`instances: true`), **Clients** and
   **Audit log** (`clients: true`).
 - **Instances** (`SinkInstances`): id, label, the declared fields' values, who added each and

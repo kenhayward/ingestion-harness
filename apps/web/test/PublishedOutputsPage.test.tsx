@@ -748,7 +748,7 @@ describe('AdminDialog Published outputs tab', () => {
     });
   });
 
-  it("a sink target whose sink declares administration offers Administer; others don't", async () => {
+  it('a system that declares administration is administered from the header, not a target', async () => {
     const ADMIN_SINK: SinkInfo = {
       ...FAKE_SINK,
       id: 'admin-sink',
@@ -766,10 +766,11 @@ describe('AdminDialog Published outputs tab', () => {
       ],
       { listSinks: vi.fn(async () => [FAKE_SINK, ADMIN_SINK]) },
     );
-    const plain = await open('Fake target');
-    expect(within(plain).queryByRole('button', { name: 'Administer' })).toBeNull();
+    const button = await screen.findByRole('button', { name: 'Administer Administered sink' });
+    expect(screen.queryByRole('button', { name: 'Administer Fake sink' })).toBeNull();
     const administered = await open('Admin target');
-    await userEvent.click(within(administered).getByRole('button', { name: 'Administer' }));
+    expect(within(administered).queryByRole('button', { name: /Administer/ })).toBeNull();
+    await userEvent.click(button);
     expect(
       await screen.findByRole('dialog', { name: 'Administer Administered sink' }),
     ).toBeInTheDocument();
