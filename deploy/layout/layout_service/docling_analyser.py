@@ -9,12 +9,14 @@ from io import BytesIO
 from pathlib import Path
 
 import pypdfium2
+import torch
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.io import DocumentStream
 
-from layout_service.app import AnalysisFailed, require_success
+from layout_service.app import AnalysisFailed, DeviceUnavailable, require_success
+from layout_service.device import is_device_error, prepare
 
 # The pins; the Dockerfile downloads exactly these revisions into MODELS_DIR.
 LAYOUT_REVISION = "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8"
@@ -23,6 +25,8 @@ TABLES_REVISION = "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
 
 class DoclingAnalyser:
     def __init__(self, models_dir: Path | None = None) -> None:
+        # Before the models load: on a GPU, full precision (`prepare`).
+        self._device = prepare(torch)
         options = PdfPipelineOptions(
             artifacts_path=models_dir or Path(os.environ.get("MODELS_DIR", "/models")),
             do_ocr=False,
@@ -53,8 +57,9 @@ class DoclingAnalyser:
             try:
                 result = self._converter.convert(source, page_range=(first, last))
             except Exception as error:
-                reason = str(error).strip().splitlines()[0][:200] if str(error).strip() else ""
-                raise AnalysisFailed(reason or type(error).__name__) from error
+                if is_device_error(error):
+                    raise DeviceUnavailable(_reason(error)) from error
+                raise AnalysisFailed(_reason(error)) from error
         # A timeout ends the conversion early with a partial document: it is refused, as is
         # anything short of full success.
         require_success(result.status.value, timed_out=result.has_timeout_errors())
@@ -71,5 +76,10 @@ class DoclingAnalyser:
     def fingerprint(self) -> str:
         return (
             f"docling {version('docling')}; "
-            f"layout {LAYOUT_REVISION[:8]}; tables {TABLES_REVISION[:8]}"
+            f"layout {LAYOUT_REVISION[:8]}; tables {TABLES_REVISION[:8]}; {self._device}"
         )
+
+
+def _reason(error: Exception) -> str:
+    text = str(error).strip()
+    return text.splitlines()[0][:200] if text else type(error).__name__

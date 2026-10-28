@@ -24,7 +24,7 @@ is; on the job's last attempt the item fails.
 | Request | Response |
 |---|---|
 | `POST /layout`, multipart `file` (the PDF) and form fields `first`, `last` (1-based, inclusive) | `200 {"pages": <page count of the whole PDF>, "document": <Docling export_to_dict>}` |
-| `GET /health` | `{"status": "ok", "fingerprint": "docling 2.142.1; layout 8f39ad3c; tables fc0f2d45"}` |
+| `GET /health` | `{"status": "ok", "fingerprint": "docling 2.142.1; layout 8f39ad3c; tables fc0f2d45; cpu"}` (`cuda` on a GPU) |
 
 Errors (see below): `400` when the body doesn't start with `%PDF-` (or can't be read as a PDF); `413` above
 256 MiB or 500 pages; `422` for a bad range (`first` below 1, `last` below `first`, or `last` above

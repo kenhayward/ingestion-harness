@@ -23,6 +23,10 @@ class AnalysisFailed(Exception):
     """The analyser could not convert this PDF (corrupt, or a page range it chokes on)."""
 
 
+class DeviceUnavailable(Exception):
+    """The GPU failed (out of memory, a driver error), not the PDF: another service can read it."""
+
+
 def require_success(status: str, *, timed_out: bool) -> None:
     """Raises `AnalysisFailed` unless a conversion that ended with `status` (Docling's
     `ConversionStatus` value) succeeded in full: a partial document is never returned."""
@@ -74,6 +78,9 @@ def create_app(
         except AnalysisFailed as error:
             # 422, not 5xx: the worker retries server errors, and this PDF will fail again.
             return JSONResponse({"error": f"layout analysis failed: {error}"}, status_code=422)
+        except DeviceUnavailable as error:
+            # 503: the worker reads the document on its fallback service, or retries the job.
+            return JSONResponse({"error": f"layout device unavailable: {error}"}, status_code=503)
         return {"pages": pages, "document": document}
 
     @app.get("/health")
