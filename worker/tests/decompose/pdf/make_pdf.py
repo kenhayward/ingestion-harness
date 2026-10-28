@@ -12,6 +12,7 @@ matrix into the unrotated page space.
 from __future__ import annotations
 
 import io
+import math
 from dataclasses import dataclass, field
 
 from pypdf import PdfReader, PdfWriter
@@ -30,6 +31,10 @@ class Run:
     font: str = "Helvetica"
     invisible: bool = False
     rise: float = 0
+    #: The way the run reads on the displayed page, in degrees anticlockwise: 90 runs upward.
+    angle: int = 0
+    #: How much the run's matrix scales its font: drawn at `size`, with a font of `size / scale`.
+    scale: float = 1
 
 
 @dataclass
@@ -107,12 +112,29 @@ def _content(page: Page) -> bytes:
         )
     for run in page.runs:
         ux, uy = space.point(run.x, run.y)
-        tm = b" ".join(_num(v) for v in (a, b, c, d, ux, uy))
+        cos, sin = (
+            round(math.cos(math.radians(run.angle))),
+            round(math.sin(math.radians(run.angle))),
+        )
+        # the run's direction and its glyphs' up, displayed (y down), then in page space
+        (rx, ry), (vx, vy) = (cos, -sin), (-sin, -cos)
+        k = run.scale
+        tm = b" ".join(
+            _num(v)
+            for v in (
+                k * (rx * a - ry * c),
+                k * (rx * b - ry * d),
+                k * (vx * a - vy * c),
+                k * (vx * b - vy * d),
+                ux,
+                uy,
+            )
+        )
         out.append(
             b"BT /F%d %s Tf %d Tr %s Ts %s Tm %s Tj ET"
             % (
                 _FONTS.index(run.font),
-                _num(run.size),
+                _num(run.size / run.scale),
                 3 if run.invisible else 0,
                 _num(run.rise),
                 tm,

@@ -12,9 +12,11 @@ visible ones are counted per page and flagged (`left_out_flags`).
 from __future__ import annotations
 
 import ctypes
+import math
 import re
+from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from ingest_worker.decompose.model import Flag
@@ -25,6 +27,10 @@ _BOLD = re.compile(r"bold|black|heavy|semibold|demi", re.IGNORECASE)
 _ITALIC = re.compile(r"italic|oblique", re.IGNORECASE)
 #: pdfium's render mode for text that is not drawn (the OCR layer of a scan).
 _INVISIBLE_RENDER_MODE = 3
+#: A glyph's box is compared to the nearest 1/this of a point to find one drawn twice.
+_OVERPRINT = 2
+#: A char's scale this close to its page's usual one keeps the size pdfium gives it.
+_SCALE_SLACK = 0.1
 #: A page with no visible text and at least this fraction covered by images is a scan.
 _SCANNED_IMAGE_AREA = 0.5
 #: So is a page one image covers this fraction of, with at most `_SCAN_MAX_WORDS` visible words
@@ -59,6 +65,36 @@ class Char:
     visible: bool
     #: pdfium put a generated space (or line break) just before this char: a word gap.
     space_before: bool = False
+    #: The way the char's text runs on the displayed page, in degrees anticlockwise to the
+    #: nearest quarter turn: 0 left to right, 90 upward (a label up the side of a figure), 180,
+    #: and 270 downward.
+    angle: int = 0
+    #: The x of the char's origin on the displayed page: where its baseline is when it runs up
+    #: or down.
+    origin_x: float = 0.0
+
+    @property
+    def across(self) -> float:
+        """Where the char's baseline is across its line, growing toward the foot of its glyphs:
+        its baseline's y for upright text, and for text that runs up or down the x it is at."""
+        if self.angle == 90:
+            return self.origin_x
+        if self.angle == 180:
+            return -self.baseline
+        if self.angle == 270:
+            return -self.origin_x
+        return self.baseline
+
+    @property
+    def along(self) -> float:
+        """Where the char starts along its line, growing in the direction it reads."""
+        if self.angle == 90:
+            return -self.y1
+        if self.angle == 180:
+            return -self.x1
+        if self.angle == 270:
+            return self.y0
+        return self.x0
 
 
 @dataclass(frozen=True)
@@ -77,6 +113,9 @@ class PageText:
     rules: tuple[Box, ...] = ()
     #: Visible glyphs left out because pdfium gave them no text (code 0 or not XML) or no box.
     glyphs_left_out: int = 0
+    #: Visible glyphs read once though drawn twice: the same text in the same box as one drawn
+    #: before it (a diagram's labels made bold by printing them twice).
+    overprinted: int = 0
     #: A scanned page's synthetic text layer, from the OCR model's transcription (scanned.py).
     recognised: bool = False
     #: Read from its own visible text even if it looks like a stamped scan (no OCR model).
@@ -182,6 +221,8 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         return x, uh - y
 
     chars: list[Char] = []
+    #: Each char's scale: how much its matrix shrinks or grows the size pdfium gives.
+    scales: list[float] = []
     text_page = page.get_textpage()  # type: ignore[attr-defined]
     try:
         handle = text_page.raw
@@ -189,6 +230,9 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         origin = (ctypes.c_double(), ctypes.c_double())
         name = ctypes.create_string_buffer(_FONT_NAME_BYTES)
         flags = ctypes.c_int()
+        matrix = raw.FS_MATRIX()
+        drawn: set[tuple[str, int, int, int, int]] = set()
+        overprinted = 0
         gap = False
         left_out = 0
         for i in range(text_page.count_chars()):
@@ -210,6 +254,19 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
             (bx0, bx1, by0, by1) = (b.value for b in box)
             xa, ya = display(bx0, by0)
             xb, yb = display(bx1, by1)
+            if visible and not text.isspace():
+                key = (text, *(round(v * _OVERPRINT) for v in (xa, ya, xb, yb)))
+                if key in drawn:
+                    overprinted += 1
+                    continue
+                drawn.add(key)  # type: ignore[arg-type]
+            ox, oy = display(origin[0].value, origin[1].value)
+            if raw.FPDFText_GetMatrix(handle, i, ctypes.byref(matrix)):
+                a, b, c_, d = matrix.a, matrix.b, matrix.c, matrix.d
+            else:
+                a, b, c_, d = 1.0, 0.0, 0.0, 1.0
+            dx, dy = display(origin[0].value + a, origin[1].value + b)
+            scales.append(math.sqrt(abs(a * d - b * c_)))
             chars.append(
                 Char(
                     index=len(chars),
@@ -222,14 +279,17 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
                     y0=min(ya, yb),
                     x1=max(xa, xb),
                     y1=max(ya, yb),
-                    baseline=display(origin[0].value, origin[1].value)[1],
+                    baseline=oy,
                     visible=visible,
                     space_before=gap,
+                    angle=_quarter_turn(dx - ox, dy - oy),
+                    origin_x=ox,
                 )
             )
             gap = False
     finally:
         text_page.close()
+    chars = _sized(chars, scales)
     images = _image_boxes(page, display, width, height)
     covered = sum((b[2] - b[0]) * (b[3] - b[1]) for b in images)
     area = min(covered / (width * height), 1.0) if width > 0 and height > 0 else 0.0
@@ -245,7 +305,30 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         links,
         rules=rules,
         glyphs_left_out=left_out,
+        overprinted=overprinted,
     )
+
+
+def _quarter_turn(dx: float, dy: float) -> int:
+    """The quarter turn nearest the direction (dx, dy) on the displayed page (y down)."""
+    if abs(dx) >= abs(dy):
+        return 0 if dx >= 0 else 180
+    return 270 if dy > 0 else 90
+
+
+def _sized(chars: list[Char], scales: list[float]) -> list[Char]:
+    """The chars with their sizes in one scale. pdfium gives a char's size as its font's, before
+    the matrix it is drawn with scales it: a PDF can draw text at 327 points shrunk 22 times
+    beside text at 16 points, as the same 12-point type. So a char whose scale is not the page's
+    usual one takes the size it would have at the usual scale."""
+    counts = Counter(round(s, 3) for s, c in zip(scales, chars, strict=True) if c.visible and s > 0)
+    if not counts:
+        return chars
+    usual = max(counts, key=lambda s: (counts[s], s))
+    return [
+        replace(c, size=c.size * s / usual) if s > 0 and abs(s / usual - 1) > _SCALE_SLACK else c
+        for c, s in zip(chars, scales, strict=True)
+    ]
 
 
 def _no_text(code: int) -> bool:

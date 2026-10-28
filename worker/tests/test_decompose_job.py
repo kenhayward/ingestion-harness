@@ -236,7 +236,7 @@ def test_pdf_that_would_create_is_held() -> None:
     assert world.bridge.requests == [] and world.register.entries() == []
     manifest = _manifest(world, job)
     assert manifest["pageCount"] == 2
-    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 7
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 8
     assert manifest["startedBy"] == USER.model_dump(by_alias=True)
     assert manifest["document"]["sections"]
     for page in (1, 2):
@@ -408,7 +408,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     world = World()
     job = _held_pdf(world)
     held_document = _manifest(world, job)["document"]
-    monkeypatch.setattr("ingest_worker.decompose.pdf.PDF_READER_VERSION", 8)  # the reader moved on
+    monkeypatch.setattr("ingest_worker.decompose.pdf.PDF_READER_VERSION", 9)  # the reader moved on
 
     def unreadable(first: int, last: int) -> dict[str, Any]:
         raise AssertionError("the PDF was read again")
@@ -423,7 +423,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     package = request.package
     assert package.document is not None
     assert package.document.model_dump(mode="json", by_alias=True) == held_document
-    assert package.provenance.decomposer_version == 1007  # type: ignore[union-attr]
+    assert package.provenance.decomposer_version == 1008  # type: ignore[union-attr]
     [entry] = world.register.entries()
     item = world.item(job)
     assert (item.outcome, item.register_entry_id) == ("delivering", entry.id)
