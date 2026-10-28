@@ -256,6 +256,20 @@ were wrong. **[call]**
 
 Docling's table grid and spans are the starting point, then:
 
+- (2026-10-28) **A ruled table Docling took for a picture is read from its ruling lines.** The
+  text layer keeps each path object at most 2 points thick and at least 4 long as a ruling line
+  (a stroked line, or a thin filled rectangle as Word draws a border). A picture on a born-digital
+  page with no image object under it has its ruling lines put in groups that touch, and each group
+  read as a grid: rows and columns where its horizontal and vertical rules are (rules within 2
+  points one line), two neighbouring cells one where no rule parts them, the first row a header.
+  A group with fewer than two rows or columns, without a border all round (boxes joined by a
+  line, as in a flow chart), or with a merged cell that isn't a rectangle, is no
+  grid, and then the picture stays as it is. Otherwise each grid where Docling has a table already
+  (sharing 80% of the smaller box) is that table, and any other is a table of its own, flagged
+  "Table grid read from its ruling lines; the layout analysis took it for a picture"; the text
+  items Docling gave inside it are dropped so its chars go to its cells, and the picture is
+  dropped. On the ICH Q1 draft, Docling gave table A1-4 both as a table and as a picture of it,
+  and one picture over table A1-5, a line of text and the key table under it.
 - **Tables split across pages are joined.** A table that ends a page and one that starts the next
   page, with the same columns and nothing between them but furniture, are one table. Header rows
   repeated at the top of the continuation are removed.
