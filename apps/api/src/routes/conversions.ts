@@ -1,5 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyBaseLogger,
+  FastifyInstance,
+  FastifyPluginAsync,
+  FastifyReply,
+  FastifyRequest,
+} from 'fastify';
 import {
   AcceptedTargetStateSchema,
   AcceptPreviewSchema,
@@ -10,6 +16,7 @@ import {
   ConversionTargetSchema,
   ConversionReviewSchema,
   CreateBatchSchema,
+  decompositionBatchPrefix,
   decompositionHeldPageKey,
   decompositionReportKey,
   decompositionSourceKey,
@@ -97,6 +104,27 @@ async function takesDocuments(app: FastifyInstance, targetId: string): Promise<b
  * designers and admins may all convert (every route is in `OPERATOR_CALLS`).
  */
 export const conversionRoutes: FastifyPluginAsync = async (app) => {
+  /**
+   * A deleted batch's files: everything under its prefix but the files another batch's item
+   * still names. The batch is gone already, so a file not deleted is logged, not refused.
+   */
+  const deleteStored = async (batchId: string, kept: string[], log: FastifyBaseLogger) => {
+    const { store, buckets } = app.deps;
+    const prefix = decompositionBatchPrefix(batchId);
+    try {
+      if (kept.length === 0) {
+        await store.deletePrefix(buckets.runs, prefix);
+        return;
+      }
+      const keep = new Set(kept);
+      for await (const { key } of store.list(buckets.runs, prefix)) {
+        if (!keep.has(key)) await store.delete(buckets.runs, key);
+      }
+    } catch (err) {
+      log.warn({ err, prefix }, "a deleted batch's files were not all deleted");
+    }
+  };
+
   app.get(
     '/conversions/targets',
     {
@@ -317,16 +345,21 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         tags: ['Conversions'],
         operationId: 'discardConversionBatch',
-        summary: 'Discard an open batch',
+        summary: 'Discard an open batch, or delete a finished one',
         description: md`
           Throws away a batch that was never started, with its uploaded files. A started batch
-          has jobs and is kept.
+          whose documents have all finished (none queued, converting, delivering or awaiting
+          review) is deleted: its documents, their files and reports go, and it leaves the list.
+          What it delivered stays in the target and in the register, so a document it loaded is
+          still found loaded. Refused (\`running\`) while any of its documents is unfinished.
         `,
         params: BatchParams,
         response: {
-          204: noContent('Discarded.'),
+          204: noContent('Discarded, or deleted.'),
           404: NOT_FOUND,
-          409: error('The batch was started, or discarded already.'),
+          409: error(
+            'The batch was discarded already, or has documents not finished (`code: running`).',
+          ),
         },
       },
     },
@@ -335,6 +368,22 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(404).send({ error: 'not found' });
       }
       const { repo, store, buckets } = app.deps;
+      const batch = await repo.getBatch(req.params.id);
+      if (!batch) return reply.code(404).send({ error: 'not found' });
+      if (batch.state === 'started') {
+        const deleted = await repo.deleteBatch(batch.id);
+        if (!deleted.ok) {
+          if (deleted.reason === 'missing') return reply.code(404).send({ error: 'not found' });
+          if (deleted.reason === 'running') {
+            const n = deleted.running;
+            const error = `${n} ${n === 1 ? 'document is' : 'documents are'} not finished yet`;
+            return reply.code(409).send({ error, code: 'running' });
+          }
+          return reply.code(409).send({ error: notOpen(await repo.getBatch(batch.id)) });
+        }
+        await deleteStored(batch.id, deleted.kept, req.log);
+        return reply.code(204).send();
+      }
       const discarded = await repo.discardBatch(req.params.id);
       if (!discarded.ok) {
         if (discarded.reason === 'missing') return reply.code(404).send({ error: 'not found' });

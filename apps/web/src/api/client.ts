@@ -931,6 +931,11 @@ export interface Api {
   startConversionBatch(batchId: string): Promise<Batch>;
   /** Throws away a batch that was never started, with its uploaded files. */
   discardConversionBatch(batchId: string): Promise<void>;
+  /**
+   * Deletes a batch from the list, with its files: a started one once its documents have all
+   * finished (what it delivered stays in the target), an open one discarded.
+   */
+  deleteConversionBatch(batchId: string): Promise<void>;
   /** The newest batches, newest first, with their items counted per outcome. */
   listConversionBatches(): Promise<BatchSummary[]>;
   getConversionBatch(batchId: string): Promise<BatchDetail>;
@@ -1959,6 +1964,12 @@ export function createHttpApi(base = '/api'): Api {
     startConversionBatch: (batchId) =>
       post<Batch>(`${base}/conversions/batches/${encodeURIComponent(batchId)}/start`, {}),
     discardConversionBatch: (batchId) =>
+      noContent(
+        apiFetch(`${base}/conversions/batches/${encodeURIComponent(batchId)}`, {
+          method: 'DELETE',
+        }),
+      ),
+    deleteConversionBatch: (batchId) =>
       noContent(
         apiFetch(`${base}/conversions/batches/${encodeURIComponent(batchId)}`, {
           method: 'DELETE',

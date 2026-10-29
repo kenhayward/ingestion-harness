@@ -13494,11 +13494,11 @@
     "/api/conversions/batches/{id}": {
       "delete": {
         "operationId": "discardConversionBatch",
-        "summary": "Discard an open batch",
+        "summary": "Discard an open batch, or delete a finished one",
         "tags": [
           "Conversions"
         ],
-        "description": "Throws away a batch that was never started, with its uploaded files. A started batch\nhas jobs and is kept.",
+        "description": "Throws away a batch that was never started, with its uploaded files. A started batch\nwhose documents have all finished (none queued, converting, delivering or awaiting\nreview) is deleted: its documents, their files and reports go, and it leaves the list.\nWhat it delivered stays in the target and in the register, so a document it loaded is\nstill found loaded. Refused (`running`) while any of its documents is unfinished.",
         "parameters": [
           {
             "schema": {
@@ -13513,7 +13513,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Discarded."
+            "description": "Discarded, or deleted."
           },
           "401": {
             "description": "No valid session: sign in with `POST /api/auth/login`.",
@@ -13611,7 +13611,7 @@
             }
           },
           "409": {
-            "description": "The batch was started, or discarded already.",
+            "description": "The batch was discarded already, or has documents not finished (`code: running`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -13636,7 +13636,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "The batch was started, or discarded already."
+                  "description": "The batch was discarded already, or has documents not finished (`code: running`)."
                 }
               }
             }

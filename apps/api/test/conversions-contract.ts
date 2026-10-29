@@ -437,6 +437,52 @@ export function conversionsContract(
       by: { name: 'Ada', userId: ADA.id },
     });
 
+    it('deletes a started batch once its items have finished, and nothing else', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      // a force-load of `a` in another batch, delivering the file `a` was stored as
+      const asked = { ...rerunOf(a), source: { ...rerunOf(a).source, objectKey: a.objectKey } };
+      const rerun = await repo.rerunItem(asked);
+      if (!rerun.ok) throw new Error(rerun.reason);
+
+      expect(await repo.deleteBatch(asked.batchId)).toEqual({
+        ok: false,
+        reason: 'running',
+        running: 1,
+      });
+      await facts.hold(rerun.item.id);
+      expect(await repo.deleteBatch(asked.batchId)).toMatchObject({ reason: 'running' });
+      await facts.settleItem(rerun.item.id, 'failed', null);
+      expect(await repo.getItem(a.id)).toMatchObject({ rerunIn: asked.batchId });
+
+      // the re-run batch's own prefix holds nothing another batch names
+      expect(await repo.deleteBatch(asked.batchId)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(asked.batchId)).toBeNull();
+      expect(await repo.getItem(rerun.item.id)).toBeNull();
+      expect(await repo.listItems(asked.batchId)).toEqual([]);
+      // `a` was re-run in the deleted batch only: it is re-run nowhere now
+      expect(await repo.getItem(a.id)).toMatchObject({ rerunIn: null, rerunAt: null });
+
+      // deleting `a`'s batch keeps the file a later re-run of it delivers
+      const again = { ...rerunOf(a), source: { ...rerunOf(a).source, objectKey: a.objectKey } };
+      const second = await repo.rerunItem(again);
+      if (!second.ok) throw new Error(second.reason);
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [a.objectKey] });
+      expect(await repo.getItem(a.id)).toBeNull();
+      expect((await repo.listBatches(10)).map((b) => b.id)).toEqual([again.batchId]);
+      expect(await repo.getItem(second.item.id)).toMatchObject({ objectKey: a.objectKey });
+    });
+
+    it('deletes no open, discarded or missing batch', async () => {
+      const { repo } = await make();
+      const open = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      await repo.addItem(item(open.id, 'a.docx'));
+      expect(await repo.deleteBatch(open.id)).toEqual({ ok: false, reason: 'not_started' });
+      await repo.discardBatch(open.id);
+      expect(await repo.deleteBatch(open.id)).toEqual({ ok: false, reason: 'not_started' });
+      expect(await repo.getBatch(open.id)).toMatchObject({ state: 'discarded' });
+      expect(await repo.deleteBatch(randomUUID())).toEqual({ ok: false, reason: 'missing' });
+    });
+
     it('re-runs auto-approving when asked', async () => {
       const { repo, facts, items } = await failedPair();
       const done = await repo.retryItems({ ...retryOf(items.slice(0, 1)), autoApprove: true });

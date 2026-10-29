@@ -38,6 +38,23 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 const byPath = (a: Picked, b: Picked) => a.path.localeCompare(b.path, undefined, { numeric: true });
 
+/** The target last picked, remembered per browser: the next visit starts on it while it is listed. */
+export const TARGET_KEY = 'ih.conversionTarget';
+function loadTarget(): string | null {
+  try {
+    return localStorage.getItem(TARGET_KEY);
+  } catch {
+    return null; // private mode or blocked storage
+  }
+}
+function saveTarget(id: string) {
+  try {
+    localStorage.setItem(TARGET_KEY, id);
+  } catch {
+    // Private mode or blocked storage: the choice lasts for this visit only.
+  }
+}
+
 /**
  * The Conversion tab's new batch (decomposition phase 3): a target, Word or PDF files or a folder, and
  * Start. Start opens a batch, sends the files one per request (ruling R8), starts the batch and
@@ -80,7 +97,9 @@ export function NewBatch({ api }: { api: Api }) {
     api.listConversionTargets().then(
       (list) => {
         setTargets(list);
-        setTarget((t) => t || (list[0]?.id ?? ''));
+        const stored = loadTarget();
+        const remembered = list.find((t) => t.id === stored)?.id;
+        setTarget((t) => t || (remembered ?? list[0]?.id ?? ''));
       },
       (err: Error) => setTargetsError(err.message),
     );
@@ -247,7 +266,10 @@ export function NewBatch({ api }: { api: Api }) {
             aria-label="Target"
             value={target}
             disabled={!targets?.length || busy}
-            onChange={(e) => setTarget(e.target.value)}
+            onChange={(e) => {
+              setTarget(e.target.value);
+              saveTarget(e.target.value);
+            }}
           >
             {(targets ?? []).map((t) => (
               <option key={t.id} value={t.id}>

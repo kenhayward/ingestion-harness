@@ -19,6 +19,7 @@ import type {
 } from '@ih/shared';
 import {
   DELETABLE_STATUSES,
+  decompositionBatchPrefix,
   modelRef,
   sourceContentType,
   statusesIn,
@@ -37,6 +38,7 @@ import {
   type AcceptResult,
   type AddItemResult,
   type ApproveResult,
+  type DeleteBatchResult,
   type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
@@ -1514,6 +1516,32 @@ export class PgRepo implements IngestionRepo {
         [id],
       );
       return { ok: true, objectKeys: rows.map((r) => r.object_key) };
+    });
+  }
+
+  async deleteBatch(id: string): Promise<DeleteBatchResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<{ state: Batch['state'] }>(
+        'SELECT state FROM decomposition_batches WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!locked.rows[0]) return { ok: false, reason: 'missing' };
+      if (locked.rows[0].state !== 'started') return { ok: false, reason: 'not_started' };
+      const items = await client.query<{ outcome: ItemOutcome }>(
+        'SELECT outcome FROM decomposition_items WHERE batch_id = $1 ORDER BY id FOR UPDATE',
+        [id],
+      );
+      const running = items.rows.filter((r) => RUNNING_OUTCOMES.includes(r.outcome)).length;
+      if (running > 0) return { ok: false, reason: 'running', running };
+      const prefix = decompositionBatchPrefix(id);
+      const kept = await client.query<{ object_key: string }>(
+        `SELECT DISTINCT object_key FROM decomposition_items
+          WHERE batch_id <> $1 AND left(object_key, length($2)) = $2 ORDER BY object_key`,
+        [id, prefix],
+      );
+      await client.query('DELETE FROM decomposition_items WHERE batch_id = $1', [id]);
+      await client.query('DELETE FROM decomposition_batches WHERE id = $1', [id]);
+      return { ok: true, kept: kept.rows.map((r) => r.object_key) };
     });
   }
 

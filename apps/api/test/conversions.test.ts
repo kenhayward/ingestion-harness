@@ -408,6 +408,41 @@ describe('conversion batches', () => {
     ).toBe(404);
   });
 
+  it('deletes a started batch once its documents have finished, with its files', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const a = ItemSchema.parse((await upload(c.app, batch.id, 'a.docx')).json());
+    const b = ItemSchema.parse((await upload(c.app, batch.id, 'b.docx')).json());
+    await start(c.app, batch.id);
+    const report = `decompositions/${batch.id}/${a.id}.report.json`;
+    await c.store.put('runs', report, Buffer.from('{"flags":[]}'), 'application/json');
+    const page = `decompositions/${batch.id}/${b.id}.held/pages/1.jpg`;
+    await c.store.put('runs', page, Buffer.from('jpg'), 'image/jpeg');
+    const del = () =>
+      c.app.inject({ method: 'DELETE', url: `/api/conversions/batches/${batch.id}` });
+
+    const running = await del();
+    expect(running.statusCode).toBe(409);
+    expect(running.json()).toEqual({ error: '2 documents are not finished yet', code: 'running' });
+    c.repo.conversionItems.get(a.id)!.outcome = 'created';
+    c.repo.conversionItems.get(b.id)!.outcome = 'awaiting_review';
+    expect((await del()).json()).toMatchObject({ error: '1 document is not finished yet' });
+
+    // b, failed, was force-loaded in another batch from the file it was stored as: that stays
+    c.repo.conversionItems.get(b.id)!.outcome = 'failed';
+    const other = BatchSchema.parse((await newBatch(c.app)).json());
+    const elsewhere = ItemSchema.parse((await upload(c.app, other.id, 'b.docx')).json());
+    c.repo.conversionItems.get(elsewhere.id)!.objectKey = b.objectKey;
+
+    expect((await del()).statusCode).toBe(204);
+    const stored = [...c.store.objects.keys()].filter((k) => k.includes(batch.id));
+    expect(stored).toEqual([`runs/${b.objectKey}`]);
+    expect((await c.app.inject(`/api/conversions/batches/${batch.id}`)).statusCode).toBe(404);
+    const listed = (await c.app.inject('/api/conversions/batches')).json().batches;
+    expect(listed.map((x: { id: string }) => x.id)).toEqual([other.id]);
+    expect((await del()).statusCode).toBe(404);
+  });
+
   it("serves an item's report", async () => {
     const c = await setup();
     const batch = BatchSchema.parse((await newBatch(c.app)).json());

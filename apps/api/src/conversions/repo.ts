@@ -37,6 +37,16 @@ export interface ConversionRepo {
   /** Marks an open batch discarded; returns its items' object keys, which the caller deletes. */
   discardBatch(id: string): Promise<DiscardBatchResult>;
   /**
+   * Deletes a started batch whose items have all finished (none `RUNNING_OUTCOMES`): its items
+   * and the batch, all at once, with the batch locked and then its items. What it delivered
+   * stays in the target and in the register, and an item of another batch it re-ran is no
+   * longer re-run anywhere. Returns the object keys under the batch's own prefix
+   * (`decompositionBatchPrefix`) that an item of another batch still names (a force-load re-run
+   * delivers the stored file it was asked to): the caller deletes the rest of the prefix.
+   * Refused `running` with how many are unfinished, or `not_started` (open or discarded).
+   */
+  deleteBatch(id: string): Promise<DeleteBatchResult>;
+  /**
    * A row action's rerun of an item (force-load, redeliver): a new batch of one item, forced and
    * started at once, its `decompose` job queued, all at once. The item keeps `of`'s source key
    * and records `redeliverOf`; it delivers `source` (the stored file, or a replacement already
@@ -322,6 +332,11 @@ export type StartBatchResult =
 
 export type DiscardBatchResult =
   { ok: true; objectKeys: string[] } | { ok: false; reason: 'missing' | 'not_open' };
+
+export type DeleteBatchResult =
+  | { ok: true; kept: string[] }
+  | { ok: false; reason: 'missing' | 'not_started' }
+  | { ok: false; reason: 'running'; running: number };
 
 /** Every outcome at zero. */
 export function emptyCounts(): ItemCounts {
