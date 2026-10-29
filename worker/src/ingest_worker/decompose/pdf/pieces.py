@@ -217,14 +217,20 @@ class Ledger:
                 owners[:] = [mapping.get(o, o) for o in owners]
 
 
-def continues_word(before: Char, c: Char) -> bool:
-    """Whether `c`, drawn right after `before`, is in the same word: neither is blank, pdfium
-    saw no word gap before `c`, and they are on one line (a superscript stays in its word)."""
+def continues_word(word: list[Char], c: Char) -> bool:
+    """Whether `c`, drawn right after the last char of `word`, is in the same word: neither is
+    blank, pdfium saw no word gap before `c`, and they are on one line (a superscript stays in
+    its word). As for a line (`lines_of`), how far apart their baselines may be goes by the
+    largest char: a subscript and the superscript after it, both small, are further apart than
+    half their own size, but not than half their word's ("t=1" under a sum and "n" over it)."""
+    before = word[-1]
     return (
         not c.text.isspace()
         and not before.text.isspace()
         and not c.space_before
-        and _same_line(before, c)
+        and before.angle == c.angle
+        and abs(before.across - c.across)
+        <= _BASELINE_TOLERANCE * max(c.size, *(x.size for x in word))
     )
 
 
@@ -235,7 +241,7 @@ def words_of(page: PageText) -> list[list[Char]]:
     for c in page.chars:
         if not c.visible:
             continue
-        if words and continues_word(words[-1][-1], c):
+        if words and continues_word(words[-1], c):
             words[-1].append(c)
         else:
             words.append([c])

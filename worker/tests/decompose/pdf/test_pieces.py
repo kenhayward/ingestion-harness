@@ -8,7 +8,7 @@ from typing import Any
 
 from ingest_worker.decompose.model import Text
 from ingest_worker.decompose.pdf.layout import LayoutDoc, parse_docling
-from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece, attach_text
+from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece, attach_text, words_of
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer, read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
@@ -79,6 +79,18 @@ def test_a_small_char_lowered_half_a_point_is_a_subscript() -> None:
         [docling.text("text", 1, bl(60, 85, 200, 110))],
     )
     assert pieces[0].inlines() == [Text(text="The INa")]
+
+
+def test_a_subscript_then_a_superscript_stay_in_their_word() -> None:
+    # "Sum" with "t=1" lowered after it and "n" raised over it, as a formula draws a sum's limits:
+    # the two small runs are further apart than half their own size, not than half the word's.
+    runs = [
+        Run("Sum", 72, 100),
+        Run("t=1", 94.6, 100, size=7, rise=-1),
+        Run("n", 104.5, 100, size=7, rise=4),
+    ]
+    page = read_text_layer(make_pdf([Page(runs=runs)])).pages[0]
+    assert ["".join(c.text for c in w) for w in words_of(page)] == ["Sumt=1n"]
 
 
 def test_lines_join_with_one_space_and_gaps_become_spaces() -> None:

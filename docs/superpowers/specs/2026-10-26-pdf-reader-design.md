@@ -172,6 +172,21 @@ baselines with a glyph on one overlapping one on the other by half the narrower'
 is two lines, one per baseline: two labels printed over each other. A superscript or subscript
 sits beside its word's glyphs, not over them, and stays in its line.
 
+(2026-10-29) **Text clipped away.** A text object whose clip paths leave none of it showing is
+not visible, as the OCR layer's is not: it is not read, and not accounted for. Its clip paths'
+boxes are compared with its own, so text partly shown stays. A drawing placed as a form can
+carry copies of its labels outside the form's box: on page 12 of ICH E2C(R2), a figure's
+caption is printed once and held again, clipped away, in the drawing at a smaller size, on the
+same baseline. The two copies' chars were read as one line, interleaved, and the check refused
+it ("'Shading' missing").
+
+(2026-10-29) **A sum's limits stay in their word.** Whether a char drawn after another on a
+line goes on its word is measured as a line is (`lines_of`): baselines at most half the
+largest char's size apart, the word's chars included. Measured on the pair alone, "t=1"
+lowered under a sum and "n" raised over it, both 7-point beside 11-point text, were two words
+to the check and one to the document ("1n"), and ICH M9's f2 formula was refused ("'1'
+missing").
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
