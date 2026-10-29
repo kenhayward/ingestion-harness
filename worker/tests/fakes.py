@@ -864,6 +864,14 @@ class FakeTargets:
         return target_id in self.removed_ids
 
 
+#: A watched file in `FakeBridge.sources`: target, the location's fields sorted, folder, name.
+SourceKey = tuple[str, tuple[tuple[str, str], ...], str, str]
+
+
+def _where(source: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted(source.items()))
+
+
 class FakeBridge:
     """BridgeClient over a dict of objects keyed (bucket, key), or, for a target in `stores`, over
     that target's own MemoryObjectStore (separate S3 endpoints). A delivery to a target in
@@ -899,9 +907,10 @@ class FakeBridge:
         self.puts: list[tuple[str, str, str]] = []
         self.deletes: list[tuple[str, list[tuple[str, str]]]] = []
         self.refusals: list[BridgeError | Exception] = []
-        #: Watched folders: (folder, name) -> bytes. `fail_next` maps an operation (list, read,
-        #: move, put) to an exception its next call raises.
-        self.sources: dict[tuple[str, str], bytes] = {}
+        #: Watched folders: `source_key(target, source, folder, name)` -> bytes, so two watches
+        #: never share a tree. `fail_next` maps an operation (list, read, move, put) to an
+        #: exception its next call raises.
+        self.sources: dict[SourceKey, bytes] = {}
         self.fail_next: dict[str, Exception] = {}
         self._ids = 0
 
@@ -1022,8 +1031,8 @@ class FakeBridge:
         self._source_op("list", target_id)
         return [
             SourceFile(name=n, size=len(b), modified_at="2026-10-29T00:00:00.000Z", etag=None)
-            for (f, n), b in sorted(self.sources.items())
-            if f == folder
+            for (t, s, f, n), b in sorted(self.sources.items())
+            if (t, s, f) == (target_id, _where(source), folder)
         ]
 
     def read_source(
@@ -1036,7 +1045,7 @@ class FakeBridge:
     ) -> bytes:
         self._source_op("read", target_id)
         try:
-            return self.sources[(folder, name)]
+            return self.sources[self.source_key(target_id, source, folder, name)]
         except KeyError:
             raise self._no_file(folder, name) from None
 
@@ -1049,9 +1058,11 @@ class FakeBridge:
         acting_user: ActingUser | None,
     ) -> None:
         self._source_op("move", target_id)
-        if src in self.sources:
-            self.sources[dst] = self.sources.pop(src)
-        elif dst not in self.sources:  # a retried move whose destination is there succeeds
+        src_key = self.source_key(target_id, source, *src)
+        dst_key = self.source_key(target_id, source, *dst)
+        if src_key in self.sources:
+            self.sources[dst_key] = self.sources.pop(src_key)
+        elif dst_key not in self.sources:  # a retried move whose destination is there succeeds
             raise self._no_file(*src)
 
     def put_source_text(
@@ -1064,7 +1075,12 @@ class FakeBridge:
         acting_user: ActingUser | None,
     ) -> None:
         self._source_op("put", target_id)
-        self.sources[(folder, name)] = content.encode("utf-8")
+        self.sources[self.source_key(target_id, source, folder, name)] = content.encode("utf-8")
+
+    @staticmethod
+    def source_key(target_id: str, source: dict[str, str], folder: str, name: str) -> SourceKey:
+        """Where the fake keeps one watched file: its target, location, folder and name."""
+        return (target_id, _where(source), folder, name)
 
     @staticmethod
     def _no_file(folder: str, name: str) -> BridgeRefused:

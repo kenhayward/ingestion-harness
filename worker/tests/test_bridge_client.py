@@ -325,12 +325,29 @@ def test_the_fake_bridge_keeps_sources_and_fails_on_request() -> None:
     from .fakes import FakeBridge
 
     bridge = FakeBridge(sinks={"docs"})
-    bridge.sources[("", "a.docx")] = b"x"
+    bridge.sources[FakeBridge.source_key("docs", SOURCE, "", "a.docx")] = b"x"
     assert [f.name for f in bridge.list_source("docs", SOURCE, "", None)] == ["a.docx"]
     bridge.move_source("docs", SOURCE, ("", "a.docx"), ("processing", "a.docx"), None)
     assert bridge.read_source("docs", SOURCE, "processing", "a.docx", None) == b"x"
     bridge.put_source_text("docs", SOURCE, "failed", "e.txt", "why", None)
-    assert bridge.sources[("failed", "e.txt")] == b"why"
+    assert bridge.sources[FakeBridge.source_key("docs", SOURCE, "failed", "e.txt")] == b"why"
     bridge.fail_next["list"] = RuntimeError("down")
     with pytest.raises(RuntimeError):
         bridge.list_source("docs", SOURCE, "", None)
+
+
+def test_the_fake_bridge_keeps_each_watch_apart() -> None:
+    from .fakes import FakeBridge
+
+    bridge = FakeBridge(sinks={"docs", "other"})
+    elsewhere = {"folder": "elsewhere"}
+    bridge.put_source_text("docs", SOURCE, "", "a.txt", "one", None)
+    bridge.put_source_text("docs", elsewhere, "", "b.txt", "two", None)
+    bridge.put_source_text("other", SOURCE, "", "c.txt", "three", None)
+    assert [f.name for f in bridge.list_source("docs", SOURCE, "", None)] == ["a.txt"]
+    assert [f.name for f in bridge.list_source("docs", elsewhere, "", None)] == ["b.txt"]
+    assert [f.name for f in bridge.list_source("other", SOURCE, "", None)] == ["c.txt"]
+    with pytest.raises(BridgeRefused):
+        bridge.read_source("docs", elsewhere, "", "a.txt", None)
+    with pytest.raises(BridgeRefused):
+        bridge.move_source("other", SOURCE, ("", "a.txt"), ("processing", "a.txt"), None)
