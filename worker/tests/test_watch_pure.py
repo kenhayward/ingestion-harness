@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from ingest_worker.convert import DOCX_MAIN_TYPE
+from ingest_worker.convert import DOCX_MAIN_TYPE, is_docx
 from ingest_worker.watch.naming import (
     is_candidate,
     source_key,
@@ -173,3 +173,98 @@ def test_reason_names_no_vendor() -> None:
     text = reason_markdown(FACTS).lower()
     for word in ("s3", "aws", "seaweed", "sharepoint", "bridge", "gotenberg"):
         assert word not in text
+
+
+# --- fix round 1 ------------------------------------------------------------------------------
+
+
+def test_working_name_is_case_sensitive() -> None:
+    # Object keys are case-sensitive, so `Report.docx` does not clash with `report.docx`.
+    assert working_name("Report.docx", {"report.docx"}) == "Report.docx"
+
+
+def test_working_name_fits_the_name_limit() -> None:
+    original = "a" * 251 + ".pdf"  # 255
+    name = working_name(original, {original})
+    assert name == "a" * 249 + "_1.pdf"
+    assert is_candidate(name)
+    bigger = working_name(original, {original, name})
+    assert bigger == "a" * 249 + "_2.pdf" and len(bigger) == 255
+
+
+def _docx_with_corrupt(part: str) -> bytes:
+    buf = io.BytesIO()
+    types = (
+        f'<Types><Override PartName="/word/document.xml" ContentType="{DOCX_MAIN_TYPE}"/></Types>'
+    )
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", types + " " * 3000)
+        z.writestr("word/document.xml", "<w:document>" + "<w:p>hello</w:p>" * 500 + "</w:document>")
+    raw = bytearray(buf.getvalue())
+    with zipfile.ZipFile(io.BytesIO(bytes(raw))) as z:
+        info = z.getinfo(part)
+    start = info.header_offset + 30 + len(info.filename.encode()) + 0
+    raw[start + 4 : start + 24] = bytes([255]) * 20
+    return bytes(raw)
+
+
+def test_a_corrupt_deflate_stream_is_refused_not_raised() -> None:
+    assert source_problem(_docx_with_corrupt("word/document.xml"), "a.docx", 10**7) == NOT_A_SOURCE
+
+
+def test_a_corrupt_content_types_stream_is_no_docx_and_does_not_raise() -> None:
+    from ingest_worker.convert import is_docx
+
+    data = _docx_with_corrupt("[Content_Types].xml")
+    assert is_docx(data) is False
+    assert source_problem(data, "a.docx", 10**7) == NOT_A_SOURCE
+
+
+def test_an_encrypted_entry_is_refused() -> None:
+    raw = bytearray(docx())
+    # set the "encrypted" flag (bit 0) on every central directory entry
+    at = raw.find(b"PK")
+    while at != -1:
+        raw[at + 8] |= 1
+        at = raw.find(b"PK", at + 4)
+    assert source_problem(bytes(raw), "a.docx", 10**7) == NOT_A_SOURCE
+
+
+def test_a_docx_without_its_main_part_is_refused() -> None:
+    buf = io.BytesIO()
+    types = (
+        f'<Types><Override PartName="/word/document.xml" ContentType="{DOCX_MAIN_TYPE}"/></Types>'
+    )
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", types)
+    assert source_problem(buf.getvalue(), "a.docx", 10**7) == NOT_A_SOURCE
+
+
+def test_a_docx_with_pdf_magic_in_its_first_kib_is_refused() -> None:
+    # Deliberately stricter than the API's checkSource: the decomposer reads anything with
+    # "%PDF-" in its first KiB as a PDF, so such a Word file would be decomposed wrongly.
+    types = (
+        f'<Types><Override PartName="/word/document.xml" ContentType="{DOCX_MAIN_TYPE}"/></Types>'
+    )
+    comment_buf = io.BytesIO()
+    with zipfile.ZipFile(comment_buf, "w") as z:
+        z.writestr("[Content_Types].xml", types)
+        z.writestr("word/document.xml", "<w:document/>")
+        z.writestr("%PDF-.txt", "x")  # the name sits in the first KiB
+    data = comment_buf.getvalue()
+    assert is_docx(data) and b"%PDF-" in data[:1024]
+    assert source_problem(data, "a.docx", 10**7) == NOT_A_SOURCE
+
+
+def test_the_inflated_budget_counts_every_inspected_part() -> None:
+    from ingest_worker.watch.sources import TOO_LARGE_TO_CHECK
+
+    data = docx()
+    assert source_problem(data, "a.docx", 10**7, max_inflated=10) == TOO_LARGE_TO_CHECK
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        types_size = z.getinfo("[Content_Types].xml").file_size
+        document_size = z.getinfo("word/document.xml").file_size
+    total = types_size + document_size
+    assert source_problem(data, "a.docx", 10**7, max_inflated=total) is None
+    # the content types alone fit, so the budget must count the document too
+    assert source_problem(data, "a.docx", 10**7, max_inflated=total - 1) == TOO_LARGE_TO_CHECK

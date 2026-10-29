@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import zipfile
+import zlib
 
 from ingest_worker.convert import is_docx
 from ingest_worker.decompose import source_kind
@@ -29,18 +30,22 @@ class _TooLarge(Exception):
     pass
 
 
-def _has_tracked_changes(data: bytes, max_inflated: int) -> bool:
+def _has_tracked_changes(data: bytes, max_inflated: int) -> bool | None:
+    """Whether a text part holds tracked changes; None when `word/document.xml` is missing.
+    The budget counts every inspected part, `[Content_Types].xml` included, as the API's does."""
     import io
 
     inflated = 0
+    found = False
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         infos = z.infolist()
         if len(infos) > MAX_ENTRIES:
             raise zipfile.BadZipFile("too many entries")
+        if not any(i.filename == "word/document.xml" for i in infos):
+            return None
         for info in infos:
-            if not _TEXT_PART.match(info.filename):
+            if info.filename != "[Content_Types].xml" and not _TEXT_PART.match(info.filename):
                 continue
-            found = False
             tail = b""
             with z.open(info) as part:
                 while chunk := part.read(_CHUNK):
@@ -48,11 +53,9 @@ def _has_tracked_changes(data: bytes, max_inflated: int) -> bool:
                     if inflated > max_inflated:
                         raise _TooLarge
                     if _REVISION.search(tail + chunk):
-                        found = True
+                        found = found or info.filename != "[Content_Types].xml"
                     tail = chunk[-16:]
-            if found:
-                return True
-    return False
+    return found
 
 
 def source_problem(
@@ -63,12 +66,18 @@ def source_problem(
         return OVER_LIMIT
     if data.startswith(b"%PDF-"):
         return None
-    # A Word file the decomposer would read as a PDF (a "%PDF-" in its first KiB) is no source.
+    # Stricter than the API's checkSource, on purpose: the decomposer reads anything with
+    # "%PDF-" in its first KiB as a PDF, so such a Word file would be decomposed wrongly.
     if not is_docx(data) or source_kind(data) != "docx":
         return NOT_A_SOURCE
     try:
-        return TRACKED_CHANGES if _has_tracked_changes(data, max_inflated) else None
+        tracked = _has_tracked_changes(data, max_inflated)
     except _TooLarge:
         return TOO_LARGE_TO_CHECK
     except (zipfile.BadZipFile, OSError, EOFError, ValueError, NotImplementedError):
         return NOT_A_SOURCE
+    except (zlib.error, RuntimeError):  # a corrupt deflate stream, an encrypted entry
+        return NOT_A_SOURCE
+    if tracked is None:
+        return NOT_A_SOURCE
+    return TRACKED_CHANGES if tracked else None

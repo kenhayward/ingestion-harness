@@ -33,19 +33,32 @@ def is_candidate(name: str) -> bool:
     )
 
 
+def _units(text: str) -> int:
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
 def working_name(original: str, taken: set[str]) -> str:
     """The name a file is kept under: itself, else `stem_1.ext`, `stem_2.ext`, ... the first
-    not in `taken`."""
+    not in `taken`, the stem shortened so the name stays within `MAX_NAME`.
+
+    `taken` is compared exactly (case-sensitively), because object keys are; a caller whose
+    folder ignores case passes the lower-cased names and compares the same way."""
     if original not in taken:
         return original
     stem, dot, ext = original.rpartition(".")
     if not dot:
-        stem, ext = original, ""
+        stem = original
     suffix = f".{ext}" if dot else ""
     n = 1
-    while f"{stem}_{n}{suffix}" in taken:
+    while True:
+        tail = f"_{n}{suffix}"
+        room = MAX_NAME - _units(tail)
+        short = stem
+        while _units(short) > room:
+            short = short[:-1]
+        if (name := f"{short}{tail}") not in taken:
+            return name
         n += 1
-    return f"{stem}_{n}{suffix}"
 
 
 def watch_source_path(field_ids: Sequence[str], source: Mapping[str, str]) -> str:

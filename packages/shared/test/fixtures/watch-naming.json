@@ -12,6 +12,8 @@
       "taken": ["archive.tar.pdf"],
       "expected": "archive.tar_1.pdf"
     },
+    { "original": "README", "taken": ["README"], "expected": "README_1" },
+    { "original": "report_1.docx", "taken": ["report_1.docx"], "expected": "report_1_1.docx" },
     { "original": "Scan.PDF", "taken": ["Scan.PDF"], "expected": "Scan_1.PDF" }
   ],
   "sourcePaths": [
