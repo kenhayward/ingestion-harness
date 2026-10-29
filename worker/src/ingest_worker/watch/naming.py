@@ -24,10 +24,11 @@ def name_problem(name: str) -> str | None:
 
 
 def is_candidate(name: str) -> bool:
-    """A PDF or Word file the bridge can address; hidden files (a leading dot) are skipped."""
+    """A PDF or Word file the bridge can address; hidden files (a leading dot) and Office lock
+    files (`~$`, present while someone has the document open) are skipped."""
     return (
         name_problem(name) is None
-        and not name.startswith(".")
+        and not name.startswith((".", "~$"))
         and name.lower().endswith(CANDIDATE_SUFFIXES)
     )
 

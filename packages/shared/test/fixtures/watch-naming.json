@@ -37,6 +37,9 @@
     { "name": "dir/a.pdf", "expected": false },
     { "name": "dir\\a.pdf", "expected": false },
     { "name": "a\u0000.pdf", "expected": false },
+    { "name": "~$report.docx", "expected": false },
+    { "name": "~$report.pdf", "expected": false },
+    { "name": "a~$.pdf", "expected": true },
     { "name": "a.pdf", "expected": true }
   ]
 }
