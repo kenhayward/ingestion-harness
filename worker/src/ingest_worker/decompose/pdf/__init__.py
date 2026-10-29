@@ -39,7 +39,7 @@ from ingest_worker.decompose.pdf.scanned import (
     normalise_levels,
     recognise_page,
 )
-from ingest_worker.decompose.pdf.tables import join_split_tables
+from ingest_worker.decompose.pdf.tables import headers_above_tables, join_split_tables
 from ingest_worker.decompose.pdf.textlayer import (
     PageText,
     TextLayer,
@@ -51,7 +51,7 @@ from ingest_worker.decompose.pdf.transcript import PageTranscriber, parse_transc
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
 #: The PDF reader's version, part of the decomposer version for a PDF.
-PDF_READER_VERSION = 10
+PDF_READER_VERSION = 11
 
 #: A PDF with more pages fails (spec section 10).
 MAX_PAGES = 500
@@ -114,6 +114,7 @@ def decompose_pdf(
     pieces = _splice(pieces, recognised, ledger)
     pieces, dropped, header_fields = drop_furniture(pieces, text, ledger)
     dropped = _with_scanned(dropped, scanned_furniture)
+    pieces = headers_above_tables(pieces, ledger)
     pieces, flags = assign_headings(pieces, read_bookmarks(data), ledger)
     pieces = join_split_tables(pieces, text, ledger)
     own_cropper = None

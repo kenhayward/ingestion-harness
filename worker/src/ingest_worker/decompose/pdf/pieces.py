@@ -251,16 +251,22 @@ def words_of(page: PageText) -> list[list[Char]]:
 def lines_of(page: int, chars: list[Char]) -> list[Line]:
     """Chars grouped by baseline into lines, top to bottom, each left to right; text that runs up
     or down the page (`Char.angle`) in lines of its own after them, each in the direction it
-    reads."""
+    reads. How far down a char may be goes from the line's largest chars, not its topmost: a
+    superscript and a subscript of one line can be further apart than half its size."""
     clusters: list[list[Char]] = []
+    #: Each cluster's topmost char of its largest size: where its own baseline is.
+    anchors: list[Char] = []
     for c in sorted(chars, key=lambda c: (c.angle, c.across, c.along)):
         if clusters:
-            current = clusters[-1]
-            reach = _BASELINE_TOLERANCE * max(max(x.size for x in current), c.size)
-            if c.angle == current[0].angle and c.across - current[0].across <= reach:
-                current.append(c)
+            anchor = anchors[-1]
+            reach = _BASELINE_TOLERANCE * max(anchor.size, c.size)
+            if c.angle == anchor.angle and c.across - anchor.across <= reach:
+                clusters[-1].append(c)
+                if c.size > anchor.size:
+                    anchors[-1] = c
                 continue
         clusters.append([c])
+        anchors.append(c)
     lines = []
     for cluster in clusters:
         for part in _overlapping(cluster):
