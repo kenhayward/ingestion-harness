@@ -162,7 +162,8 @@
       <p class="subtitle">
         Thursday 29 October 2026: failed documents re-run in their own batch, which shows them going
         through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
-        PR #362, and four more: PR #363. Earlier batches can be deleted: PR #364.
+        PR #362, and four more: PR #363. Earlier batches can be deleted, and the target picked is
+        remembered: PR #364.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -175,6 +176,10 @@
           <li>
             <a href="#delete-batch">Deleting an earlier batch</a>
             <span>— a bin on each line of Earlier batches</span>
+          </li>
+          <li>
+            <a href="#remember-target">The Conversion tab keeps your target</a>
+            <span>— a new batch starts on the target you picked last</span>
           </li>
         </ul>
         <h4>Fixes</h4>
@@ -250,6 +255,18 @@
           such as a force-load re-run's, is kept until that batch goes too.
         </li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="remember-target">The Conversion tab keeps your target</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/364">#364</a>
+      </p>
+      <p>
+        Coming back to the Conversion tab used to start a new batch on the first target in the list,
+        whichever you had used last, so it was easy to load into the wrong one. The target you pick
+        is now remembered in this browser, and a new batch starts on it for as long as it is still
+        listed.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h2 id="fixes">Fixes</h2>

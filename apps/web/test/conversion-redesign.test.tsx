@@ -5,6 +5,7 @@ import { ITEM_OUTCOMES, type BatchSummary, type Item, type ItemOutcome } from '@
 import { ApiError } from '../src/api/client.js';
 import { BatchView } from '../src/conversion/BatchView.js';
 import { ConversionPage } from '../src/conversion/ConversionPage.js';
+import { TARGET_KEY } from '../src/conversion/NewBatch.js';
 import { conversionBatch, conversionItem, fakeApi } from './fake-api.js';
 
 const BATCH_ID = '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11';
@@ -516,6 +517,34 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     expect(pager.getByText(/Page/)).toHaveTextContent('Page 1 of 2');
     await userEvent.click(pager.getByRole('button', { name: 'Older batches' }));
     expect(batches.getAllByRole('row')).toHaveLength(2);
+  });
+
+  describe('the target', () => {
+    const TWO = [
+      { id: 'documents', label: 'Controlled documents', sinkName: 'Document sink' },
+      { id: 'sops', label: 'SOPs', sinkName: 'Document sink' },
+    ];
+    afterEach(() => localStorage.clear());
+    const target = () => screen.getByRole<HTMLSelectElement>('combobox', { name: 'Target' });
+
+    it('comes back to the one picked last time', async () => {
+      const api = page({ listConversionTargets: vi.fn(async () => TWO) });
+      const first = render(<ConversionPage api={api} />);
+      await screen.findByRole('option', { name: 'SOPs · Document sink' });
+      expect(target()).toHaveValue('documents');
+      await userEvent.selectOptions(target(), 'sops');
+      first.unmount();
+      render(<ConversionPage api={api} />);
+      await screen.findByRole('option', { name: 'SOPs · Document sink' });
+      await waitFor(() => expect(target()).toHaveValue('sops'));
+    });
+
+    it('starts on the first when the one picked is no longer listed', async () => {
+      localStorage.setItem(TARGET_KEY, 'gone');
+      render(<ConversionPage api={page({ listConversionTargets: vi.fn(async () => TWO) })} />);
+      await screen.findByRole('option', { name: 'SOPs · Document sink' });
+      expect(target()).toHaveValue('documents');
+    });
   });
 
   const OLD = summary(

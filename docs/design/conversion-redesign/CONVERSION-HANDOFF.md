@@ -85,6 +85,10 @@ Real app (Vite, `/api` mocked) at 1,600 × 1,000 unless named; sample data.
   *Converting…* while busy), with *to target · sink* under it. The file list's head counts files,
   ready, skipped (refused keys, repeats) and left out (not `.docx`, hidden, lock files; this
   replaces the old paragraph) and has **Clear all**. Upload, cancel and start logic is unchanged.
+  (2026-10-29, owner's ask) The target picked is kept in `localStorage` (`ih.conversionTarget`,
+  `TARGET_KEY`); a visit starts on it while it is still listed, else on the first. Leaving out
+  targets a document can't go to (a 3DEXPERIENCE target with no document repository) waits for a
+  second document sink: kenhayward/3ds-sink#39.
 - **Earlier batches:** a table (`aria-label "Earlier batches"`), `BATCHES_PER_PAGE` 10 a page with
   the Jobs pager's look (`Pages of batches`, *‹ Newer* / *Older ›*). Each row: a glyph from
   `batchState` (*Under way*, *Some failed*, *Needs attention*, *Nothing new*, *Done*,

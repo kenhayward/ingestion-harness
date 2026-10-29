@@ -15,7 +15,8 @@ export function ConversionHelp() {
       <ul>
         <li>
           <strong>1 Target</strong> lists only the targets that take documents. If there is none, an
-          administrator sets one up under Administration &gt; Publishing targets.
+          administrator sets one up under Administration &gt; Publishing targets. The target you
+          pick is remembered in this browser, so the next new batch starts on it.
         </li>
         <li>
           <strong>2 Word or PDF files</strong>: <strong>Choose files</strong> or{' '}
