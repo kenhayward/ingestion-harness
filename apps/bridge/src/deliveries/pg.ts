@@ -6,6 +6,7 @@ import {
   type DeliveryRepo,
   FINAL_STATUSES,
   type DeliveryRow,
+  type LaneLimits,
   type NewDelivery,
   type NewPackage,
   type OutboxEvent,
@@ -57,6 +58,13 @@ const toRow = (r: Row): DeliveryRow => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+/**
+ * A tenant's key in the claim's limits: sink and instance apart by U+001F (jsonb refuses
+ * U+0000 in a key), no instance as ''. Matches the SQL `sink_id || chr(31) || COALESCE(…, '')`.
+ */
+const tenantKey = (sinkId: string, instanceId: string | null) =>
+  `${sinkId}\u001f${instanceId ?? ''}`;
 
 const json = (v: unknown) => (v === null || v === undefined ? null : JSON.stringify(v));
 
@@ -131,23 +139,46 @@ export class PgDeliveryRepo implements DeliveryRepo {
     });
   }
 
-  async claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null> {
-    const { rows } = await this.pool.query<Row>(
-      `UPDATE bridge.deliveries
-          SET attempts = attempts + CASE WHEN status = 'waiting' THEN 0 ELSE 1 END,
-              status = 'running', claim_id = gen_random_uuid(), updated_at = $1,
-              lease_until = $1 + make_interval(secs => $2)
-        WHERE id = (
-          SELECT id FROM bridge.deliveries
-           WHERE (status IN ('queued', 'waiting') AND run_after <= $1)
-              OR (status = 'running' AND lease_until < $1)
-           ORDER BY run_after, created_at, id
-           FOR UPDATE SKIP LOCKED
-           LIMIT 1)
-        RETURNING ${COLUMNS}`,
-      [now, leaseSeconds],
-    );
-    return rows[0] ? (toRow(rows[0]) as ClaimedRow) : null;
+  async claim(now: Date, leaseSeconds: number, lanes: LaneLimits): Promise<ClaimedRow | null> {
+    return this.tx(async (c) => {
+      // Claims take turns, so each one counts the lanes the previous ones filled.
+      await c.query(`SELECT pg_advisory_xact_lock(hashtext('bridge:lanes'))`);
+      const { rows: tenants } = await c.query<{ sink_id: string; instance_id: string | null }>(
+        `SELECT DISTINCT t.sink_id, t.instance_id
+           FROM bridge.deliveries d JOIN bridge.targets t ON t.id = d.target_id
+          WHERE d.status = 'queued' AND d.run_after <= $1`,
+        [now],
+      );
+      const limits: Record<string, number> = {};
+      for (const t of tenants) {
+        const n = lanes(t.sink_id, t.instance_id);
+        if (n !== null) limits[tenantKey(t.sink_id, t.instance_id)] = n;
+      }
+      const { rows } = await c.query<Row>(
+        `UPDATE bridge.deliveries
+            SET attempts = attempts + CASE WHEN status = 'waiting' THEN 0 ELSE 1 END,
+                status = 'running', claim_id = gen_random_uuid(), updated_at = $1,
+                lease_until = $1 + make_interval(secs => $2)
+          WHERE id = (
+            SELECT d.id FROM bridge.deliveries d JOIN bridge.targets t ON t.id = d.target_id
+             WHERE (d.status = 'waiting' AND d.run_after <= $1)
+                OR (d.status = 'running' AND d.lease_until < $1)
+                OR (d.status = 'queued' AND d.run_after <= $1 AND (
+                      ($3::jsonb ->> (t.sink_id || chr(31) || COALESCE(t.instance_id, ''))) IS NULL
+                      OR (SELECT count(*) FROM bridge.deliveries o
+                            JOIN bridge.targets ot ON ot.id = o.target_id
+                           WHERE o.status IN ('running', 'waiting') AND o.id <> d.id
+                             AND ot.sink_id = t.sink_id
+                             AND ot.instance_id IS NOT DISTINCT FROM t.instance_id)
+                         < ($3::jsonb ->> (t.sink_id || chr(31) || COALESCE(t.instance_id, '')))::int))
+             ORDER BY d.run_after, d.created_at, d.id
+             FOR UPDATE OF d SKIP LOCKED
+             LIMIT 1)
+          RETURNING ${COLUMNS}`,
+        [now, leaseSeconds, JSON.stringify(limits)],
+      );
+      return rows[0] ? (toRow(rows[0]) as ClaimedRow) : null;
+    });
   }
 
   async transition(id: string, t: Transition, now: Date, claimId: string): Promise<boolean> {

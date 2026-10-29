@@ -7,6 +7,7 @@ import type {
   DeliveryStatus,
   Receipt,
 } from '@ih/bridge-contract';
+import type { TargetRepo } from '../targets/repo.js';
 
 export interface NewPackage {
   id: string;
@@ -53,6 +54,15 @@ export interface DeliveryRow {
   updatedAt: Date;
 }
 
+/**
+ * How many deliveries a tenant (a sink's instance) takes at once; null = unlimited. A `queued`
+ * delivery is claimed only while fewer than that many of its tenant's are `running` or `waiting`.
+ */
+export type LaneLimits = (sinkId: string, instanceId: string | null) => number | null;
+
+/** No tenant is limited. */
+export const UNLIMITED: LaneLimits = () => null;
+
 /** A row as a claim returns it: always with the claim's id. */
 export type ClaimedRow = DeliveryRow & { claimId: string };
 
@@ -78,8 +88,11 @@ export interface DeliveryRepo {
    * Claims one due delivery ('queued' or 'waiting' with run_after <= now, or 'running' whose lease
    * has expired): status 'running', a fresh claimId, leased until now + leaseSeconds. Attempts
    * count deliveries: + 1, except when claiming a 'waiting' delivery to poll its sink job.
+   * A 'queued' delivery is skipped while its tenant (its target's sink and instance) already has
+   * `lanes(sink, instance)` deliveries 'running' or 'waiting'; a 'waiting' delivery and an expired
+   * lease hold their lane already and are claimable regardless.
    */
-  claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null>;
+  claim(now: Date, leaseSeconds: number, lanes: LaneLimits): Promise<ClaimedRow | null>;
   /**
    * One transaction: the status change, the lease cleared, the next event in the outbox. Only
    * for the current claim: false (and nothing written) when the delivery is no longer running
@@ -160,6 +173,9 @@ export const FINAL_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 export class MemoryDeliveryRepo implements DeliveryRepo {
+  /** `targets` tells each delivery's tenant; without it (or for a target gone) none is limited. */
+  constructor(private readonly targets?: Pick<TargetRepo, 'get'>) {}
+
   private readonly packages = new Map<string, NewPackage>();
   private readonly deliveries = new Map<string, MemoryDelivery>();
   private readonly events: MemoryEvent[] = [];
@@ -204,11 +220,37 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
     }
   }
 
-  async claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null> {
-    const due = [...this.deliveries.values()]
+  /** The tenant key of a delivery's target, null when unknown. */
+  private async tenantOf(targetId: string): Promise<[string, string | null] | null> {
+    const t = this.targets ? await this.targets.get(targetId) : null;
+    return t ? [t.sinkId, t.instanceId] : null;
+  }
+
+  async claim(now: Date, leaseSeconds: number, lanes: LaneLimits): Promise<ClaimedRow | null> {
+    const all = [...this.deliveries.values()];
+    const tenants = new Map<string, [string, string | null] | null>();
+    for (const d of all) tenants.set(d.targetId, await this.tenantOf(d.targetId));
+    const sameTenant = (a: string, b: string) => {
+      const [x, y] = [tenants.get(a), tenants.get(b)];
+      return !!x && !!y && x[0] === y[0] && x[1] === y[1];
+    };
+    const laneFree = (d: MemoryDelivery) => {
+      const tenant = tenants.get(d.targetId);
+      const limit = tenant ? lanes(tenant[0], tenant[1]) : null;
+      if (limit === null) return true;
+      const busy = all.filter(
+        (o) =>
+          o.id !== d.id &&
+          (o.status === 'running' || o.status === 'waiting') &&
+          sameTenant(o.targetId, d.targetId),
+      ).length;
+      return busy < limit;
+    };
+    const due = all
       .filter(
         (d) =>
-          ((d.status === 'queued' || d.status === 'waiting') && d.runAfter <= now) ||
+          (d.status === 'queued' && d.runAfter <= now && laneFree(d)) ||
+          (d.status === 'waiting' && d.runAfter <= now) ||
           (d.status === 'running' && d.leaseUntil !== null && d.leaseUntil < now),
       )
       .sort((a, b) => a.runAfter.getTime() - b.runAfter.getTime() || a.order - b.order);

@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { PgDeliveryRepo } from '../../src/deliveries/pg.js';
+import { UNLIMITED } from '../../src/deliveries/repo.js';
 import { deliveriesContract, delivery, pkg } from '../deliveries-contract.js';
 import { freshBridge, url } from './db.js';
 
@@ -29,7 +30,7 @@ describe.skipIf(!url)('PgDeliveryRepo', () => {
     await Promise.all(
       Array.from({ length: 10 }, async () => {
         for (;;) {
-          const row = await repo.claim(now, 300);
+          const row = await repo.claim(now, 300, UNLIMITED);
           if (!row) return;
           claimed.push(row.id);
         }

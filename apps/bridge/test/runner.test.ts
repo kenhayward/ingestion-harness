@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { BridgePackage, Capabilities, ConditionalUpdate } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { acceptDeliveries } from '../src/deliveries/accept.js';
-import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
+import { MemoryDeliveryRepo, UNLIMITED } from '../src/deliveries/repo.js';
 import { backoff, runOnce } from '../src/deliveries/runner.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
@@ -452,7 +452,7 @@ describe('a personal sink', () => {
         message: 'delivering to Acme needs a person to deliver as',
       },
     });
-    expect(await deliveries.claim(T0, 300)).toBeNull();
+    expect(await deliveries.claim(T0, 300, UNLIMITED)).toBeNull();
   });
 
   it('accept refuses an acting user with no connection for the instance', async () => {

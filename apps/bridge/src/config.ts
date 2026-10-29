@@ -59,6 +59,8 @@ const EnvSchema = z
     ),
     BRIDGE_MAX_ATTEMPTS: z.preprocess(blank, z.coerce.number().int().positive().default(8)),
     BRIDGE_LEASE_SECONDS: z.preprocess(blank, z.coerce.number().int().positive().default(300)),
+    /** Delivery runner loops in this process; each tenant's lanes still bound what runs at once. */
+    BRIDGE_DELIVERY_RUNNERS: z.preprocess(blank, z.coerce.number().int().min(1).max(32).default(4)),
     /** The deployment's own S3 (SeaweedFS): internal targets and the package staging bucket. */
     S3_ENDPOINT: z.string().url(),
     /** Another URL the deployment's S3 answers on: a connection there keeps to its bucket rules. */

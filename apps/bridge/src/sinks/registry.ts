@@ -10,7 +10,8 @@ export interface SinkEntry {
   key: string;
 }
 
-const BUILT_IN = new Set(['s3', 'rdf']);
+/** The sinks the bridge runs itself (never lane-limited). */
+export const BUILT_IN: ReadonlySet<string> = new Set(['s3', 'rdf']);
 
 /** Why an entry is refused (never its key); null when it is good. */
 function entryProblem(e: Record<string, unknown>): string | null {
@@ -84,7 +85,7 @@ export function effectiveDescribe(id: string, d: SinkDescribe): SinkDescribe {
  * needs it is refused as retryable. Every other call goes straight to the sink.
  */
 export class CachingSinkRegistry implements SinkRegistry {
-  private readonly described = new Map<string, SinkDescribe>();
+  private readonly describes = new Map<string, SinkDescribe>();
   private readonly available = new Set<string>();
   private readonly ports = new Map<string, SinkPort>();
 
@@ -96,7 +97,7 @@ export class CachingSinkRegistry implements SinkRegistry {
     await Promise.all(
       Object.entries(this.sinks).map(async ([id, sink]) => {
         try {
-          this.described.set(id, await sink.describe());
+          this.describes.set(id, await sink.describe());
           this.available.add(id);
         } catch {
           this.available.delete(id);
@@ -112,7 +113,7 @@ export class CachingSinkRegistry implements SinkRegistry {
         .filter(([id]) => !this.available.has(id))
         .map(async ([id, sink]) => {
           try {
-            this.described.set(id, await sink.describe());
+            this.describes.set(id, await sink.describe());
             this.available.add(id);
           } catch {
             // Still unavailable: the next try, or the full refresh, sees it again.
@@ -123,6 +124,10 @@ export class CachingSinkRegistry implements SinkRegistry {
 
   status(id: string): 'available' | 'unavailable' {
     return this.available.has(id) ? 'available' : 'unavailable';
+  }
+
+  described(id: string): SinkDescribe | null {
+    return this.describes.get(id) ?? null;
   }
 
   get(id: string): SinkPort | null {
@@ -136,7 +141,7 @@ export class CachingSinkRegistry implements SinkRegistry {
   private cached(id: string, sink: SinkPort): SinkPort {
     const port = Object.create(sink) as SinkPort;
     port.describe = async () => {
-      const d = this.described.get(id);
+      const d = this.describes.get(id);
       if (!d) {
         throw new SinkError(
           bridgeError('sink_unavailable', `the sink ${id} has not described itself yet`),

@@ -1,6 +1,6 @@
 import { CreateDeliveriesResultSchema, DeliveryViewSchema } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
-import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
+import { MemoryDeliveryRepo, UNLIMITED } from '../src/deliveries/repo.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
@@ -104,7 +104,7 @@ describe('POST /v1/deliveries', () => {
       code: 'target_missing',
       details: { targetId: 'nope' },
     });
-    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+    expect(await deliveries.claim(new Date('2100-01-01'), 300, UNLIMITED)).toBeNull();
   });
 
   it('answers 503 when a target names a sink that is not registered', async () => {
@@ -145,7 +145,7 @@ describe('POST /v1/deliveries', () => {
       code: 'unsupported_part',
       details: { targetId: 't1', part: 'document' },
     });
-    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+    expect(await deliveries.claim(new Date('2100-01-01'), 300, UNLIMITED)).toBeNull();
   });
 
   it('document package to a v2 sink without decomposedDocuments is unsupported_part', async () => {
@@ -201,7 +201,7 @@ describe('POST /v1/deliveries', () => {
       message: expect.stringContaining('a conditional update needs a decomposed document'),
       details: { targetId: 'd1', part: 'document' },
     });
-    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+    expect(await deliveries.claim(new Date('2100-01-01'), 300, UNLIMITED)).toBeNull();
   });
 
   it('update to a sink without decomposedDocuments is refused', async () => {
@@ -217,7 +217,7 @@ describe('POST /v1/deliveries', () => {
       message: expect.stringContaining('a sink that takes them'),
       details: { targetId: 't1', part: 'document' },
     });
-    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+    expect(await deliveries.claim(new Date('2100-01-01'), 300, UNLIMITED)).toBeNull();
   });
 
   it('a delivery without update keeps none', async () => {
@@ -308,7 +308,7 @@ describe('POST /v1/deliveries to an unavailable sink', () => {
     });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toMatchObject({ class: 'retryable', code: 'sink_unavailable' });
-    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+    expect(await deliveries.claim(new Date(), 300, UNLIMITED)).toBeNull();
   });
 });
 
@@ -322,7 +322,7 @@ describe('POST /v1/deliveries resolves name patterns', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ code: 'content_rejected' });
-    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+    expect(await deliveries.claim(new Date(), 300, UNLIMITED)).toBeNull();
   });
 });
 
@@ -366,7 +366,7 @@ describe('POST /v1/deliveries, a pattern that resolves to nothing', () => {
       code: 'pattern_unresolved',
       details: { targetId: 't1', field: 'name', variables: ['field:nowhere'] },
     });
-    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+    expect(await deliveries.claim(new Date(), 300, UNLIMITED)).toBeNull();
   });
 });
 
@@ -420,6 +420,6 @@ describe('POST /v1/deliveries:preflight', () => {
         },
       ],
     });
-    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+    expect(await deliveries.claim(new Date(), 300, UNLIMITED)).toBeNull();
   });
 });

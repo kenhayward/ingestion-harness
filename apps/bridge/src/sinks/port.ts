@@ -70,6 +70,8 @@ export interface SinkRegistry {
   ids(): string[];
   /** Whether the sink answered its last describe (built-in sinks always do). */
   status(id: string): 'available' | 'unavailable';
+  /** The sink's last describe, without a call; null when it has none at hand (never described). */
+  described(id: string): SinkDescribe | null;
 }
 
 export class MapSinkRegistry implements SinkRegistry {
@@ -85,5 +87,10 @@ export class MapSinkRegistry implements SinkRegistry {
 
   status(): 'available' {
     return 'available';
+  }
+
+  /** A plain map caches nothing: its external sinks read as not described (one lane each). */
+  described(): null {
+    return null;
   }
 }

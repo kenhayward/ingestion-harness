@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { bridgeError, type ActingUser } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
-import type { DeliveryRepo, NewPackage } from '../src/deliveries/repo.js';
+import { type DeliveryRepo, type NewPackage, UNLIMITED } from '../src/deliveries/repo.js';
 
 const T0 = new Date('2026-10-19T12:00:00.000Z');
 const at = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
@@ -63,7 +63,7 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       await repo.create(pkg(), [without], at(1));
       expect((await repo.get(withUpdate.id))?.update).toEqual(update);
       expect((await repo.get(without.id))?.update).toBeNull();
-      expect((await repo.claim(T0, 300))?.update).toEqual(update);
+      expect((await repo.claim(T0, 300, UNLIMITED))?.update).toEqual(update);
     });
 
     it('claim takes the oldest due delivery and leases it', async () => {
@@ -72,36 +72,36 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const late = delivery();
       await repo.create(pkg(), [early], T0);
       await repo.create(pkg(), [late], at(1));
-      const claimed = await repo.claim(at(2), 300);
+      const claimed = await repo.claim(at(2), 300, UNLIMITED);
       expect(claimed).toMatchObject({ id: early.id, status: 'running', attempts: 1 });
-      expect((await repo.claim(at(2), 300))?.id).toBe(late.id);
-      expect(await repo.claim(at(2), 300)).toBeNull();
+      expect((await repo.claim(at(2), 300, UNLIMITED))?.id).toBe(late.id);
+      expect(await repo.claim(at(2), 300, UNLIMITED)).toBeNull();
     });
 
     it('claim waits for run_after', async () => {
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const c = await repo.claim(T0, 300);
+      const c = await repo.claim(T0, 300, UNLIMITED);
       const error = bridgeError('timeout', 'slow');
       await repo.transition(d.id, { status: 'queued', runAfter: at(60), error }, T0, c!.claimId);
-      expect(await repo.claim(at(59), 300)).toBeNull();
-      expect((await repo.claim(at(60), 300))?.id).toBe(d.id);
+      expect(await repo.claim(at(59), 300, UNLIMITED)).toBeNull();
+      expect((await repo.claim(at(60), 300, UNLIMITED))?.id).toBe(d.id);
     });
 
     it('claim skips a delivery leased by someone else', async () => {
       const repo = await make();
       await repo.create(pkg(), [delivery()], T0);
-      expect(await repo.claim(T0, 300)).not.toBeNull();
-      expect(await repo.claim(at(299), 300)).toBeNull();
+      expect(await repo.claim(T0, 300, UNLIMITED)).not.toBeNull();
+      expect(await repo.claim(at(299), 300, UNLIMITED)).toBeNull();
     });
 
     it('reclaims an expired lease', async () => {
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      await repo.claim(T0, 300);
-      const again = await repo.claim(at(301), 300);
+      await repo.claim(T0, 300, UNLIMITED);
+      const again = await repo.claim(at(301), 300, UNLIMITED);
       expect(again).toMatchObject({ id: d.id, status: 'running', attempts: 2 });
     });
 
@@ -109,8 +109,8 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const slow = await repo.claim(T0, 300);
-      const takeover = await repo.claim(at(301), 300);
+      const slow = await repo.claim(T0, 300, UNLIMITED);
+      const takeover = await repo.claim(at(301), 300, UNLIMITED);
       expect(takeover?.claimId).not.toBe(slow?.claimId);
       const receipt = { written: [] };
       expect(
@@ -127,14 +127,14 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const c = await repo.claim(T0, 300);
+      const c = await repo.claim(T0, 300, UNLIMITED);
       await repo.transition(
         d.id,
         { status: 'waiting', sinkJobId: 'job-1', runAfter: at(30) },
         T0,
         c!.claimId,
       );
-      expect(await repo.claim(at(30), 300)).toMatchObject({
+      expect(await repo.claim(at(30), 300, UNLIMITED)).toMatchObject({
         status: 'running',
         attempts: 1,
         sinkJobId: 'job-1',
@@ -145,14 +145,14 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      let c = await repo.claim(T0, 300);
+      let c = await repo.claim(T0, 300, UNLIMITED);
       await repo.transition(
         d.id,
         { status: 'waiting', sinkJobId: 'job-1', runAfter: at(30) },
         T0,
         c!.claimId,
       );
-      c = await repo.claim(at(30), 300);
+      c = await repo.claim(at(30), 300, UNLIMITED);
       const error = bridgeError('instance_unavailable', 'down');
       await repo.transition(
         d.id,
@@ -167,7 +167,7 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const c = await repo.claim(T0, 300);
+      const c = await repo.claim(T0, 300, UNLIMITED);
       const error = bridgeError('timeout', 'slow');
       await repo.transition(d.id, { status: 'queued', runAfter: at(30), error }, T0, c!.claimId);
       expect(await repo.get(d.id)).toMatchObject({ status: 'queued', runAfter: at(30), error });
@@ -177,7 +177,7 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const c = await repo.claim(T0, 300);
+      const c = await repo.claim(T0, 300, UNLIMITED);
       const receipt = { written: [{ kind: 'object', id: 'k', label: null, url: null }] };
       await repo.transition(d.id, { status: 'succeeded', receipt }, at(1), c!.claimId);
       expect(await repo.get(d.id)).toMatchObject({ status: 'succeeded', receipt });
@@ -192,15 +192,18 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       const repo = await make();
       const d = delivery();
       await repo.create(pkg(), [d], T0);
-      const c = await repo.claim(T0, 300);
+      const c = await repo.claim(T0, 300, UNLIMITED);
       await repo.transition(
         d.id,
         { status: 'waiting', sinkJobId: 'job-9', runAfter: at(30) },
         T0,
         c!.claimId,
       );
-      expect(await repo.claim(at(29), 300)).toBeNull();
-      expect(await repo.claim(at(30), 300)).toMatchObject({ id: d.id, sinkJobId: 'job-9' });
+      expect(await repo.claim(at(29), 300, UNLIMITED)).toBeNull();
+      expect(await repo.claim(at(30), 300, UNLIMITED)).toMatchObject({
+        id: d.id,
+        sinkJobId: 'job-9',
+      });
     });
 
     it('latestSucceeded finds the newest success for target and key, excluding the asker', async () => {
@@ -211,8 +214,8 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
         await repo.create(pkg(), [d], at(i));
       }
       for (const [i, d] of [first, second, other].entries()) {
-        let c = await repo.claim(at(10), 300);
-        while (c && c.id !== d.id) c = await repo.claim(at(10), 300);
+        let c = await repo.claim(at(10), 300, UNLIMITED);
+        while (c && c.id !== d.id) c = await repo.claim(at(10), 300, UNLIMITED);
         await repo.transition(d.id, { status: 'succeeded', receipt }, at(20 + i), c!.claimId);
       }
       expect((await repo.latestSucceeded('t1', KEY, asking.id))?.id).toBe(second.id);
@@ -244,7 +247,7 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       await repo.create(pkg(), [delivery('t1')], T0);
       expect(await repo.usesTarget('t1')).toBe(true);
       expect(await repo.usesTarget('t2')).toBe(false);
-      const claimed = (await repo.claim(at(1), 300))!;
+      const claimed = (await repo.claim(at(1), 300, UNLIMITED))!;
       expect(await repo.usesTarget('t1')).toBe(true);
       await repo.transition(
         claimed.id,
@@ -267,7 +270,7 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       await repo.create(young, [ids[2]!], at(2));
       await repo.create(kept, [ids[3]!], at(3));
       const claims = [];
-      for (let n = 0; n < 4; n++) claims.push((await repo.claim(at(10), 300))!);
+      for (let n = 0; n < 4; n++) claims.push((await repo.claim(at(10), 300, UNLIMITED))!);
       expect(claims.map((c) => c.id)).toEqual(ids.map((d) => d.id));
       const final = { status: 'failed' as const, error: bridgeError('timeout', 'x') };
       await repo.transition(

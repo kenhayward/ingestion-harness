@@ -28,6 +28,7 @@ describe('bridge config', () => {
       BRIDGE_MAX_ATTEMPTS: 8,
       BRIDGE_LEASE_SECONDS: 300,
       BRIDGE_PACKAGE_RETENTION_DAYS: 30,
+      BRIDGE_DELIVERY_RUNNERS: 4,
     });
     expect(c.BRIDGE_EVENTS_URL).toBeUndefined();
   });
@@ -37,6 +38,20 @@ describe('bridge config', () => {
       PORT: 4000,
       BRIDGE_MAX_ATTEMPTS: 3,
     });
+  });
+
+  it('runs 1 to 32 delivery runners', () => {
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '32' }).BRIDGE_DELIVERY_RUNNERS,
+    ).toBe(32);
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '1' }).BRIDGE_DELIVERY_RUNNERS,
+    ).toBe(1);
+    for (const bad of ['0', '33', '2.5']) {
+      expect(() => loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: bad })).toThrow(
+        /BRIDGE_DELIVERY_RUNNERS/,
+      );
+    }
   });
 
   it('needs BRIDGE_SECRETS_KEY as 32 bytes of base64, and parses the previous one', () => {

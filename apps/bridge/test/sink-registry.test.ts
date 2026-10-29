@@ -105,6 +105,17 @@ describe('CachingSinkRegistry', () => {
     });
   });
 
+  it('hands out the last describe without a call, none before the first', async () => {
+    const sink = new Flaky({ name: 'Remote' });
+    const registry = new CachingSinkRegistry({ fake: sink });
+    expect(registry.described('fake')).toBeNull();
+    await registry.refresh();
+    expect(registry.described('fake')?.name).toBe('Remote');
+    sink.down = true;
+    await registry.refresh();
+    expect(registry.described('fake')?.name).toBe('Remote');
+  });
+
   it('passes every other call straight to the sink', async () => {
     const sink = new FakeSink();
     const registry = new CachingSinkRegistry({ fake: sink });

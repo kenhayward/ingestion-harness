@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
+import { MemoryDeliveryRepo, UNLIMITED } from '../src/deliveries/repo.js';
 import { prunePackagesOnce } from '../src/packages/prune.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { pkg } from './deliveries-contract.js';
@@ -27,7 +27,7 @@ describe('pruning staged packages (BRIDGE_PACKAGE_RETENTION_DAYS)', () => {
     await deliveries.create(busy, [{ ...d, id: randomUUID() }], at(1));
     await packages.put(done.stagedKey, documentPackage);
     await packages.put(busy.stagedKey, documentPackage);
-    const c = await deliveries.claim(at(2), 300);
+    const c = await deliveries.claim(at(2), 300, UNLIMITED);
     await deliveries.transition(
       d.id,
       { status: 'succeeded', receipt: { written: [] } },
