@@ -113,6 +113,25 @@ def test_a_picture_over_an_image_or_without_a_grid_stays() -> None:
         assert not any(isinstance(i, LayoutTable) for i in found)
 
 
+def test_a_rule_drawn_in_pieces_a_little_off_line_parts_every_cell() -> None:
+    # The piece under the right column is a hundredth of a point higher than the others, as on
+    # ICH S11's Table A1: the line is still whole, so no cell spans the rows it parts.
+    lines = [line for line in rules() if not (line[1] == line[3] == YS[1])]
+    lines += [(XS[c], YS[1] - (0.01 if c == 2 else 0), XS[c + 1], YS[1]) for c in range(3)]
+    [table] = [i for i in recover(page(lines=lines)) if isinstance(i, LayoutTable)]
+    assert (table.rows, table.cols) == (3, 3)
+    assert all(c.row_span == c.col_span == 1 for c in table.cells)
+
+
+def test_an_underline_in_a_cell_is_no_row_edge() -> None:
+    # A short horizontal rule under a word in a cell (ICH S5(R3)'s annex tables): no cell has it
+    # for an edge, so it makes no row.
+    lines = [*rules(), (XS[0] + 1, YS[1] + 16, XS[0] + 40, YS[1] + 16)]  # from the border
+    [table] = [i for i in recover(page(lines=lines)) if isinstance(i, LayoutTable)]
+    assert (table.rows, table.cols) == (3, 3)
+    assert all(c.row_span == c.col_span == 1 for c in table.cells)
+
+
 def test_a_cell_that_is_not_a_rectangle_keeps_the_picture() -> None:
     # an L: no rule between the top two right cells, nor under the top right one
     lines = [line for line in rules(open_top_right=True) if line != (XS[2], YS[1], XS[3], YS[1])]

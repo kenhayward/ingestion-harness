@@ -161,8 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 29 October 2026: failed documents re-run in their own batch, which shows them going
-        through, and an Auto approve choice when re-running. PR #361. Four more ICH guidelines read:
-        PR #362.
+        through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
+        PR #362, and four more: PR #363.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -176,8 +176,12 @@
         <h4>Fixes</h4>
         <ul>
           <li>
-            <a href="#pdf-printed-size">ICH S5(R3), S11, E2C(R2) and M9 read</a>
-            <span>— printed text sizes, a table drawn as a picture, hidden text, a formula</span>
+            <a href="#pdf-printed-size">ICH S5(R3) and S11 read</a>
+            <span>— printed text sizes, words drawn apart, and a table drawn as a picture</span>
+          </li>
+          <li>
+            <a href="#pdf-table-shapes">ICH S5(R3), S11, E2C(R2) and M9 delivered</a>
+            <span>— underlines and broken borders in ruled tables, hidden text, a formula</span>
           </li>
         </ul>
       </nav>
@@ -222,14 +226,11 @@
 
       <h2 id="fixes">Fixes</h2>
 
-      <h3 id="pdf-printed-size">ICH S5(R3), S11, E2C(R2) and M9 read</h3>
+      <h3 id="pdf-printed-size">ICH S5(R3) and S11 read</h3>
       <p class="prs">
         <a href="https://github.com/kenhayward/ingestion-harness/pull/362">#362</a>
       </p>
-      <p>
-        Two PDFs still failed after the last fixes, and two more were found failing in a run over
-        the ICH guidelines. Once this is deployed, re-run them.
-      </p>
+      <p>Two PDFs still failed after the last fixes. Once this is deployed, re-run them.</p>
       <ul>
         <li>
           <strong>S5(R3)</strong> failed with <em>'C' missing</em>. Its fonts are all set at 1 point
@@ -253,6 +254,37 @@
           paragraphs that had been split a word at a time (in S4 and S6(R1), say) now read whole.
         </li>
         <li>
+          Other PDFs can read slightly differently where their text is scaled, so their decomposer
+          version changes (1009).
+        </li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-table-shapes">ICH S5(R3), S11, E2C(R2) and M9 delivered</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/363">#363</a>
+      </p>
+      <p>
+        With #362, S5(R3) and S11 passed the reader's checks but were refused on delivery, each for
+        the shape of a table read from its ruling lines. E2C(R2) and M9 failed in a run over the ICH
+        guidelines. Once this is deployed, re-run all four.
+      </p>
+      <ul>
+        <li>
+          <strong>S5(R3)</strong> was refused with <em>row 3 has no cells</em>. The underlines in
+          its annex tables' cells ("aspirin", "salicylate") were taken for the lines between rows,
+          so a table of one header row and one row of findings came out with a dozen rows, every
+          cell spanning them all. A line now makes a row only where it is a cell's edge. Two of
+          those tables, left as pictures before, are now read as tables.
+        </li>
+        <li>
+          <strong>S11</strong> was refused with <em>spans from the header rows into the body</em>.
+          The line under Table A1's header was drawn in three pieces at very slightly different
+          heights, and the pieces were joined wrongly, losing the line under the first three
+          columns. "Cardiovascular" was read into the header's "Age Categories" cell. The pieces are
+          now joined along the line, and the header reads as drawn.
+        </li>
+        <li>
           <strong>E2C(R2)</strong> failed with <em>'Shading' missing</em>. Figure 1's drawing holds
           a second copy of its caption that is hidden (clipped away), on the same line as the one
           printed, and the two were read into each other a letter at a time. Hidden text is now left
@@ -263,10 +295,7 @@
           "t=1" under the sum and the "n" over it were one word to the document and two to the
           check. The check now reads them as one word.
         </li>
-        <li>
-          Other PDFs can read slightly differently where their text is scaled, so their decomposer
-          version changes (1009).
-        </li>
+        <li>The decomposer version changes (1010).</li>
       </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

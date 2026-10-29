@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import pairwise
 
 from ingest_worker.decompose.pdf.layout import (
     BBox,
@@ -177,6 +178,9 @@ def _table(rules: list[BBox], picture: LayoutPicture, n: int) -> LayoutTable | N
     down = _merged(_Rule((r[0] + r[2]) / 2, r[1], r[3]) for r in rules if r[3] - r[1] > r[2] - r[0])
     ys = sorted({r.at for r in across})
     xs = sorted({r.at for r in down})
+    # a line that bounds no cell is no row's edge: an underline in a cell, say
+    ys = [y for y in ys if y in (ys[0], ys[-1]) or _bounds(across, y, xs)]
+    xs = [x for x in xs if x in (xs[0], xs[-1]) or _bounds(down, x, ys)]
     rows, cols = len(ys) - 1, len(xs) - 1
     if rows < 2 or cols < 2:
         return None
@@ -198,17 +202,36 @@ def _table(rules: list[BBox], picture: LayoutPicture, n: int) -> LayoutTable | N
 
 
 def _merged(rules: Iterable[_Rule]) -> list[_Rule]:
-    """Rules on one line (within `_NEAR`) joined where they meet, each line at its first rule's
-    position: Word draws a border as a rule per cell and a dot at each corner."""
-    out: list[_Rule] = []
-    for rule in sorted(rules, key=lambda r: (r.at, r.start)):
-        line = [r for r in out if abs(r.at - rule.at) <= _NEAR]
-        last = line[-1] if line else None
-        if last is not None and rule.start <= last.end + _NEAR:
-            out[out.index(last)] = _Rule(last.at, last.start, max(last.end, rule.end))
+    """Rules on one line (within `_NEAR` of its first) joined where they meet, left to right (or
+    top down), each line at its first rule's position: Word draws a border as a rule per cell
+    and a dot at each corner. The rules of a line are put in order along it, not by where each
+    is across it: a rule a hundredth of a point higher came first, and the rules before it
+    along the line were joined to its start, which they lost."""
+    lines: list[list[_Rule]] = []
+    for rule in sorted(rules, key=lambda r: r.at):
+        if lines and rule.at - lines[-1][0].at <= _NEAR:
+            lines[-1].append(rule)
         else:
-            out.append(_Rule(line[0].at if line else rule.at, rule.start, rule.end))
+            lines.append([rule])
+    out: list[_Rule] = []
+    for line in lines:
+        at = line[0].at
+        current: _Rule | None = None
+        for rule in sorted(line, key=lambda r: r.start):
+            if current is not None and rule.start <= current.end + _NEAR:
+                current = _Rule(at, current.start, max(current.end, rule.end))
+            else:
+                if current is not None:
+                    out.append(current)
+                current = _Rule(at, rule.start, rule.end)
+        if current is not None:
+            out.append(current)
     return out
+
+
+def _bounds(rules: list[_Rule], at: float, edges: list[float]) -> bool:
+    """Whether rules on line `at` run the whole way between two neighbouring `edges` anywhere."""
+    return any(_covers(rules, at, a, b) for a, b in pairwise(edges))
 
 
 def _covers(rules: list[_Rule], at: float, start: float, end: float) -> bool:
