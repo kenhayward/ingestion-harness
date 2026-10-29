@@ -135,10 +135,13 @@ export interface ItemSettlement {
  * The item outcomes a register settlement may move: nothing final decided yet, or `failed`,
  * which the worker's last attempt may write after the bridge took the document. The entry is
  * pending for this very delivery, so the delivery's own outcome replaces that failure.
+ * `waiting_to_deliver` too: a waited run hands its stored decomposition over while the item
+ * still reads waiting, and the bridge's final event may come before it records `delivering`.
  */
 export const SETTLEABLE_ITEM: readonly ItemOutcome[] = [
   'queued',
   'decomposing',
+  'waiting_to_deliver',
   'delivering',
   'failed',
 ];

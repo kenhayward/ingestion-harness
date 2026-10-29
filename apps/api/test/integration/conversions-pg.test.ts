@@ -422,6 +422,19 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     expect((await t.repo.getItem(t.itemId))?.outcome).toBe('created');
   });
 
+  it("settles an item still waiting for its lane when its delivery's event comes first", async () => {
+    const t = await handedOff();
+    await t.p.query(`UPDATE decomposition_items SET outcome = 'waiting_to_deliver' WHERE id = $1`, [
+      t.itemId,
+    ]);
+    await applyEvent(t.deps, t.event());
+    expect(await t.repo.getItem(t.itemId)).toMatchObject({
+      outcome: 'created',
+      registerEntryId: t.entryId,
+      finishedAt: expect.any(String),
+    });
+  });
+
   it('settles a changed document as changed_in_target, and the job never awaits review', async () => {
     const t = await handedOff({ persistentId: 'doc-1' });
     await t.p.query(`UPDATE decomposition_items SET outcome = 'delivering' WHERE id = $1`, [
