@@ -44,6 +44,9 @@ export interface ConversionRepo {
    * (`decompositionBatchPrefix`) that an item of another batch still names (a force-load re-run
    * delivers the stored file it was asked to): the caller deletes the rest of the prefix.
    * Refused `running` with how many are unfinished, or `not_started` (open or discarded).
+   * A watch's batch is never refused for running documents: its finished documents are deleted
+   * and the unfinished ones stay with the batch (`remove` names the files to delete); with none
+   * unfinished the batch goes too and `watched_folders.batch_id` is cleared.
    */
   deleteBatch(id: string): Promise<DeleteBatchResult>;
   /**
@@ -335,7 +338,16 @@ export type DiscardBatchResult =
   { ok: true; objectKeys: string[] } | { ok: false; reason: 'missing' | 'not_open' };
 
 export type DeleteBatchResult =
-  | { ok: true; kept: string[] }
+  | {
+      ok: true;
+      kept: string[];
+      /**
+       * Present only when the batch stays (a watch's batch with documents still under way): the
+       * files of the deleted documents, which are all the caller deletes. Absent: the batch is
+       * gone, and the caller deletes its prefix but for `kept`.
+       */
+      remove?: string[];
+    }
   | { ok: false; reason: 'missing' | 'not_started' }
   | { ok: false; reason: 'running'; running: number };
 

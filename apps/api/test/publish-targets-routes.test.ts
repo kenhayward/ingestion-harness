@@ -87,6 +87,7 @@ describe('publishing target routes: list and choices', () => {
       deliveredOutputs: 0,
       consumers: 0,
       pendingJobs: 0,
+      watches: 0,
     });
     for (const hidden of [SECRET, 'secretKeyEnc', 'AKIAFINANCE', FINANCE_ENDPOINT, 'secretSet']) {
       expect(res.body).not.toContain(hidden);
@@ -666,6 +667,7 @@ describe('DELETE /api/publish-targets/:id', () => {
       deliveredOutputs: 0,
       consumers: 0,
       pendingJobs: 0,
+      watches: 0,
     });
     const deleted = vi.spyOn(c.bridge, 'deleteTarget');
     const res = await c.call('DELETE', '/publish-targets/finance-lake');

@@ -82,24 +82,33 @@ export const TargetUsageSchema = z.object({
   consumers: z.number().int().nonnegative(),
   /** Queued or running `withdraw` jobs whose params name the target. */
   pendingJobs: z.number().int().nonnegative(),
+  /** Watched folders that name the target (migration 202610291400). */
+  watches: z.number().int().nonnegative(),
 });
 export type TargetUsage = z.infer<typeof TargetUsageSchema>;
 
 /**
- * In use: a published version, a recorded output or graph version, a consumer grant, or an
- * queued or running withdrawal names it.
+ * In use: a published version, a recorded output or graph version, a consumer grant, a queued or
+ * running withdrawal or a watched folder names it.
  */
 export function targetInUse(u: TargetUsage): boolean {
-  return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0 || u.pendingJobs > 0;
+  return (
+    u.publishedVersions > 0 ||
+    u.deliveredOutputs > 0 ||
+    u.consumers > 0 ||
+    u.pendingJobs > 0 ||
+    u.watches > 0
+  );
 }
 
 /**
- * What keeps a target from being removed: an S3 key consumer granted it, or a queued or running
- * withdrawal naming it. A recipe version naming it does not (its documents go to review until a
- * version without it is published), nor does a delivered output (the removed row stays, inert).
+ * What keeps a target from being removed: an S3 key consumer granted it, a queued or running
+ * withdrawal naming it, or a watched folder (remove the watch first). A recipe version naming it
+ * does not (its documents go to review until a version without it is published), nor does a
+ * delivered output (the removed row stays, inert).
  */
 export function blocksRemoval(u: TargetUsage): boolean {
-  return u.consumers > 0 || u.pendingJobs > 0;
+  return u.consumers > 0 || u.pendingJobs > 0 || u.watches > 0;
 }
 
 /** A connection id on the delivery bridge (where a target's credentials live). */

@@ -1385,9 +1385,15 @@ export class MemoryRepo implements IngestionRepo {
       autoApprove,
       createdAt: new Date().toISOString(),
       startedAt: null,
+      watch: null,
     };
     this.conversionBatches.set(batch.id, batch);
     return structuredClone(batch);
+  }
+
+  /** Test hook: the watched folder that owns a batch (the worker makes such a batch in production). */
+  markWatchBatch(batchId: string, watch: NonNullable<Batch['watch']>): void {
+    this.conversionBatches.get(batchId)!.watch = { ...watch };
   }
 
   async getBatch(id: string): Promise<Batch | null> {
@@ -1485,7 +1491,7 @@ export class MemoryRepo implements IngestionRepo {
     batch.state = 'discarded';
     const objectKeys = [...this.conversionItems.values()]
       .filter((i) => i.batchId === id)
-      .map((i) => i.objectKey);
+      .flatMap((i) => (i.objectKey ? [i.objectKey] : []));
     return { ok: true, objectKeys };
   }
 
@@ -1495,13 +1501,22 @@ export class MemoryRepo implements IngestionRepo {
     if (batch.state !== 'started') return { ok: false, reason: 'not_started' };
     const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
     const running = items.filter((i) => RUNNING_OUTCOMES.includes(i.outcome)).length;
-    if (running > 0) return { ok: false, reason: 'running', running };
+    if (running > 0 && !batch.watch) return { ok: false, reason: 'running', running };
+    if (running > 0) {
+      const finished = items.filter((i) => !RUNNING_OUTCOMES.includes(i.outcome));
+      for (const i of finished) this.conversionItems.delete(i.id);
+      const named = new Set(
+        [...this.conversionItems.values()].map((i) => i.objectKey).filter((k) => k !== null),
+      );
+      const keys = finished.flatMap((i) => [i.objectKey, i.reportKey]).filter((k) => k !== null);
+      return { ok: true, kept: [], remove: [...new Set(keys)].filter((k) => !named.has(k)).sort() };
+    }
     const prefix = decompositionBatchPrefix(id);
     const kept = [
       ...new Set(
         [...this.conversionItems.values()]
-          .filter((i) => i.batchId !== id && i.objectKey.startsWith(prefix))
-          .map((i) => i.objectKey),
+          .filter((i) => i.batchId !== id && i.objectKey?.startsWith(prefix))
+          .map((i) => i.objectKey as string),
       ),
     ].sort();
     for (const i of items) this.conversionItems.delete(i.id);
@@ -1536,6 +1551,7 @@ export class MemoryRepo implements IngestionRepo {
       autoApprove: false,
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
+      watch: null,
     };
     const item: StoredItem = {
       id: itemId,

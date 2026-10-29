@@ -14,6 +14,8 @@ export interface TargetFacts {
   delivered(targetId: string): Promise<void>;
   grant(targetId: string): Promise<void>;
   withdrawal(targetId: string, status: 'queued' | 'running' | 'succeeded'): Promise<void>;
+  /** A watched folder naming the target (migration 202610291400). */
+  watch(targetId: string): Promise<void>;
   /** A copy restore keeps a dropped external target as an inert row (`inert_at`). */
   inert(targetId: string): Promise<void>;
   /** Keys from before the bridge (`publish_target_legacy_keys`), as the migration leaves them. */
@@ -353,6 +355,7 @@ export function publishTargetsContract(
         deliveredOutputs: 0,
         consumers: 0,
         pendingJobs: 0,
+        watches: 0,
       });
       await facts.publish('invoice', 1, 'finance');
       await facts.publish('invoice', 2, 'finance');
@@ -368,6 +371,7 @@ export function publishTargetsContract(
         deliveredOutputs: 2,
         consumers: 1,
         pendingJobs: 0,
+        watches: 0,
       });
       const listed = (await repo.list()).find((t) => t.id === 'finance');
       expect(listed?.usage).toEqual(usage);
@@ -386,6 +390,17 @@ export function publishTargetsContract(
       expect(usage.pendingJobs).toBe(2);
       expect((await repo.list()).find((t) => t.id === 'finance')?.usage).toEqual(usage);
       expect(await repo.remove('finance')).toBe('in_use');
+    });
+
+    it('a watched folder locks its target: in use, and not removable', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      await facts.watch('finance');
+      const usage = await repo.usage('finance');
+      expect(usage.watches).toBe(1);
+      expect((await repo.list()).find((t) => t.id === 'finance')?.usage).toEqual(usage);
+      expect(await repo.remove('finance')).toBe('in_use');
+      expect(await repo.get('finance')).not.toBeNull();
     });
 
     it('a target is in use when a list names it', async () => {

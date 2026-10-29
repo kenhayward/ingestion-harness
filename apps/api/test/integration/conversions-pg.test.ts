@@ -55,6 +55,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     await p.query(`DELETE FROM decomposition_register WHERE sink_id = '${CONTRACT_SINK}'`);
     await p.query('DELETE FROM decomposition_items');
     await p.query('DELETE FROM decomposition_batches');
+    await p.query('DELETE FROM watched_folders');
     await p.query(`DELETE FROM job_events WHERE job_id IN
                      (SELECT id FROM jobs WHERE task = 'decompose')`);
     await p.query(`DELETE FROM jobs WHERE task = 'decompose'`);
@@ -91,6 +92,18 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
                 createdByUser: r.created_by_user,
               }
             : null;
+        },
+        watch: async (batchId: string, name: string) => {
+          const { rows } = await p.query<{ id: string }>(
+            `INSERT INTO watched_folders (name, target_id, source, source_path, run_as, created_by)
+             VALUES ($1, 'default', '{}', '', '{}', '{}') RETURNING id`,
+            [name],
+          );
+          await p.query('UPDATE decomposition_batches SET watch_id = $2 WHERE id = $1', [
+            batchId,
+            rows[0]!.id,
+          ]);
+          return rows[0]!.id;
         },
         entry: async (seed: EntrySeed) => {
           const { rows } = await p.query<{ id: string }>(

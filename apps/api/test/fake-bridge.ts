@@ -6,6 +6,7 @@ import type {
   PreflightResult,
   SinkView,
   TargetBrowseRequest,
+  SourceFile,
   DeliveryView,
   TargetPutRequest,
   TargetTestResult,
@@ -15,6 +16,7 @@ import type {
   AdminAnswer,
   AdminCall,
   BridgeApi,
+  ProducerSourceList,
   SentConnectionSummary,
   SharedConnection,
 } from '../src/bridge/client.js';
@@ -169,6 +171,17 @@ export class FakeBridgeApi implements BridgeApi {
     this.fail();
     this.browsed.push(structuredClone(req));
     return structuredClone(this.browseResult);
+  }
+
+  /** What sourceList answers (a refusal: throw it), and every listing asked for, by target. */
+  sourceFiles: SourceFile[] | Error = [];
+  readonly listed: { targetId: string; body: ProducerSourceList }[] = [];
+
+  async sourceList(targetId: string, body: ProducerSourceList): Promise<SourceFile[]> {
+    this.fail();
+    this.listed.push({ targetId, body: structuredClone(body) });
+    if (this.sourceFiles instanceof Error) throw this.sourceFiles;
+    return structuredClone(this.sourceFiles);
   }
 
   async listPersonalConnections(owner: string): Promise<ConnectionSummary[]> {

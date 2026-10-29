@@ -40,6 +40,7 @@ async function setup() {
     deliveredCount: async () => 0,
     consumerCount: async (id) => repo.grantCount(id),
     pendingJobCount: async () => 0,
+    watchCount: async () => 0,
   });
   await cacheS3(targets, {
     id: 'finance',

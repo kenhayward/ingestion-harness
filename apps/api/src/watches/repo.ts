@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import {
   healthOf,
+  WATCH_CANCELLED_DETAIL,
   WATCH_LOCKED_SETTINGS,
   type WatchEvent,
   type WatchPatchBody,
+  type StopBody,
   type WatchRunAs,
   type WatchSettings,
   type WatchState,
@@ -26,6 +28,17 @@ export type UpdateWatchResult =
   | { ok: false; reason: 'missing' | 'running' | 'name_taken' | 'unknown_target' | 'state' };
 
 export type RemoveWatchResult = 'removed' | 'missing' | 'not_stopped';
+
+/** An item Stop now cancelled: the caller deletes its held files. */
+export interface CancelledItem {
+  itemId: string;
+  batchId: string;
+}
+
+/** `state`: the watch is not in a state the stop applies to (drain: running; now: running or draining). */
+export type StopResult =
+  | { ok: true; watch: WatchView; cancelled: CancelledItem[] }
+  | { ok: false; reason: 'missing' | 'state' };
 
 /** A patch to a watch: the settings, with the run-as user and folder path that go with a folder. */
 export interface WatchUpdate {
@@ -52,6 +65,19 @@ export interface WatchRepo {
   /** `expectState`: refused with `state` unless the watch is in it. */
   update(id: string, patch: WatchUpdate, expectState?: WatchState): Promise<UpdateWatchResult>;
   setState(id: string, state: WatchState): Promise<WatchView | null>;
+  /** Running, its problem cleared, to be looked at at once. Null for an unknown watch. */
+  start(id: string): Promise<WatchView | null>;
+  /**
+   * Stops pickups. `drain`: only a running watch, which shows *Draining* until its last item
+   * finishes. `now`: a running or draining watch becomes stopped at once, and the items that
+   * have not reached the bridge (`queued`, `decomposing`, `waiting_to_deliver`,
+   * `awaiting_review`) are cancelled in the same transaction: their jobs `cancelled`, the items
+   * `failed` with `WATCH_CANCELLED_DETAIL` and counted as failed finishes, their pickups
+   * `abandoned`. Items `delivering` finish on their own and are not moved.
+   */
+  stop(id: string, mode: StopBody['mode']): Promise<StopResult>;
+  /** How many watches name the target (it is locked while any does). */
+  countForTarget(targetId: string): Promise<number>;
   /** Refused unless stopped. */
   remove(id: string): Promise<RemoveWatchResult>;
   /** Newest first. */
@@ -62,15 +88,28 @@ export interface WatchRepo {
   problemCount(): Promise<number>;
 }
 
+/** An item of a memory watch's batch, with what Stop now changes. */
+interface HeldItem extends UnfinishedItem {
+  batchId: string;
+  detail: string | null;
+  /** The job's status; Stop now cancels a `queued` or `running` one. */
+  jobStatus: 'queued' | 'running' | 'succeeded' | 'cancelled';
+  pickup: 'queued' | 'abandoned';
+}
+
 /** What a memory watch keeps besides its view; tests set the worker-owned parts. */
 interface Held {
   view: WatchView;
-  items: UnfinishedItem[];
+  items: HeldItem[];
   finishes: { at: Date; delivered: boolean }[];
+  pickups: { step: string; moveFailures: number }[];
   events: WatchEvent[];
 }
 
 const DAY_MS = 24 * 3_600_000;
+
+/** The unfinished outcomes whose item has not reached the bridge (Stop now cancels them). */
+export const NOT_AT_BRIDGE = ['queued', 'decomposing', 'waiting_to_deliver', 'awaiting_review'];
 
 export class MemoryWatchRepo implements WatchRepo {
   private readonly held = new Map<string, Held>();
@@ -78,7 +117,7 @@ export class MemoryWatchRepo implements WatchRepo {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
-  private unfinished(h: Held): UnfinishedItem[] {
+  private unfinished(h: Held): HeldItem[] {
     return h.items.filter((i) => (RUNNING_OUTCOMES as readonly string[]).includes(i.outcome));
   }
 
@@ -142,7 +181,7 @@ export class MemoryWatchRepo implements WatchRepo {
       batchId: null,
       createdAt: this.now().toISOString(),
     };
-    const h: Held = { view, items: [], finishes: [], events: [] };
+    const h: Held = { view, items: [], finishes: [], pickups: [], events: [] };
     this.held.set(id, h);
     return { ok: true, watch: this.view(h) };
   }
@@ -179,6 +218,45 @@ export class MemoryWatchRepo implements WatchRepo {
     return this.view(h);
   }
 
+  async start(id: string) {
+    const h = this.held.get(id);
+    if (!h) return null;
+    h.view = { ...h.view, state: 'running', problem: null };
+    // Moves the sink refused are tried again (a pickup that ended keeps its count).
+    for (const p of h.pickups) {
+      if (p.step !== 'finished' && p.step !== 'abandoned') p.moveFailures = 0;
+    }
+    return this.view(h);
+  }
+
+  async stop(id: string, mode: StopBody['mode']): Promise<StopResult> {
+    const h = this.held.get(id);
+    if (!h) return { ok: false, reason: 'missing' };
+    const state = h.view.state;
+    if (mode === 'drain' ? state !== 'running' : state === 'stopped') {
+      return { ok: false, reason: 'state' };
+    }
+    if (mode === 'drain') {
+      h.view = { ...h.view, state: 'draining' };
+      return { ok: true, watch: this.view(h), cancelled: [] };
+    }
+    h.view = { ...h.view, state: 'stopped' };
+    const cancelled: CancelledItem[] = [];
+    for (const i of this.unfinished(h).filter((x) => NOT_AT_BRIDGE.includes(x.outcome))) {
+      if (i.jobStatus === 'queued' || i.jobStatus === 'running') i.jobStatus = 'cancelled';
+      i.outcome = 'failed';
+      i.detail = WATCH_CANCELLED_DETAIL;
+      i.pickup = 'abandoned';
+      this.recordFinish(id, false);
+      cancelled.push({ itemId: i.itemId, batchId: i.batchId });
+    }
+    return { ok: true, watch: this.view(h), cancelled };
+  }
+
+  async countForTarget(targetId: string) {
+    return [...this.held.values()].filter((h) => h.view.targetId === targetId).length;
+  }
+
   async remove(id: string): Promise<RemoveWatchResult> {
     const h = this.held.get(id);
     if (!h) return 'missing';
@@ -193,7 +271,9 @@ export class MemoryWatchRepo implements WatchRepo {
 
   async unfinishedItems(id: string) {
     const h = this.held.get(id);
-    return h ? this.unfinished(h) : [];
+    return h
+      ? this.unfinished(h).map(({ itemId, jobId, outcome }) => ({ itemId, jobId, outcome }))
+      : [];
   }
 
   async problemCount() {
@@ -209,8 +289,41 @@ export class MemoryWatchRepo implements WatchRepo {
     const h = this.held.get(id)!;
     h.view = { ...h.view, queue: { ...h.view.queue, waiting } };
   }
-  addUnfinished(id: string, outcome: string): void {
-    this.held.get(id)!.items.push({ itemId: randomUUID(), jobId: randomUUID(), outcome });
+  addUnfinished(id: string, outcome: string): string {
+    const itemId = randomUUID();
+    this.held.get(id)!.items.push({
+      itemId,
+      jobId: randomUUID(),
+      outcome,
+      batchId: `batch-of-${id}`,
+      detail: null,
+      jobStatus:
+        outcome === 'queued' ? 'queued' : outcome === 'decomposing' ? 'running' : 'succeeded',
+      pickup: 'queued',
+    });
+    return itemId;
+  }
+  /** What Stop now left of an item (a test reads it). */
+  item(
+    id: string,
+    itemId: string,
+  ): Pick<HeldItem, 'outcome' | 'detail' | 'jobStatus' | 'pickup' | 'batchId'> {
+    const i = this.held.get(id)!.items.find((x) => x.itemId === itemId)!;
+    return {
+      outcome: i.outcome,
+      detail: i.detail,
+      jobStatus: i.jobStatus,
+      pickup: i.pickup,
+      batchId: i.batchId,
+    };
+  }
+  /** A pickup the sink refused to move `moveFailures` times (the worker writes these). */
+  addPickup(id: string, step: string, moveFailures: number): void {
+    this.held.get(id)!.pickups.push({ step, moveFailures });
+  }
+  /** The pickups' refused-move counts, by step. */
+  moveFailures(id: string): Record<string, number> {
+    return Object.fromEntries(this.held.get(id)!.pickups.map((p) => [p.step, p.moveFailures]));
   }
   recordFinish(id: string, delivered: boolean, at: Date = this.now()): void {
     const h = this.held.get(id)!;
@@ -228,14 +341,12 @@ export class MemoryWatchRepo implements WatchRepo {
     };
   }
   addEvent(id: string, level: WatchEvent['level'], message: string): void {
-    this.held
-      .get(id)!
-      .events.push({
-        id: ++this.eventId,
-        at: this.now().toISOString(),
-        level,
-        message,
-        details: null,
-      });
+    this.held.get(id)!.events.push({
+      id: ++this.eventId,
+      at: this.now().toISOString(),
+      level,
+      message,
+      details: null,
+    });
   }
 }

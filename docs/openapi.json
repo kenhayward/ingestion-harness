@@ -12085,6 +12085,30 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "watch": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -12095,7 +12119,8 @@
                     "force",
                     "autoApprove",
                     "createdAt",
-                    "startedAt"
+                    "startedAt",
+                    "watch"
                   ],
                   "additionalProperties": false,
                   "description": "The open batch."
@@ -12357,6 +12382,30 @@
                               "null"
                             ]
                           },
+                          "watch": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "itemCount": {
                             "type": "integer",
                             "minimum": 0
@@ -12415,6 +12464,7 @@
                           "autoApprove",
                           "createdAt",
                           "startedAt",
+                          "watch",
                           "itemCount",
                           "counts"
                         ],
@@ -12601,8 +12651,15 @@
                       "minimum": 0
                     },
                     "objectKey": {
-                      "type": "string",
-                      "minLength": 1
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "jobId": {
                       "anyOf": [
@@ -13263,6 +13320,30 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "watch": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -13273,7 +13354,8 @@
                     "force",
                     "autoApprove",
                     "createdAt",
-                    "startedAt"
+                    "startedAt",
+                    "watch"
                   ],
                   "additionalProperties": false,
                   "description": "The started batch."
@@ -13774,6 +13856,30 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "watch": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -13784,7 +13890,8 @@
                         "force",
                         "autoApprove",
                         "createdAt",
-                        "startedAt"
+                        "startedAt",
+                        "watch"
                       ],
                       "additionalProperties": false
                     },
@@ -13818,8 +13925,15 @@
                             "minimum": 0
                           },
                           "objectKey": {
-                            "type": "string",
-                            "minLength": 1
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "jobId": {
                             "anyOf": [
@@ -14466,6 +14580,30 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "watch": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -14476,7 +14614,8 @@
                         "force",
                         "autoApprove",
                         "createdAt",
-                        "startedAt"
+                        "startedAt",
+                        "watch"
                       ],
                       "additionalProperties": false
                     },
@@ -14510,8 +14649,15 @@
                             "minimum": 0
                           },
                           "objectKey": {
-                            "type": "string",
-                            "minLength": 1
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "jobId": {
                             "anyOf": [
@@ -14890,7 +15036,7 @@
             }
           },
           "409": {
-            "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it).",
+            "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it), or the batch belongs to a watched folder (`watched`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14915,7 +15061,8 @@
                       "type": "string",
                       "enum": [
                         "not_finished",
-                        "already_rerun"
+                        "already_rerun",
+                        "watched"
                       ]
                     }
                   },
@@ -14923,7 +15070,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it)."
+                  "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it), or the batch belongs to a watched folder (`watched`)."
                 }
               }
             }
@@ -15099,7 +15246,7 @@
             }
           },
           "404": {
-            "description": "No such item, or its file is gone from storage.",
+            "description": "No such item, or it has no stored file (a watched file refused unread), or its file is gone from storage.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15124,7 +15271,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "No such item, or its file is gone from storage."
+                  "description": "No such item, or it has no stored file (a watched file refused unread), or its file is gone from storage."
                 }
               }
             }
@@ -15265,8 +15412,15 @@
                           "minimum": 0
                         },
                         "objectKey": {
-                          "type": "string",
-                          "minLength": 1
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "jobId": {
                           "anyOf": [
@@ -16656,8 +16810,15 @@
                       "minimum": 0
                     },
                     "objectKey": {
-                      "type": "string",
-                      "minLength": 1
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "jobId": {
                       "anyOf": [
@@ -17197,6 +17358,30 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "watch": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17207,7 +17392,8 @@
                         "force",
                         "autoApprove",
                         "createdAt",
-                        "startedAt"
+                        "startedAt",
+                        "watch"
                       ],
                       "additionalProperties": false
                     },
@@ -17241,8 +17427,15 @@
                             "minimum": 0
                           },
                           "objectKey": {
-                            "type": "string",
-                            "minLength": 1
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "jobId": {
                             "anyOf": [
@@ -17590,7 +17783,7 @@
             }
           },
           "409": {
-            "description": "The item never started, is still running, or a rerun of it is still running (a repeated request).",
+            "description": "The item never started, is still running, or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -17614,7 +17807,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "not_finished"
+                        "not_finished",
+                        "watched"
                       ]
                     }
                   },
@@ -17622,7 +17816,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, is still running, or a rerun of it is still running (a repeated request)."
+                  "description": "The item never started, is still running, or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`)."
                 }
               }
             }
@@ -17815,6 +18009,30 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "watch": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17825,7 +18043,8 @@
                         "force",
                         "autoApprove",
                         "createdAt",
-                        "startedAt"
+                        "startedAt",
+                        "watch"
                       ],
                       "additionalProperties": false
                     },
@@ -17859,8 +18078,15 @@
                             "minimum": 0
                           },
                           "objectKey": {
-                            "type": "string",
-                            "minLength": 1
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "jobId": {
                             "anyOf": [
@@ -18239,7 +18465,7 @@
             }
           },
           "409": {
-            "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached).",
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached), or it belongs to a watched folder (`watched`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18264,7 +18490,8 @@
                       "type": "string",
                       "enum": [
                         "not_finished",
-                        "no_register_entry"
+                        "no_register_entry",
+                        "watched"
                       ]
                     }
                   },
@@ -18272,7 +18499,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached)."
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached), or it belongs to a watched folder (`watched`)."
                 }
               }
             }
@@ -18479,8 +18706,15 @@
                       "minimum": 0
                     },
                     "objectKey": {
-                      "type": "string",
-                      "minLength": 1
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "jobId": {
                       "anyOf": [
@@ -18991,6 +19225,30 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "watch": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -19001,7 +19259,8 @@
                         "force",
                         "autoApprove",
                         "createdAt",
-                        "startedAt"
+                        "startedAt",
+                        "watch"
                       ],
                       "additionalProperties": false
                     },
@@ -19035,8 +19294,15 @@
                             "minimum": 0
                           },
                           "objectKey": {
-                            "type": "string",
-                            "minLength": 1
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "jobId": {
                             "anyOf": [
@@ -19384,7 +19650,7 @@
             }
           },
           "409": {
-            "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`).",
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`), or it belongs to a watched folder (`watched`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19410,7 +19676,8 @@
                       "enum": [
                         "not_finished",
                         "not_gone",
-                        "in_flight"
+                        "in_flight",
+                        "watched"
                       ]
                     }
                   },
@@ -19418,7 +19685,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`)."
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`), or it belongs to a watched folder (`watched`)."
                 }
               }
             }
@@ -19793,8 +20060,15 @@
                           "minimum": 0
                         },
                         "objectKey": {
-                          "type": "string",
-                          "minLength": 1
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "jobId": {
                           "anyOf": [
@@ -20270,6 +20544,4210 @@
                     "code"
                   ],
                   "description": "It cannot be accepted here: the error says why."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches": {
+      "get": {
+        "operationId": "listWatches",
+        "summary": "List the watched folders",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Every watch by name: its settings, state, health (running, draining,\nstopped, or a problem with its reason), the waiting files at the folder's root, the\ndocuments under way, and the delivered and failed counts of the last 24 hours and in\nall.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The watches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "source": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "force": {
+                        "type": "boolean"
+                      },
+                      "autoApprove": {
+                        "type": "boolean"
+                      },
+                      "reasonFiles": {
+                        "type": "boolean"
+                      },
+                      "sleepSeconds": {
+                        "type": "integer",
+                        "minimum": 10,
+                        "maximum": 3600
+                      },
+                      "admit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "running",
+                          "draining",
+                          "stopped"
+                        ]
+                      },
+                      "health": {
+                        "type": "string",
+                        "enum": [
+                          "running",
+                          "draining",
+                          "stopped",
+                          "problem"
+                        ]
+                      },
+                      "problem": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sourcePath": {
+                        "type": "string"
+                      },
+                      "runAs": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "email": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "email"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "queue": {
+                        "type": "object",
+                        "properties": {
+                          "waiting": {
+                            "type": "integer"
+                          },
+                          "inProgress": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "waiting",
+                          "inProgress"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "throughput": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "object",
+                            "properties": {
+                              "delivered": {
+                                "type": "integer"
+                              },
+                              "failed": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "delivered",
+                              "failed"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "total": {
+                            "type": "object",
+                            "properties": {
+                              "delivered": {
+                                "type": "integer"
+                              },
+                              "failed": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "delivered",
+                              "failed"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "day",
+                          "total"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "lastPickupAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "batchId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "targetId",
+                      "source",
+                      "force",
+                      "autoApprove",
+                      "reasonFiles",
+                      "sleepSeconds",
+                      "admit",
+                      "id",
+                      "state",
+                      "health",
+                      "problem",
+                      "sourcePath",
+                      "runAs",
+                      "queue",
+                      "throughput",
+                      "lastPickupAt",
+                      "batchId",
+                      "createdAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The watches."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWatch",
+        "summary": "Start watching a folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Lists the folder's root first, as the signed-in admin (422\n`source_test_failed` with the reason when that fails), then saves the watch and\nstarts it: it delivers as that admin until another admin takes it over. Names are\nunique whatever the case (409 `name_taken`). Left out: `force` off, `autoApprove`\non, `reasonFiles` on, `sleepSeconds` 30, `admit` 10.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "source": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "force": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "autoApprove": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "reasonFiles": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "sleepSeconds": {
+                    "default": 30,
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 3600
+                  },
+                  "admit": {
+                    "default": 10,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "name",
+                  "targetId",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "201": {
+            "description": "The watch, running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
+                    "reasonFiles": {
+                      "type": "boolean"
+                    },
+                    "sleepSeconds": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 3600
+                    },
+                    "admit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped"
+                      ]
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped",
+                        "problem"
+                      ]
+                    },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sourcePath": {
+                      "type": "string"
+                    },
+                    "runAs": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "queue": {
+                      "type": "object",
+                      "properties": {
+                        "waiting": {
+                          "type": "integer"
+                        },
+                        "inProgress": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "waiting",
+                        "inProgress"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "throughput": {
+                      "type": "object",
+                      "properties": {
+                        "day": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "total": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "day",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "lastPickupAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "batchId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "targetId",
+                    "source",
+                    "force",
+                    "autoApprove",
+                    "reasonFiles",
+                    "sleepSeconds",
+                    "admit",
+                    "id",
+                    "state",
+                    "health",
+                    "problem",
+                    "sourcePath",
+                    "runAs",
+                    "queue",
+                    "throughput",
+                    "lastPickupAt",
+                    "batchId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The watch, running."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A watch has this name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "name_taken"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "A watch has this name."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The target cannot be watched, the source is not a folder of its sink, or the folder could not be listed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_target",
+                        "target_not_watchable",
+                        "bad_source",
+                        "source_test_failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The target cannot be watched, the source is not a folder of its sink, or the folder could not be listed."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/problems": {
+      "get": {
+        "operationId": "countWatchProblems",
+        "summary": "Count the watches with a problem",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** How many running or draining watches have a problem (no\nconnection, a folder that is gone), for the navigation badge.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The count."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/sources": {
+      "get": {
+        "operationId": "listWatchSources",
+        "summary": "List the targets a watch may name",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** The publishing targets whose sink has watched folders and takes\ndecomposed documents, by label, each with the source fields that make up a folder's\npath (in order), for the watch form.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The targets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "targetId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "sinkId": {
+                        "type": "string"
+                      },
+                      "instanceId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "sourceFields": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "fixed",
+                                "pattern"
+                              ]
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "overridable": {
+                              "type": "boolean"
+                            },
+                            "browse": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label",
+                            "kind",
+                            "required",
+                            "overridable",
+                            "browse"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "targetId",
+                      "label",
+                      "sinkId",
+                      "instanceId",
+                      "sourceFields"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The targets."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/browse": {
+      "post": {
+        "operationId": "browseWatchSource",
+        "summary": "Browse a sink's tree for a watched folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** One level of the target's sink tree for a source field (a space, a\nfolder), for the watch form's picker, acting as the signed-in admin (a personal sink\nuses their own connection). Nodes are paged by `cursor`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "field": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "parentId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "targetId",
+                  "field",
+                  "parentId",
+                  "cursor"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The nodes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "hasChildren": {
+                            "type": "boolean"
+                          },
+                          "selectable": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "hasChildren",
+                          "selectable"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "nodes",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The nodes."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The target cannot be watched, the field is not one of the sink's source fields, or the bridge's refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_target",
+                        "target_not_watchable",
+                        "unknown_field"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The target cannot be watched, the field is not one of the sink's source fields, or the bridge's refusal."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/test": {
+      "post": {
+        "operationId": "testWatchSource",
+        "summary": "Test a watched folder's root",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Lists the folder's root as the signed-in admin, as a watch would,\nwithout saving anything: `{ ok: true, files }` with the number of files there, or\n`{ ok: false, problem }` with the bridge's reason (no connection, a folder that is\ngone).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "source": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "targetId",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The outcome of the listing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "files": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "files"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "problem": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "problem"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "The outcome of the listing."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The target cannot be watched, or the source is not a folder of its sink.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_target",
+                        "target_not_watchable",
+                        "bad_source"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The target cannot be watched, or the source is not a folder of its sink."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/{id}": {
+      "get": {
+        "operationId": "getWatch",
+        "summary": "Get a watched folder and its events",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** The watch and its newest events (up to 100, newest first): what it\npicked up, moved, refused or could not do.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The watch id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The watch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "watch": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "source": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "force": {
+                          "type": "boolean"
+                        },
+                        "autoApprove": {
+                          "type": "boolean"
+                        },
+                        "reasonFiles": {
+                          "type": "boolean"
+                        },
+                        "sleepSeconds": {
+                          "type": "integer",
+                          "minimum": 10,
+                          "maximum": 3600
+                        },
+                        "admit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "draining",
+                            "stopped"
+                          ]
+                        },
+                        "health": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "draining",
+                            "stopped",
+                            "problem"
+                          ]
+                        },
+                        "problem": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "sourcePath": {
+                          "type": "string"
+                        },
+                        "runAs": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "email": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "email"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "queue": {
+                          "type": "object",
+                          "properties": {
+                            "waiting": {
+                              "type": "integer"
+                            },
+                            "inProgress": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "waiting",
+                            "inProgress"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "throughput": {
+                          "type": "object",
+                          "properties": {
+                            "day": {
+                              "type": "object",
+                              "properties": {
+                                "delivered": {
+                                  "type": "integer"
+                                },
+                                "failed": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "delivered",
+                                "failed"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "total": {
+                              "type": "object",
+                              "properties": {
+                                "delivered": {
+                                  "type": "integer"
+                                },
+                                "failed": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "delivered",
+                                "failed"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "day",
+                            "total"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "lastPickupAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "batchId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "targetId",
+                        "source",
+                        "force",
+                        "autoApprove",
+                        "reasonFiles",
+                        "sleepSeconds",
+                        "admit",
+                        "id",
+                        "state",
+                        "health",
+                        "problem",
+                        "sourcePath",
+                        "runAs",
+                        "queue",
+                        "throughput",
+                        "lastPickupAt",
+                        "batchId",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "info",
+                              "warn",
+                              "error"
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "at",
+                          "level",
+                          "message",
+                          "details"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "watch",
+                    "events"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The watch."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no such watch`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`no such watch`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateWatch",
+        "summary": "Change a watched folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Any setting left out is kept. The name, force-load, auto-approve,\nreason files, sleep and `admit` change at any time and apply to the next pickups.\nThe target, the folder (`source`) and who the watch runs as change only while it is\nstopped (409 `stop the watch first`); `runAsMe: true` makes the signed-in admin\nthe one it delivers as. Changing the target or the folder also makes the signed-in\nadmin the one it delivers as, whatever `runAsMe` says, and lists the new folder's\nroot as that admin first, as creating a watch does (422 `source_test_failed` with\nthe reason, and nothing is saved), so no admin points another's connection at a\nfolder they never chose.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "source": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "autoApprove": {
+                    "type": "boolean"
+                  },
+                  "reasonFiles": {
+                    "type": "boolean"
+                  },
+                  "sleepSeconds": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 3600
+                  },
+                  "admit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "runAsMe": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The watch id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The watch as now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
+                    "reasonFiles": {
+                      "type": "boolean"
+                    },
+                    "sleepSeconds": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 3600
+                    },
+                    "admit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped"
+                      ]
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped",
+                        "problem"
+                      ]
+                    },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sourcePath": {
+                      "type": "string"
+                    },
+                    "runAs": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "queue": {
+                      "type": "object",
+                      "properties": {
+                        "waiting": {
+                          "type": "integer"
+                        },
+                        "inProgress": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "waiting",
+                        "inProgress"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "throughput": {
+                      "type": "object",
+                      "properties": {
+                        "day": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "total": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "day",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "lastPickupAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "batchId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "targetId",
+                    "source",
+                    "force",
+                    "autoApprove",
+                    "reasonFiles",
+                    "sleepSeconds",
+                    "admit",
+                    "id",
+                    "state",
+                    "health",
+                    "problem",
+                    "sourcePath",
+                    "runAs",
+                    "queue",
+                    "throughput",
+                    "lastPickupAt",
+                    "batchId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The watch as now."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no such watch`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`no such watch`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The watch is not stopped (`running`), or a watch has this name (`name_taken`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "name_taken"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The watch is not stopped (`running`), or a watch has this name (`name_taken`)."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The target cannot be watched, the source is not a folder of its sink, or the new folder could not be listed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_target",
+                        "target_not_watchable",
+                        "bad_source",
+                        "source_test_failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The target cannot be watched, the source is not a folder of its sink, or the new folder could not be listed."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWatch",
+        "summary": "Remove a watched folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Only a stopped watch (409 `stop the watch first`). Its batch stays\non the Conversion page as history; its counters and events go; nothing in the\nfolder is touched. The target is free again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The watch id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no such watch`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`no such watch`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`stop the watch first`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`stop the watch first`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/{id}/stop": {
+      "post": {
+        "operationId": "stopWatch",
+        "summary": "Stop a watched folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** Pickups end at once. `mode: now`: the watch is stopped, and its\ndocuments that have not reached the bridge (queued, converting, waiting for a lane\nor awaiting review) are cancelled: their jobs are cancelled, the documents fail with\n_Cancelled: the watch was stopped_ and count as failed, their held copies are\ndeleted. Documents already being delivered finish on their own. Files stay wherever\nthey are in the folder. `mode: drain` (a running watch): nothing new is admitted,\nthe admitted documents run to the end, and the watch shows _Draining_ until the last\none finishes, then _Stopped_.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "now",
+                      "drain"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The watch id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The watch as now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
+                    "reasonFiles": {
+                      "type": "boolean"
+                    },
+                    "sleepSeconds": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 3600
+                    },
+                    "admit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped"
+                      ]
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped",
+                        "problem"
+                      ]
+                    },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sourcePath": {
+                      "type": "string"
+                    },
+                    "runAs": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "queue": {
+                      "type": "object",
+                      "properties": {
+                        "waiting": {
+                          "type": "integer"
+                        },
+                        "inProgress": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "waiting",
+                        "inProgress"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "throughput": {
+                      "type": "object",
+                      "properties": {
+                        "day": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "total": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "day",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "lastPickupAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "batchId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "targetId",
+                    "source",
+                    "force",
+                    "autoApprove",
+                    "reasonFiles",
+                    "sleepSeconds",
+                    "admit",
+                    "id",
+                    "state",
+                    "health",
+                    "problem",
+                    "sourcePath",
+                    "runAs",
+                    "queue",
+                    "throughput",
+                    "lastPickupAt",
+                    "batchId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The watch as now."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no such watch`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`no such watch`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The watch is already stopped, or (drain) is not running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The watch is already stopped, or (drain) is not running."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watches/{id}/start": {
+      "post": {
+        "operationId": "startWatch",
+        "summary": "Start a watched folder",
+        "tags": [
+          "Watched folders"
+        ],
+        "description": "**Admins only.** The watch runs again: its problem is cleared and it looks at the\nfolder at once. Moves the sink refused (a pickup the worker gave up on after five)\nare tried again, so an admin who cleared the folder stops and starts the watch. Files left in the folder's `processing` subfolder by a Stop now are\nnot taken again; the root is.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The watch id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The watch, running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "source": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
+                    "reasonFiles": {
+                      "type": "boolean"
+                    },
+                    "sleepSeconds": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 3600
+                    },
+                    "admit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped"
+                      ]
+                    },
+                    "health": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "draining",
+                        "stopped",
+                        "problem"
+                      ]
+                    },
+                    "problem": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sourcePath": {
+                      "type": "string"
+                    },
+                    "runAs": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "queue": {
+                      "type": "object",
+                      "properties": {
+                        "waiting": {
+                          "type": "integer"
+                        },
+                        "inProgress": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "waiting",
+                        "inProgress"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "throughput": {
+                      "type": "object",
+                      "properties": {
+                        "day": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "total": {
+                          "type": "object",
+                          "properties": {
+                            "delivered": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "delivered",
+                            "failed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "day",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "lastPickupAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "batchId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "targetId",
+                    "source",
+                    "force",
+                    "autoApprove",
+                    "reasonFiles",
+                    "sleepSeconds",
+                    "admit",
+                    "id",
+                    "state",
+                    "health",
+                    "problem",
+                    "sourcePath",
+                    "runAs",
+                    "queue",
+                    "throughput",
+                    "lastPickupAt",
+                    "batchId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The watch, running."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no such watch`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`no such watch`."
                 }
               }
             }
@@ -90002,6 +94480,10 @@
                               "pendingJobs": {
                                 "type": "integer",
                                 "minimum": 0
+                              },
+                              "watches": {
+                                "type": "integer",
+                                "minimum": 0
                               }
                             },
                             "required": [
@@ -90009,7 +94491,8 @@
                               "documentTypes",
                               "deliveredOutputs",
                               "consumers",
-                              "pendingJobs"
+                              "pendingJobs",
+                              "watches"
                             ]
                           }
                         },
@@ -90545,6 +95028,10 @@
                         "pendingJobs": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "watches": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -90552,7 +95039,8 @@
                         "documentTypes",
                         "deliveredOutputs",
                         "consumers",
-                        "pendingJobs"
+                        "pendingJobs",
+                        "watches"
                       ]
                     }
                   },
@@ -92279,6 +96767,10 @@
                         "pendingJobs": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "watches": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -92286,7 +96778,8 @@
                         "documentTypes",
                         "deliveredOutputs",
                         "consumers",
-                        "pendingJobs"
+                        "pendingJobs",
+                        "watches"
                       ]
                     }
                   },
@@ -99259,6 +103752,10 @@
       "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
     },
     {
+      "name": "Watched folders",
+      "description": "Folders of a document sink that CT Studio watches: the worker picks the Word and PDF files\nin a folder's root up, converts them in a batch the watch owns and files each one away as\ndelivered or failed. Admins set up, monitor, stop, start and remove them."
+    },
+    {
       "name": "Backup",
       "description": "Encrypted backups of the whole stack (database, objects, triple store) that an admin makes,\ndownloads and restores from Administration > Backup, and the job queue's pause switch. A\nbackup opens only with the `LLM_SECRETS_KEY` it was made under."
     },
@@ -99312,6 +103809,7 @@
         "Bridge",
         "Linked data",
         "GitHub",
+        "Watched folders",
         "Backup",
         "Health"
       ]

@@ -23,6 +23,7 @@ import { PgRepo } from '../../src/repositories/pg.js';
 import { SpecRegistry } from '../../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { TargetStores } from '../../src/publish-targets/stores.js';
+import { MemoryWatchRepo } from '../../src/watches/repo.js';
 import { MemoryObjectStore } from '../../src/storage/object-store.js';
 import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
@@ -96,6 +97,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       llm: new MemoryLlmConfigRepo(),
       ontologies: new MemoryOntologyRepo(),
       mappingMemory: new MemoryMappingMemoryRepo(),
+      watches: new MemoryWatchRepo(),
       ontologyFetch: { hosts: [], maxBytes: 1 },
       linkedData: new MemoryLinkedDataRepo(),
       maintenance: new MemoryMaintenanceRepo(),

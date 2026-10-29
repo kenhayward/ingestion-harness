@@ -47,6 +47,12 @@ export const BatchSchema = z
     autoApprove: z.boolean(),
     createdAt: z.string(),
     startedAt: z.string().nullable(),
+    /**
+     * The watched folder that owns this batch (it is long-lived: the folder's worker adds items
+     * as files arrive), else null. Its documents are re-processed by uploading them again, so
+     * retry, force-load, redeliver and reload are refused (409 `watched`).
+     */
+    watch: z.object({ id: z.string().uuid(), name: z.string() }).strict().nullable(),
   })
   .strict();
 export type Batch = z.infer<typeof BatchSchema>;
@@ -75,7 +81,8 @@ export const ItemSchema = z
     filename: z.string().min(1),
     contentSha256: z.string().min(1),
     sizeBytes: z.number().int().nonnegative(),
-    objectKey: z.string().min(1),
+    /** Where the file is stored; null for a watched file that was refused unread. */
+    objectKey: z.string().min(1).nullable(),
     jobId: z.string().uuid().nullable(),
     outcome: ItemOutcomeSchema,
     detail: z.string().nullable(),

@@ -47,6 +47,8 @@ export interface ConversionFacts {
   dropEntry(entryId: string): Promise<void>;
   /** Moves an entry on, as a later run does (its state and batch, and its `updatedAt` to now). */
   moveEntry(entryId: string, to: { state: RegisterEntry['state']; batchId: string }): Promise<void>;
+  /** Makes the batch a watched folder's (the worker does this in production). */
+  watch(batchId: string, name: string): Promise<string>;
   /** Records when an item started and finished, as the worker and the settle do. */
   times(itemId: string, startedAt: string | null, finishedAt: string | null): Promise<void>;
 }
@@ -470,6 +472,34 @@ export function conversionsContract(
       expect(await repo.getItem(a.id)).toBeNull();
       expect((await repo.listBatches(10)).map((b) => b.id)).toEqual([again.batchId]);
       expect(await repo.getItem(second.item.id)).toMatchObject({ objectKey: a.objectKey });
+    });
+
+    it("deletes a watch's batch's finished documents, keeps the unfinished ones and the batch", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const [a, b, c] = ['a.docx', 'b.docx', 'c.docx'].map((k) => item(batch.id, k));
+      for (const i of [a!, b!, c!]) await repo.addItem(i);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      expect(await repo.getBatch(batch.id)).toMatchObject({
+        watch: { id: watchId, name: 'Inbox' },
+      });
+      await facts.settleItem(a!.id, 'created', null);
+      await facts.settleItem(b!.id, 'failed', null);
+      await facts.settleItem(c!.id, 'awaiting_review', null);
+
+      const done = await repo.deleteBatch(batch.id);
+      expect(done).toEqual({ ok: true, kept: [], remove: [a!.objectKey, b!.objectKey].sort() });
+      expect(await repo.getItem(a!.id)).toBeNull();
+      expect(await repo.getItem(b!.id)).toBeNull();
+      expect(await repo.getItem(c!.id)).toMatchObject({ outcome: 'awaiting_review' });
+      expect(await repo.getBatch(batch.id)).not.toBeNull();
+
+      // Nothing finished is left to delete: the batch stays while a document is under way.
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [], remove: [] });
+      await facts.settleItem(c!.id, 'failed', null);
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(batch.id)).toBeNull();
     });
 
     it('deletes no open, discarded or missing batch', async () => {

@@ -28,6 +28,7 @@ import {
   RetryItemsSchema,
   ReviewDecisionSchema,
   sourceKeyProblem,
+  WATCHED_REFUSAL,
   type Batch,
   type Item,
 } from '@ih/shared';
@@ -108,10 +109,20 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
    * A deleted batch's files: everything under its prefix but the files another batch's item
    * still names. The batch is gone already, so a file not deleted is logged, not refused.
    */
-  const deleteStored = async (batchId: string, kept: string[], log: FastifyBaseLogger) => {
+  const deleteStored = async (
+    batchId: string,
+    kept: string[],
+    log: FastifyBaseLogger,
+    remove?: string[],
+  ) => {
     const { store, buckets } = app.deps;
     const prefix = decompositionBatchPrefix(batchId);
     try {
+      if (remove) {
+        // A watch's batch that stays: only the files of its deleted documents go.
+        for (const key of remove) await store.delete(buckets.runs, key);
+        return;
+      }
       if (kept.length === 0) {
         await store.deletePrefix(buckets.runs, prefix);
         return;
@@ -381,7 +392,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           }
           return reply.code(409).send({ error: notOpen(await repo.getBatch(batch.id)) });
         }
-        await deleteStored(batch.id, deleted.kept, req.log);
+        await deleteStored(batch.id, deleted.kept, req.log, deleted.remove);
         return reply.code(204).send();
       }
       const discarded = await repo.discardBatch(req.params.id);
@@ -517,6 +528,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       .filter((t) => t.sinkId === entry.sinkId && t.instanceId === entry.instanceId)
       .map((t) => t.id);
 
+  /** A watched folder's documents are not re-run in place: upload the file again. */
+  const watched = (reply: FastifyReply) =>
+    reply.code(409).send({ error: WATCHED_REFUSAL, code: 'watched' });
+
   /** A new batch of one, forced and started, rerunning `of` with `source` (R6). */
   const rerun = (
     req: FastifyRequest,
@@ -551,10 +566,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
   const RerunResponses = {
     201: res('The new batch of one, started, and its item.', BatchDetailSchema),
     404: error('No such item.'),
-    409: CodedError(
+    409: res(
       'The item never started, is still running, or a rerun of it is still running (a repeated ' +
-        'request).',
-      'not_finished',
+        'request) (`not_finished`), or it belongs to a watched folder (`watched`).',
+      ErrorBody.extend({ code: z.enum(['not_finished', 'watched']) }),
     ),
     422: CodedError("The batch's target no longer takes documents.", 'target_takes_no_documents'),
   };
@@ -589,8 +604,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           409: res(
             'The batch was never started, or one of the items is under way again (a repeated ' +
               'request; `not_finished`), or one of the items was run again in another batch ' +
-              '(`already_rerun`, naming it).',
-            ErrorBody.extend({ code: z.enum(['not_finished', 'already_rerun']) }),
+              '(`already_rerun`, naming it), or the batch belongs to a watched folder (`watched`).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'already_rerun', 'watched']) }),
           ),
           422: res(
             'An item is not a failed item of this batch (`not_failed`), or the target no ' +
@@ -606,6 +621,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         ? await repo.getBatch(req.params.id)
         : null;
       if (!batch) return reply.code(404).send({ error: 'not found' });
+      if (batch.watch) return watched(reply);
       const body = RetryItemsSchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
       if (batch.state !== 'started') {
@@ -661,7 +677,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         params: ItemParams,
         response: {
           200: binary('The file.', DOCX_MIME, CONTENT_TYPES.pdf),
-          404: error('No such item, or its file is gone from storage.'),
+          404: error(
+            'No such item, or it has no stored file (a watched file refused unread), or its file is gone from storage.',
+          ),
           502: error('`storage unavailable`.'),
         },
       },
@@ -669,6 +687,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const item = await findItem(req.params.id);
       if (!item) return reply.code(404).send({ error: 'not found' });
+      // A watched file that was refused unread has no stored copy.
+      if (item.objectKey === null) {
+        return reply.code(404).send({ error: 'the file was not stored' });
+      }
       let body: Buffer | null;
       try {
         body = await app.deps.store.get(app.deps.buckets.runs, item.objectKey);
@@ -973,6 +995,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const item = await findItem(req.params.id);
       if (!item) return reply.code(404).send({ error: 'not found' });
       const batch = await app.deps.repo.getBatch(item.batchId);
+      if (batch?.watch) return watched(reply);
       const why = notFinished(item, batch);
       if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
       if (!(await takesDocuments(app, batch.targetId))) {
@@ -1009,8 +1032,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           400: error('A multipart body whose part is not named `file`.'),
           409: res(
             'The item never started, it or a rerun of it is still running (`not_finished`), or ' +
-              'it has no register entry (`no_register_entry`: never delivered, or detached).',
-            ErrorBody.extend({ code: z.enum(['not_finished', 'no_register_entry']) }),
+              'it has no register entry (`no_register_entry`: never delivered, or detached), or ' +
+              'it belongs to a watched folder (`watched`).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'no_register_entry', 'watched']) }),
           ),
           413: error('The replacement is larger than the upload limit.'),
           415: error(`\`${NOT_WORD_OR_PDF}\`.`),
@@ -1029,6 +1053,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const item = await findItem(req.params.id);
       if (!item) return reply.code(404).send({ error: 'not found' });
       const batch = await repo.getBatch(item.batchId);
+      if (batch?.watch) return watched(reply);
       const why = notFinished(item, batch);
       if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
       if (!(await entryOf(item))) {
@@ -1172,8 +1197,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
             'The item never started, it or a rerun of it is still running (`not_finished`), its ' +
               'document is not reloadable (`not_gone`: neither gone nor still detached, or ' +
               'superseded), or a ' +
-              'delivery of it or a run of its file is in flight (`in_flight`).',
-            ErrorBody.extend({ code: z.enum(['not_finished', 'not_gone', 'in_flight']) }),
+              'delivery of it or a run of its file is in flight (`in_flight`), or it belongs to a ' +
+              'watched folder (`watched`).',
+            ErrorBody.extend({
+              code: z.enum(['not_finished', 'not_gone', 'in_flight', 'watched']),
+            }),
           ),
         },
       },
@@ -1182,6 +1210,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const item = await findItem(req.params.id);
       if (!item) return reply.code(404).send({ error: 'not found' });
       const batch = await app.deps.repo.getBatch(item.batchId);
+      if (batch?.watch) return watched(reply);
       const why = notFinished(item, batch);
       if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
       // `reloadable` (read from the entry as it is now): gone, or still the detached tombstone,

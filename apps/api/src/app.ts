@@ -27,6 +27,7 @@ import type { TemplateRepo } from './templates/repo.js';
 import type { MappingMemoryRepo } from './mapping-memory/repo.js';
 import { captureDeps, recordRecipe, rememberingTemplates } from './mapping-memory/capture.js';
 import { mappingMemoryRoutes } from './routes/mapping-memory.js';
+import type { WatchRepo } from './watches/repo.js';
 import type { WorkbenchRepo } from './workbench/repo.js';
 import { templateRoutes } from './routes/templates.js';
 import { referenceRoutes } from './routes/references.js';
@@ -35,6 +36,7 @@ import { versionRoutes } from './routes/version.js';
 import { specRoutes } from './routes/specs.js';
 import { documentRoutes } from './routes/documents.js';
 import { conversionRoutes } from './routes/conversions.js';
+import { watchRoutes } from './routes/watches.js';
 import { jobRoutes } from './routes/jobs.js';
 import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
@@ -93,6 +95,8 @@ export interface AppDeps {
   };
   specs: SpecRegistry;
   templates: TemplateRepo;
+  /** Watched folders (migration 202610291400): where the worker picks documents up from. */
+  watches: WatchRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */
   workbench: WorkbenchRepo;
   /** CT Studio's own buckets; `backups` holds backups and restore uploads. */
@@ -199,6 +203,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(documentRoutes, { prefix: '/api' });
   // One file per item upload: the route sets its own multipart limit of one file (R8).
   await app.register(conversionRoutes, { prefix: '/api' });
+  await app.register(watchRoutes, { prefix: '/api' });
   await app.register(jobRoutes, { prefix: '/api' });
   await app.register(jobLiveRoutes, { prefix: '/api' });
   await app.register(modelRoutes, { prefix: '/api' });

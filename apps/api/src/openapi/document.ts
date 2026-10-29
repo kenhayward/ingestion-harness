@@ -130,6 +130,11 @@ export const TAGS = {
     as a YAML file with the signed-in user's own linked GitHub account. Admins set the
     settings and links; anyone with a linked account can push.
   `,
+  'Watched folders': md`
+    Folders of a document sink that CT Studio watches: the worker picks the Word and PDF files
+    in a folder's root up, converts them in a batch the watch owns and files each one away as
+    delivered or failed. Admins set up, monitor, stop, start and remove them.
+  `,
   Backup: md`
     Encrypted backups of the whole stack (database, objects, triple store) that an admin makes,
     downloads and restores from Administration > Backup, and the job queue's pause switch. A
@@ -172,6 +177,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
       'Bridge',
       'Linked data',
       'GitHub',
+      'Watched folders',
       'Backup',
       'Health',
     ],

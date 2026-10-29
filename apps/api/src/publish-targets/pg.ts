@@ -300,6 +300,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
           deliveredOutputs: 0,
           consumers: 0,
           pendingJobs: 0,
+          watches: 0,
         };
         out.set(target, u);
       }
@@ -357,6 +358,12 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       [id],
     );
     for (const r of pending.rows) at(r.target).pendingJobs = Number(r.n);
+    const watched = await db.query<{ target: string; n: string }>(
+      `SELECT target_id AS target, count(*) AS n FROM watched_folders
+        WHERE $1::text IS NULL OR target_id = $1 GROUP BY 1`,
+      [id],
+    );
+    for (const r of watched.rows) at(r.target).watches = Number(r.n);
     return out;
   }
 }

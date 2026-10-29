@@ -6,7 +6,17 @@ import type { WatchRepo } from '../src/watches/repo.js';
 export interface WatchHooks {
   setProblem(id: string, problem: string | null): Promise<void>;
   setWaiting(id: string, waiting: number): Promise<void>;
-  addUnfinished(id: string, outcome: string): Promise<void>;
+  /** An item of the watch's batch at `outcome`, with its job and pickup as the worker leaves them; its id. */
+  addUnfinished(id: string, outcome: string): Promise<string>;
+  /** What is stored of an item: its outcome and detail, its job's status and its pickup's step. */
+  inspect(
+    id: string,
+    itemId: string,
+  ): Promise<{ outcome: string; detail: string | null; jobStatus: string; pickup: string }>;
+  /** A pickup of the watch at `step` that the sink refused to move `moveFailures` times. */
+  addPickup(id: string, step: string, moveFailures: number): Promise<void>;
+  /** The pickups' refused-move counts, by step. */
+  moveFailures(id: string): Promise<Record<string, number>>;
   /** A final outcome `hoursAgo` hours ago. */
   recordFinish(id: string, delivered: boolean, hoursAgo: number): Promise<void>;
   addEvent(id: string, level: 'info' | 'warn' | 'error', message: string): Promise<void>;
@@ -211,6 +221,95 @@ export function watchContract(name: string, make: MakeWatches) {
         ['error', 'three'],
         ['warn', 'two'],
       ]);
+    });
+
+    it('starts a watch: running, its problem cleared, stuck moves tried again', async () => {
+      const { repo, hooks, targetId } = await make();
+      const made = await repo.create(settings(targetId), user, 'incoming', user);
+      if (!made.ok) throw new Error('create failed');
+      const id = made.watch.id;
+      await hooks.setProblem(id, 'the folder is gone');
+      await hooks.addPickup(id, 'refusing', 5);
+      await hooks.addPickup(id, 'moved', 2);
+      await hooks.addPickup(id, 'finished', 3);
+      await hooks.addPickup(id, 'abandoned', 4);
+      await repo.setState(id, 'draining');
+      const started = await repo.start(id);
+      expect(started).toMatchObject({ state: 'running', problem: null, health: 'running' });
+      // Pickups still to move try again; the ones that ended keep their count.
+      expect(await hooks.moveFailures(id)).toEqual({
+        refusing: 0,
+        moved: 0,
+        finished: 3,
+        abandoned: 4,
+      });
+      expect(await repo.start(MISSING)).toBeNull();
+    });
+
+    it('drains a running watch only; stop now takes a running or draining one', async () => {
+      const { repo, targetId } = await make();
+      const made = await repo.create(settings(targetId), user, 'incoming', user);
+      if (!made.ok) throw new Error('create failed');
+      const id = made.watch.id;
+      expect(await repo.stop(id, 'drain')).toEqual({ ok: false, reason: 'state' });
+      expect(await repo.stop(id, 'now')).toEqual({ ok: false, reason: 'state' });
+      await repo.start(id);
+      const drained = await repo.stop(id, 'drain');
+      expect(drained).toMatchObject({ ok: true, watch: { state: 'draining' }, cancelled: [] });
+      expect(await repo.stop(id, 'drain')).toEqual({ ok: false, reason: 'state' });
+      const now = await repo.stop(id, 'now');
+      expect(now).toMatchObject({ ok: true, watch: { state: 'stopped' } });
+      expect(await repo.stop(MISSING, 'now')).toEqual({ ok: false, reason: 'missing' });
+    });
+
+    it('stop now cancels what has not reached the bridge and leaves what has', async () => {
+      const { repo, hooks, targetId } = await make();
+      const made = await repo.create(settings(targetId), user, 'incoming', user);
+      if (!made.ok) throw new Error('create failed');
+      const id = made.watch.id;
+      await repo.start(id);
+      const cancellable = ['queued', 'decomposing', 'waiting_to_deliver', 'awaiting_review'];
+      const ids: Record<string, string> = {};
+      for (const outcome of [...cancellable, 'delivering', 'created']) {
+        ids[outcome] = await hooks.addUnfinished(id, outcome);
+      }
+      const done = await repo.stop(id, 'now');
+      if (!done.ok) throw new Error('stop failed');
+      expect(done.cancelled.map((c) => c.itemId).sort()).toEqual(
+        cancellable.map((o) => ids[o]!).sort(),
+      );
+      for (const outcome of cancellable) {
+        expect(await hooks.inspect(id, ids[outcome]!)).toMatchObject({
+          outcome: 'failed',
+          detail: 'Cancelled: the watch was stopped',
+          pickup: 'abandoned',
+        });
+      }
+      // The jobs still to run are cancelled; one that had finished stays so.
+      expect((await hooks.inspect(id, ids.queued!)).jobStatus).toBe('cancelled');
+      expect((await hooks.inspect(id, ids.decomposing!)).jobStatus).toBe('cancelled');
+      expect((await hooks.inspect(id, ids.waiting_to_deliver!)).jobStatus).toBe('succeeded');
+      expect(await hooks.inspect(id, ids.delivering!)).toMatchObject({
+        outcome: 'delivering',
+        pickup: 'queued',
+      });
+      expect(await hooks.inspect(id, ids.created!)).toMatchObject({ outcome: 'created' });
+      // Each cancelled document counts as failed; the one delivering is still under way.
+      const w = (await repo.get(id))!;
+      expect(w.throughput.total).toEqual({ delivered: 0, failed: 4 });
+      expect(w.throughput.day.failed).toBe(4);
+      expect(w.queue.inProgress).toBe(1);
+    });
+
+    it('counts the watches that name a target', async () => {
+      const { repo, targetId } = await make();
+      expect(await repo.countForTarget(targetId)).toBe(0);
+      const made = await repo.create(settings(targetId), user, 'incoming', user);
+      if (!made.ok) throw new Error('create failed');
+      expect(await repo.countForTarget(targetId)).toBe(1);
+      expect(await repo.countForTarget('elsewhere')).toBe(0);
+      await repo.remove(made.watch.id);
+      expect(await repo.countForTarget(targetId)).toBe(0);
     });
   });
 }

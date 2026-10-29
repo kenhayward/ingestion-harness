@@ -114,3 +114,70 @@ export function watchSourcePath(
     .filter((v) => v !== '')
     .join('/');
 }
+
+/** A change as the API takes it: the settings, and `runAsMe` to take the watch over (stopped only). */
+export const WatchPatchRequestSchema = WatchSettingsSchema.partial()
+  .extend({ runAsMe: z.literal(true).optional() })
+  .strict()
+  .refine((b) => Object.keys(b).length > 0, { message: 'change at least one setting' });
+export type WatchPatchRequest = z.infer<typeof WatchPatchRequestSchema>;
+
+/** A target a watch may be pointed at: its sink has watched folders and takes documents. */
+export const WatchSourceSchema = z
+  .object({
+    targetId: TargetIdSchema,
+    label: z.string(),
+    sinkId: z.string(),
+    instanceId: z.string().nullable(),
+    /** The sink's source fields, in the order that makes the folder path. */
+    sourceFields: z.array(
+      z
+        .object({
+          id: z.string(),
+          label: z.string(),
+          kind: z.enum(['fixed', 'pattern']),
+          required: z.boolean(),
+          overridable: z.boolean(),
+          browse: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type WatchSource = z.infer<typeof WatchSourceSchema>;
+
+/** One level of a sink's tree for a source field. */
+export const WatchBrowseBodySchema = z
+  .object({
+    targetId: TargetIdSchema,
+    field: z.string().min(1),
+    parentId: z.string().nullable(),
+    cursor: z.string().nullable(),
+  })
+  .strict();
+export type WatchBrowseBody = z.infer<typeof WatchBrowseBodySchema>;
+
+/** List the folder root before saving a watch. */
+export const WatchTestBodySchema = z
+  .object({ targetId: TargetIdSchema, source: z.record(z.string(), z.string()) })
+  .strict();
+export type WatchTestBody = z.infer<typeof WatchTestBodySchema>;
+
+export const WatchTestResultSchema = z.union([
+  z.object({ ok: z.literal(true), files: z.number().int().nonnegative() }).strict(),
+  z.object({ ok: z.literal(false), problem: z.string() }).strict(),
+]);
+export type WatchTestResult = z.infer<typeof WatchTestResultSchema>;
+
+export const WatchDetailSchema = z
+  .object({ watch: WatchViewSchema, events: z.array(WatchEventSchema) })
+  .strict();
+export type WatchDetail = z.infer<typeof WatchDetailSchema>;
+
+export const WatchProblemsSchema = z.object({ count: z.number().int().nonnegative() }).strict();
+
+/** Why a watched document cannot be re-run in place (`code: watched`). */
+export const WATCHED_REFUSAL = 'watched documents are re-processed by uploading them again';
+
+/** The detail of an item that Stop now cancelled. */
+export const WATCH_CANCELLED_DETAIL = 'Cancelled: the watch was stopped';

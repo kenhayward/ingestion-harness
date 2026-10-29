@@ -22,6 +22,7 @@ function usedBy(u: PublishTargetView['usage']): string {
     u.deliveredOutputs > 0 && count(u.deliveredOutputs, 'delivered output'),
     u.consumers > 0 && count(u.consumers, 'S3 key consumer'),
     u.pendingJobs > 0 && count(u.pendingJobs, 'pending withdrawal'),
+    u.watches > 0 && count(u.watches, 'watched folder'),
   ].filter(Boolean);
   return `used by ${parts.length > 0 ? parts.join(' · ') : count(0, 'document type')}`;
 }

@@ -916,6 +916,7 @@ export function conversionBatch(o: Partial<Batch> = {}): Batch {
     autoApprove: false,
     createdAt: '2026-10-25T10:00:00.000Z',
     startedAt: null,
+    watch: null,
     ...o,
   };
 }

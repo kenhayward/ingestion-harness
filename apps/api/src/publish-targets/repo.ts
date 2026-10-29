@@ -112,6 +112,7 @@ export const EMPTY_USAGE: TargetUsage = {
   deliveredOutputs: 0,
   consumers: 0,
   pendingJobs: 0,
+  watches: 0,
 };
 
 /**
@@ -240,6 +241,8 @@ export interface TargetFactSource {
   consumerCount(targetId: string): Promise<number>;
   /** Queued or running withdraw jobs whose params name the target. */
   pendingJobCount(targetId: string): Promise<number>;
+  /** Watched folders that name the target. */
+  watchCount(targetId: string): Promise<number>;
 }
 
 export class MemoryPublishTargetRepo implements PublishTargetRepo {
@@ -258,6 +261,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       deliveredCount: async () => 0,
       consumerCount: async () => 0,
       pendingJobCount: async () => 0,
+      watchCount: async () => 0,
     },
   ) {
     this.targets.set(DEFAULT_TARGET_ID, initialDefault(new Date()));
@@ -335,6 +339,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       deliveredOutputs: await this.facts.deliveredCount(id),
       consumers: await this.facts.consumerCount(id),
       pendingJobs: await this.facts.pendingJobCount(id),
+      watches: await this.facts.watchCount(id),
     };
   }
 

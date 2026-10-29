@@ -259,10 +259,13 @@ interface BatchRow {
   auto_approve: boolean;
   created_at: Date;
   started_at: Date | null;
+  watch: Batch['watch'];
 }
 
-const BATCH_COLUMNS =
-  'id, target_id, created_by, state, force, auto_approve, created_at, started_at';
+/** A batch's columns; `watch` names the watched folder that owns it (a scalar subselect, so it also works in RETURNING). */
+const BATCH_COLUMNS = `id, target_id, created_by, state, force, auto_approve, created_at, started_at,
+  (SELECT json_build_object('id', w.id, 'name', w.name) FROM watched_folders w
+    WHERE w.id = decomposition_batches.watch_id) AS watch`;
 
 const toBatch = (r: BatchRow): Batch => ({
   id: r.id,
@@ -273,6 +276,7 @@ const toBatch = (r: BatchRow): Batch => ({
   autoApprove: r.auto_approve,
   createdAt: r.created_at.toISOString(),
   startedAt: r.started_at?.toISOString() ?? null,
+  watch: r.watch ?? null,
 });
 
 interface ItemRow {
@@ -282,7 +286,7 @@ interface ItemRow {
   filename: string;
   content_sha256: string;
   size_bytes: string;
-  object_key: string;
+  object_key: string | null;
   job_id: string | null;
   outcome: ItemOutcome;
   detail: string | null;
@@ -1511,28 +1515,56 @@ export class PgRepo implements IngestionRepo {
       await client.query(`UPDATE decomposition_batches SET state = 'discarded' WHERE id = $1`, [
         id,
       ]);
-      const { rows } = await client.query<{ object_key: string }>(
+      const { rows } = await client.query<{ object_key: string | null }>(
         `SELECT object_key FROM decomposition_items WHERE batch_id = $1 ORDER BY created_at, id`,
         [id],
       );
-      return { ok: true, objectKeys: rows.map((r) => r.object_key) };
+      return { ok: true, objectKeys: rows.flatMap((r) => (r.object_key ? [r.object_key] : [])) };
     });
   }
 
   async deleteBatch(id: string): Promise<DeleteBatchResult> {
     return this.inTransaction(async (client) => {
-      const locked = await client.query<{ state: Batch['state'] }>(
-        'SELECT state FROM decomposition_batches WHERE id = $1 FOR UPDATE',
+      const locked = await client.query<{ state: Batch['state']; watch_id: string | null }>(
+        'SELECT state, watch_id FROM decomposition_batches WHERE id = $1 FOR UPDATE',
         [id],
       );
       if (!locked.rows[0]) return { ok: false, reason: 'missing' };
       if (locked.rows[0].state !== 'started') return { ok: false, reason: 'not_started' };
-      const items = await client.query<{ outcome: ItemOutcome }>(
-        'SELECT outcome FROM decomposition_items WHERE batch_id = $1 ORDER BY id FOR UPDATE',
+      const items = await client.query<{
+        id: string;
+        outcome: ItemOutcome;
+        object_key: string | null;
+        report_key: string | null;
+      }>(
+        `SELECT id, outcome, object_key, report_key FROM decomposition_items
+          WHERE batch_id = $1 ORDER BY id FOR UPDATE`,
         [id],
       );
-      const running = items.rows.filter((r) => RUNNING_OUTCOMES.includes(r.outcome)).length;
-      if (running > 0) return { ok: false, reason: 'running', running };
+      const unfinished = items.rows.filter((r) => RUNNING_OUTCOMES.includes(r.outcome));
+      const watched = locked.rows[0].watch_id !== null;
+      if (unfinished.length > 0 && !watched) {
+        return { ok: false, reason: 'running', running: unfinished.length };
+      }
+      if (watched && unfinished.length > 0) {
+        // A watch's batch is long-lived: its finished documents go, the ones still under way
+        // stay with their batch (the watch's counters are the watch's own).
+        const finished = items.rows.filter((r) => !RUNNING_OUTCOMES.includes(r.outcome));
+        await client.query('DELETE FROM decomposition_items WHERE id = ANY($1::uuid[])', [
+          finished.map((r) => r.id),
+        ]);
+        const keys = finished.flatMap((r) => [r.object_key, r.report_key]).filter((k) => !!k);
+        const named = await client.query<{ key: string }>(
+          `SELECT object_key AS key FROM decomposition_items WHERE object_key = ANY($1::text[])`,
+          [keys],
+        );
+        const stillNamed = new Set(named.rows.map((r) => r.key));
+        return {
+          ok: true,
+          kept: [],
+          remove: [...new Set(keys as string[])].filter((k) => !stillNamed.has(k)).sort(),
+        };
+      }
       const prefix = decompositionBatchPrefix(id);
       const kept = await client.query<{ object_key: string }>(
         `SELECT DISTINCT object_key FROM decomposition_items

@@ -32,9 +32,10 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
     await p.query('TRUNCATE watched_folders CASCADE');
     await p.query('DELETE FROM decomposition_items');
     await p.query('DELETE FROM decomposition_batches');
+    await p.query("DELETE FROM jobs WHERE task = 'decompose'");
     const batches = new Map<string, string>();
     let n = 0;
-    const item = async (id: string, outcome: string) => {
+    const item = async (id: string, outcome: string): Promise<string> => {
       let batch = batches.get(id);
       if (!batch) {
         const { rows } = await p.query<{ id: string }>(
@@ -45,12 +46,27 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
         batch = rows[0]!.id;
         batches.set(id, batch);
       }
-      await p.query(
-        `INSERT INTO decomposition_items
-           (batch_id, source_key, filename, content_sha256, size_bytes, object_key, outcome, watched)
-         VALUES ($1, $2, 'a.docx', 'sha', 1, 'k', $3, true)`,
-        [batch, `k-${++n}`, outcome],
+      // The job as the worker leaves it for that outcome, and the pickup that led to the item.
+      const status =
+        outcome === 'queued' ? 'queued' : outcome === 'decomposing' ? 'running' : 'succeeded';
+      const job = await p.query<{ id: string }>(
+        `INSERT INTO jobs (task, status, params) VALUES ('decompose', $1::job_status, '{}')
+         RETURNING id`,
+        [status],
       );
+      const added = await p.query<{ id: string }>(
+        `INSERT INTO decomposition_items
+           (batch_id, source_key, filename, content_sha256, size_bytes, object_key, outcome, watched,
+            job_id)
+         VALUES ($1, $2, 'a.docx', 'sha', 1, 'k', $3, true, $4) RETURNING id`,
+        [batch, `k-${++n}`, outcome, job.rows[0]!.id],
+      );
+      await p.query(
+        `INSERT INTO watch_pickups (watch_id, original_name, size, modified_at, step, item_id)
+         VALUES ($1, $2, 1, now(), 'queued', $3)`,
+        [id, `file-${n}.docx`, added.rows[0]!.id],
+      );
+      return added.rows[0]!.id;
     };
     return {
       repo: new PgWatchRepo(p),
@@ -66,6 +82,42 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
           ]);
         },
         addUnfinished: (id, outcome) => item(id, outcome),
+        inspect: async (_id, itemId) => {
+          const { rows } = await p.query<{
+            outcome: string;
+            detail: string | null;
+            job_status: string;
+            pickup: string;
+          }>(
+            `SELECT i.outcome, i.detail, j.status AS job_status, k.step AS pickup
+               FROM decomposition_items i
+               JOIN jobs j ON j.id = i.job_id
+               JOIN watch_pickups k ON k.item_id = i.id
+              WHERE i.id = $1`,
+            [itemId],
+          );
+          const r = rows[0]!;
+          return {
+            outcome: r.outcome,
+            detail: r.detail,
+            jobStatus: r.job_status,
+            pickup: r.pickup,
+          };
+        },
+        addPickup: async (id, step, moveFailures) => {
+          await p.query(
+            `INSERT INTO watch_pickups (watch_id, original_name, size, modified_at, step, move_failures)
+             VALUES ($1, $2, 1, now(), $3, $4)`,
+            [id, `p-${++n}.docx`, step, moveFailures],
+          );
+        },
+        moveFailures: async (id) => {
+          const { rows } = await p.query<{ step: string; move_failures: number }>(
+            'SELECT step, move_failures FROM watch_pickups WHERE watch_id = $1',
+            [id],
+          );
+          return Object.fromEntries(rows.map((r) => [r.step, r.move_failures]));
+        },
         recordFinish: async (id, delivered, hoursAgo) => {
           await p.query(
             `INSERT INTO watch_finishes (watch_id, finished_at, delivered)
