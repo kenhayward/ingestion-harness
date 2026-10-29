@@ -5,6 +5,7 @@ targets, batches and items and removes them)."""
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 from collections.abc import Iterator
 from typing import Any, Protocol
@@ -248,3 +249,59 @@ def test_tenants_do_not_block_each_other(world: World) -> None:
 @pytest.mark.parametrize(("lanes", "expected"), [(None, 1), (1, 1), (4, 4)])
 def test_lanes_for_a_target(lanes: int | None, expected: int) -> None:
     assert lanes_for(Target("t", "", layout="sink", sink_id="docs", lanes=lanes)) == expected
+
+
+def test_an_item_of_another_tenant_is_refused(world: World) -> None:
+    item = world.item(world.batch(DOCS))
+    with pytest.raises(ValueError, match="belongs to tenant"):
+        world.store.try_claim(item, OTHER, 1)
+    assert world.store.in_flight(DOCS) == 0
+    assert world.store.in_flight(OTHER) == 0
+
+
+def test_a_new_batch_is_served_before_batches_that_had_lanes(world: World) -> None:
+    """NULLS FIRST: a batch that never had a lane goes before every batch that had one, however
+    long ago, and however late it arrived."""
+    a, b = world.batch(DOCS), world.batch(DOCS)
+    a_items = [world.item(a, "waiting_to_deliver") for _ in range(2)]
+    b_items = [world.item(b, "waiting_to_deliver") for _ in range(2)]
+    for expected in (a_items[0], b_items[0]):
+        (claimed,) = world.store.dispatch(DOCS, 1)
+        assert claimed == expected
+        world.set_outcome(claimed, "created")
+    late = world.batch(DOCS)
+    late_item = world.item(late, "waiting_to_deliver")
+    assert world.store.dispatch(DOCS, 1) == [late_item]
+    world.set_outcome(late_item, "created")
+    assert world.store.dispatch(DOCS, 1) == [a_items[1]]
+
+
+@pytest.mark.integration
+def test_two_workers_racing_for_one_lane_get_one() -> None:
+    if DB is None:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    world = PgWorld(DB)
+    other = psycopg.connect(DB, autocommit=True)
+    try:
+        batch = world.batch(DOCS)
+        items = [world.item(batch), world.item(batch)]
+        stores = [world.store, PgLaneStore(other)]
+        start = threading.Barrier(2)
+        results: list[bool] = [False, False]
+
+        def claim(n: int) -> None:
+            start.wait()
+            results[n] = stores[n].try_claim(items[n], DOCS, 1)
+
+        threads = [threading.Thread(target=claim, args=(n,)) for n in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(results) == [False, True]
+        assert world.store.in_flight(DOCS) == 1
+    finally:
+        other.close()
+        world.close()

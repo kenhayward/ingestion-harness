@@ -20,7 +20,7 @@ from ingest_worker.bridge.models import (
     package_archive_keys,
 )
 from ingest_worker.decompose.items import ItemOutcome
-from ingest_worker.decompose.lanes import HOLDING, Tenant
+from ingest_worker.decompose.lanes import HOLDING, Tenant, check_tenant
 from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
@@ -1196,6 +1196,7 @@ class MemoryLaneStore:
         item = self.items.get(item_id)
         if item is None:
             return False
+        check_tenant(item_id, self.batches[item.batch_id].tenant, tenant)
         if item.claimed is not None and item.outcome in HOLDING:
             return True
         if self.in_flight(tenant) >= lanes:

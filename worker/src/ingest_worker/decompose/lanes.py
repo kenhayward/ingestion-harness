@@ -9,6 +9,11 @@ those states releases it, so nothing ever clears a lane. An item that finds no f
 oldest waiting item first. A newcomer never jumps the queue: while any item of the tenant waits
 without a lane, `try_claim` refuses.
 
+The order of a caller: `try_claim` first; refused, it writes `waiting_to_deliver` afterwards (in
+its own transaction, outside the lock). A lane freed between the refusal and that write is not
+lost: the periodic dispatcher (every few seconds, the backstop) calls `dispatch` for every
+`waiting_tenants()` tenant and hands it to the waiting item.
+
 The tenant of an item is `decomposition_items → decomposition_batches.target_id →
 publish_targets (sink_id, instance_id)`.
 """
@@ -36,10 +41,21 @@ def lanes_for(target: Target) -> int:
     return target.lanes or 1
 
 
+def check_tenant(item_id: str, actual: Tenant, asked: Tenant) -> None:
+    """The lock and the count are the asked tenant's: an item of another one is a caller's bug."""
+    if actual != asked:
+        raise ValueError(f"item {item_id} belongs to tenant {actual}, not {asked}")
+
+
 class LaneStore(Protocol):
     def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
         """Take a lane for the item: only while fewer than `lanes` are in flight and no other item
-        of the tenant waits without one. True as well when the item holds a lane already."""
+        of the tenant waits without one.
+
+        True as well when the item already holds a lane (a retry of its job): that is not a fresh
+        claim, nothing is written. A caller refused writes `waiting_to_deliver` afterwards; a lane
+        freed in between is picked up by the periodic dispatcher (`dispatch`), the backstop.
+        Raises ValueError when the item's own tenant (its batch's target) is not `tenant`."""
         ...
 
     def in_flight(self, tenant: Tenant) -> int:
@@ -57,7 +73,10 @@ class LaneStore(Protocol):
 
 class PgLaneStore:
     """The lanes on Postgres. Every tenant's method runs in one transaction holding the tenant's
-    advisory lock, so two workers never hand out the same lane."""
+    advisory lock, so two workers never hand out the same lane.
+
+    Needs its own autocommit connection (as `PgCallSlots`): each method commits its transaction,
+    releasing the lock, and must not ride inside a caller's transaction."""
 
     def __init__(self, conn: psycopg.Connection[Any]) -> None:
         self._conn = conn
@@ -99,13 +118,19 @@ class PgLaneStore:
         with self._conn.transaction():
             self._lock(tenant)
             row = self._conn.execute(
-                """SELECT batch_id::text, lane_claimed_at IS NOT NULL AND outcome = ANY(%s)
-                     FROM decomposition_items WHERE id = %s::uuid""",
+                """SELECT i.batch_id::text,
+                          i.lane_claimed_at IS NOT NULL AND i.outcome = ANY(%s),
+                          t.sink_id, t.instance_id
+                     FROM decomposition_items i
+                     JOIN decomposition_batches b ON b.id = i.batch_id
+                     JOIN publish_targets t ON t.id = b.target_id
+                    WHERE i.id = %s::uuid""",
                 (list(HOLDING), item_id),
             ).fetchone()
             if row is None:
                 return False
             batch_id, holding = str(row[0]), bool(row[1])
+            check_tenant(item_id, (str(row[2]), None if row[3] is None else str(row[3])), tenant)
             if holding:
                 return True
             if self._count(tenant) >= lanes:
