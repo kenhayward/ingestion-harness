@@ -18,6 +18,9 @@ ALTER TABLE decomposition_batches ADD COLUMN last_lane_at timestamptz;
 -- catalog describes it; null when not described (one at a time). The API's target sync writes it.
 ALTER TABLE publish_targets ADD COLUMN lanes integer CHECK (lanes BETWEEN 1 AND 64);
 
--- The lane count reads the items holding or waiting for a lane.
-CREATE INDEX decomposition_items_lane_idx ON decomposition_items (outcome)
-  WHERE outcome IN ('waiting_to_deliver', 'delivering');
+-- The lane gate's reads, all under a tenant's lock: the lane count (`outcome IN` the three
+-- holding outcomes `AND lane_claimed_at IS NOT NULL`), the waiting items (`waiting_to_deliver`
+-- `AND lane_claimed_at IS NULL`) and the dispatcher's sweeps. Every one of them implies this
+-- predicate, so each may use the index.
+CREATE INDEX decomposition_items_lane_idx ON decomposition_items (outcome, lane_claimed_at, batch_id)
+  WHERE outcome IN ('decomposing', 'waiting_to_deliver', 'delivering');
