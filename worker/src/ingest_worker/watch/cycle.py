@@ -132,6 +132,9 @@ class _Cycle:
         self.admitted = 0
         self.finished = 0
         self.settling = False
+        #: The bridge failing this cycle's finish moves or resume listing: a draining watch,
+        #: which never looks at its root, shows it as its problem (`show_stuck`).
+        self.outage: str | None = None
 
     # --- the bridge, as the run-as user ---
 
@@ -246,6 +249,8 @@ class _Cycle:
                 self._move((PROCESSING, p.working_name), (folder, p.working_name))
             except BridgeError as exc:
                 if _code(exc) != "not_found":
+                    if isinstance(exc, BridgeUnavailable):
+                        self.outage = str(exc)
                     self._refused_move(p, f"{p.working_name} to {folder}/", exc)
                     continue
                 self._event("warn", f"{p.working_name} was no longer in {PROCESSING}/")
@@ -263,10 +268,15 @@ class _Cycle:
     # --- 2. resume ---
 
     def show_stuck(self) -> None:
-        """The watch's problem while pickups are stuck (running or draining)."""
+        """The watch's problem while pickups are stuck (running or draining); a draining watch,
+        which never looks at its root, also shows the bridge failing its moves or listing."""
         stuck = sum(1 for p in self.store.pickups(self.w.id) if p.move_failures >= MAX_MOVE_TRIES)
         problem = stuck_problem(stuck) if stuck else None
+        if problem is None and self.w.state == "draining":
+            problem = self.outage
         if problem != self.w.problem and (problem is not None or self.w.state == "draining"):
+            if problem is not None and problem == self.outage:
+                self._event("error", problem)
             self.store.set_health(self.w.id, problem, None, self.now)
 
     def resume(self) -> None:
@@ -280,6 +290,7 @@ class _Cycle:
             try:
                 root = self._list("")
             except BridgeError as exc:
+                self.outage = str(exc)
                 self._event("warn", f"could not list the folder to resume pickups: {exc}")
         for p in pending:
             if p.step != "moved" and root is None:

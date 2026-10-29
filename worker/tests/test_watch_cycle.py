@@ -964,3 +964,36 @@ def test_a_file_whose_source_key_the_contract_refuses_is_left_in_the_root_once_n
     assert set(w.files("processing")) == {"good.pdf"}
     warned = [e for e in w.store.events if "control character" in e["message"]]
     assert len(warned) == 1
+
+
+def test_a_draining_watch_shows_an_outage_while_filing_and_recovers() -> None:
+    w = World()
+    item_id = w.admitted("a.pdf", pdf())
+    w.admitted("b.pdf", pdf("b"), at=T0 + timedelta(seconds=20))
+    w.store.set_outcome(item_id, "created")
+    w.store.set_state(w.watch_id, "draining")
+    for n in range(2):
+        w.bridge.fail_next["move"] = BridgeUnavailable("the bridge is down")
+        w.cycle(T0 + timedelta(minutes=n + 1))
+        watch = w.store.watch(w.watch_id)
+        assert watch is not None and watch.problem == "the bridge is down"
+    assert len([e for e in w.store.events if e["level"] == "error"]) == 1
+
+    w.cycle(T0 + timedelta(minutes=5))
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None and watch.problem is None and watch.state == "draining"
+    assert set(w.files("delivered")) == {"a.pdf"}
+
+
+def test_a_draining_watch_shows_a_resume_listing_that_fails() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.store.fail_next["advance:moved"] = RuntimeError("stopped between moving and recording it")
+    with pytest.raises(RuntimeError):
+        w.cycle(T0 + timedelta(seconds=10))
+    w.store.set_state(w.watch_id, "draining")
+    w.bridge.fail_next["list"] = BridgeUnavailable("the bridge is down")
+    w.cycle(T0 + timedelta(minutes=1))
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None and watch.problem == "the bridge is down"
