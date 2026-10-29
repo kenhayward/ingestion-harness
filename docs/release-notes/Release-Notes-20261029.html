@@ -193,7 +193,30 @@
             <span>— underlines and broken borders in ruled tables, hidden text, a formula</span>
           </li>
         </ul>
+        <h4>Other updates</h4>
+        <ul>
+          <li>
+            <a href="#delivery-lanes">External targets take documents at their own pace</a>
+            <span>— groundwork for watched folders</span>
+          </li>
+        </ul>
       </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            The delivery contract is now version 4 (<code>@ih/bridge-contract</code> 0.11.0). Sinks
+            built for version 2 or 3 keep working. An external sink that declares no
+            <code>lanes</code> now gets one delivery at a time per tenant.
+          </li>
+          <li>
+            Two new settings for the bridge: <code>BRIDGE_DELIVERY_RUNNERS</code> (deliveries the
+            bridge sends at once, 1 to 32, default 4) and <code>BRIDGE_MAX_SOURCE_MB</code> (the
+            largest file read from a watched folder, default 100). Both are optional.
+          </li>
+        </ul>
+      </div>
 
       <h2 id="minor">Minor changes</h2>
 
@@ -342,6 +365,21 @@
         </li>
         <li>The decomposer version changes (1010).</li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="delivery-lanes">External targets take documents at their own pace</h3>
+      <p>
+        An external target can now say how many documents it can take at once, for each of its
+        tenants. The bridge sends no more than that, however many documents are waiting for other
+        targets, and a target that says nothing gets one at a time. The built-in targets are not
+        limited.
+      </p>
+      <p>
+        This also prepares the ground for watched folders: a target can offer folders that CT Studio
+        reads documents from and moves them out of once they are handled. Nothing uses them yet.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
   </body>

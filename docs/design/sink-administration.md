@@ -6,6 +6,14 @@ delivers to, tenants for example) and **clients** (the tokens its own callers us
 bridge. It is sink-neutral: no sink's vocabulary appears in the contract. CT Studio's page is
 described under [CT Studio's page](#ct-studios-page).
 
+## Later versions
+
+Contract version 4 (`@ih/bridge-contract` 0.11.0) is separate from this capability. Sinks may declare
+`lanes` per instance (how many deliveries they take at once; undeclared = 1 for an external sink),
+and a sink may offer **watched folders** (`capabilities.watchedFolders`, `sources:list|read|move|put`
+calls, browse `scope: 'source'`; see `packages/bridge-contract/src/sources.ts`). Version 3 sinks keep
+working unchanged.
+
 ## Negotiation
 
 - A sink declares `contractVersion: 3` and `capabilities.administration`:

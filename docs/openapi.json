@@ -90990,6 +90990,55 @@
                                   "instanceFields"
                                 ],
                                 "additionalProperties": false
+                              },
+                              "watchedFolders": {
+                                "type": "object",
+                                "properties": {
+                                  "sourceFields": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "fixed",
+                                            "pattern"
+                                          ]
+                                        },
+                                        "required": {
+                                          "type": "boolean"
+                                        },
+                                        "overridable": {
+                                          "type": "boolean"
+                                        },
+                                        "browse": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "label",
+                                        "kind",
+                                        "required",
+                                        "overridable",
+                                        "browse"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "sourceFields"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [
@@ -91018,6 +91067,11 @@
                                 },
                                 "label": {
                                   "type": "string"
+                                },
+                                "lanes": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 64
                                 }
                               },
                               "required": [
