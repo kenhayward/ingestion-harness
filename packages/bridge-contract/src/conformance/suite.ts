@@ -6,8 +6,10 @@ import { decompositionIdempotencyKey } from '../idempotency.js';
 import { isDecompositionProvenance, PackageSchema, type BridgePackage } from '../package.js';
 import { signRequest } from '../signing.js';
 import { administrationSuite } from './administration.js';
+import { watchedFoldersSuite } from './watched-folders.js';
 import {
   administrationOf,
+  watchedFoldersOf,
   BrowseResultSchema,
   ConnectionTestResultSchema,
   SinkDeliverResultSchema,
@@ -35,6 +37,11 @@ export interface ConformanceOptions {
    * sink declaring administration fails the check `admin: options` (the suite cannot add one).
    */
   administration?: { instanceFields: Record<string, string> };
+  /**
+   * Version 4: where the watched folder checks look (a value for each of the sink's
+   * `sourceFields`). Without it a sink declaring watched folders fails the check `watch: options`.
+   */
+  watchedFolders?: { source: Record<string, string> };
 }
 
 export interface CheckResult {
@@ -321,6 +328,24 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
       );
     } else {
       check('admin: options', false, 'the sink declares administration: pass administration');
+    }
+  }
+
+  // 11. watched folders (version 4), when the sink declares them
+  if (described && watchedFoldersOf(described)) {
+    if (opts.watchedFolders) {
+      results.push(
+        ...(await watchedFoldersSuite({
+          url: opts.url,
+          key: opts.key,
+          instanceId: opts.instanceId,
+          credential: opts.credential ?? {},
+          source: opts.watchedFolders.source,
+          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+        })),
+      );
+    } else {
+      check('watch: options', false, 'the sink declares watched folders: pass watchedFolders');
     }
   }
   return results;

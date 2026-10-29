@@ -256,6 +256,9 @@ services:
       RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
       # External sinks, each with its own signing key (blank: S3 and the triple store only).
       BRIDGE_SINKS: ${BRIDGE_SINKS:-}
+      # Delivery steps run at once (blank = 4) and the largest watched-folder file read (MB, blank = 100).
+      BRIDGE_DELIVERY_RUNNERS: ${BRIDGE_DELIVERY_RUNNERS:-}
+      BRIDGE_MAX_SOURCE_MB: ${BRIDGE_MAX_SOURCE_MB:-}
     networks: [default, rdf]
     depends_on:
       migrate-bridge: { condition: service_completed_successfully }

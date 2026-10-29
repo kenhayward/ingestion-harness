@@ -1,5 +1,6 @@
 import {
   bridgeError,
+  lanesOf,
   type BridgeError,
   type BridgePackage,
   packageVersionFor,
@@ -10,8 +11,9 @@ import type { Credentials } from '../connections/credential.js';
 import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkPort, type SinkRegistry } from '../sinks/port.js';
+import { BUILT_IN } from '../sinks/registry.js';
 import type { Target, TargetRepo } from '../targets/repo.js';
-import type { DeliveryRepo, DeliveryRow, Transition } from './repo.js';
+import type { DeliveryRepo, DeliveryRow, LaneLimits, Transition } from './repo.js';
 
 /**
  * What a sink of `sinkVersion` is sent; the staged copy is never changed. A newer version is a
@@ -38,6 +40,18 @@ export interface RunnerDeps {
   leaseSeconds: number;
   /** How long to wait before asking a sink about a pending job again. */
   pollSeconds?: number;
+}
+
+/**
+ * Each tenant's lanes from its sink's cached describe: a built-in sink is unlimited, an external
+ * one not described yet takes one delivery at a time, else its instance's `lanes` (default 1).
+ */
+export function laneLimitsOf(registry: SinkRegistry): LaneLimits {
+  return (sinkId, instanceId) => {
+    if (BUILT_IN.has(sinkId)) return null;
+    const d = registry.described(sinkId);
+    return d ? lanesOf(d, instanceId ?? '') : 1;
+  };
 }
 
 /** Seconds to wait before retry number `attempt`: 30 s, doubling, at most an hour. */
@@ -197,7 +211,7 @@ async function step(
  * with backoff until `maxAttempts`.
  */
 export async function runOnce(deps: RunnerDeps, now: Date): Promise<'idle' | 'worked'> {
-  const row = await deps.deliveries.claim(now, deps.leaseSeconds);
+  const row = await deps.deliveries.claim(now, deps.leaseSeconds, laneLimitsOf(deps.sinks));
   if (!row) return 'idle';
   let transition: Transition;
   const used = { connectionId: null as string | null };

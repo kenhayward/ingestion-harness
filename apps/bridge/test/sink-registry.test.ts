@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bridgeError, type SinkDescribe } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
+import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import { SinkError } from '../src/sinks/port.js';
 import { CachingSinkRegistry, parseSinkEntries } from '../src/sinks/registry.js';
@@ -81,6 +82,19 @@ describe('CachingSinkRegistry', () => {
     expect(registry.get('nope')).toBeNull();
   });
 
+  it("keeps an external sink's watched folders as it declared them, and its folder calls", async () => {
+    const docs = new FakeDocumentSink();
+    const registry = new CachingSinkRegistry({ docs });
+    await registry.refresh();
+    const port = registry.get('docs')!;
+    const described = await port.describe();
+    expect(described.capabilities.watchedFolders).toEqual(
+      (await docs.describe()).capabilities.watchedFolders,
+    );
+    expect(described.capabilities.readBack).toBe(false);
+    expect(port.sources).toBe(docs.sources);
+  });
+
   it('a failed refresh keeps the last good describe and marks the sink unavailable', async () => {
     const sink = new Flaky({ name: 'Remote' });
     const registry = new CachingSinkRegistry({ fake: sink });
@@ -103,6 +117,17 @@ describe('CachingSinkRegistry', () => {
     await expect(registry.get('fake')!.describe()).rejects.toMatchObject({
       error: { code: 'sink_unavailable' },
     });
+  });
+
+  it('hands out the last describe without a call, none before the first', async () => {
+    const sink = new Flaky({ name: 'Remote' });
+    const registry = new CachingSinkRegistry({ fake: sink });
+    expect(registry.described('fake')).toBeNull();
+    await registry.refresh();
+    expect(registry.described('fake')?.name).toBe('Remote');
+    sink.down = true;
+    await registry.refresh();
+    expect(registry.described('fake')?.name).toBe('Remote');
   });
 
   it('passes every other call straight to the sink', async () => {

@@ -27,6 +27,11 @@ export const ERROR_CODES = Object.freeze({
   unsupported_part: 'needs_user',
   not_found: 'needs_user',
   changed_in_target: 'needs_user',
+  /**
+   * Version 4: a watched-folder move whose destination already holds a different file (another
+   * size); nothing was changed. See `SOURCE_PATHS.move`.
+   */
+  destination_exists: 'needs_user',
   /** Version 3: an entry from the sink's own configuration, which administration never changes. */
   locked: 'needs_user',
   /** Version 3: a caller's token does not allow the call (a write with read-only access). */

@@ -10,6 +10,8 @@ import {
   SinkDeliverResultSchema,
   SinkDescribeSchema,
   SinkJobStatusSchema,
+  SOURCE_PATHS,
+  SourceListAnswerSchema,
   type AdminCallName,
   type BridgeError,
   type BrowseRequest,
@@ -22,7 +24,7 @@ import {
   type SinkJobStatus,
 } from '@ih/bridge-contract';
 import type { z } from 'zod';
-import { SinkError, type SinkPort } from './port.js';
+import { SinkError, sourceTooLarge, type SinkPort, type SourcePort } from './port.js';
 
 /** The most an answer may be: sinks answer receipts and statuses, never content. */
 const MAX_ANSWER_BYTES = 8 * 2 ** 20;
@@ -43,6 +45,17 @@ export interface HttpSinkOptions {
 
 const refuse = (code: 'internal' | 'timeout' | 'sink_unavailable', message: string) =>
   new SinkError(bridgeError(code, message));
+
+/** How much of an answer is read, and the refusal past it. */
+interface Limit {
+  bytes: number;
+  tooLarge: () => SinkError;
+}
+
+const ANSWER_LIMIT: Limit = {
+  bytes: MAX_ANSWER_BYTES,
+  tooLarge: () => refuse('internal', "the sink's answer is too large"),
+};
 
 /**
  * A sink's own error as the bridge keeps it (and CT Studio shows it): a known code takes its own
@@ -108,6 +121,30 @@ export class HttpSink implements SinkPort {
     );
   }
 
+  /**
+   * Contract version 4: the watched folder calls. A list is checked like any answer; a read is
+   * the file's bytes, counted as they stream and refused past `maxBytes`; a move or a put answers
+   * no content.
+   */
+  readonly sources: SourcePort = {
+    list: async (req) =>
+      (await this.call('POST', SOURCE_PATHS.list, req, SourceListAnswerSchema, this.timeouts.short))
+        .files,
+    read: async (req, maxBytes) =>
+      (
+        await this.exchange('POST', SOURCE_PATHS.read, req, this.timeouts.long, {
+          bytes: maxBytes,
+          tooLarge: () => sourceTooLarge(maxBytes),
+        })
+      ).bytes,
+    move: async (req) => {
+      await this.exchange('POST', SOURCE_PATHS.move, req, this.timeouts.long);
+    },
+    put: async (req) => {
+      await this.exchange('POST', SOURCE_PATHS.put, req, this.timeouts.short);
+    },
+  };
+
   admin(call: AdminCallName, id: string | null, request: unknown): Promise<unknown> {
     const route = adminRoute(call);
     return this.call(
@@ -126,6 +163,29 @@ export class HttpSink implements SinkPort {
     schema: z.ZodType<T>,
     timeoutMs: number,
   ): Promise<T> {
+    const { bytes } = await this.exchange(method, path, body, timeoutMs);
+    let json: unknown;
+    try {
+      json = JSON.parse(bytes.toString('utf8'));
+    } catch {
+      throw refuse('internal', "the sink's answer is not valid");
+    }
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) throw refuse('internal', "the sink's answer is not valid");
+    return parsed.data;
+  }
+
+  /**
+   * One signed call: the answer's bytes when it succeeded (read up to `limit`), else the sink's
+   * refusal as a SinkError. An error answer is always read up to MAX_ANSWER_BYTES.
+   */
+  private async exchange(
+    method: 'GET' | 'POST',
+    path: string,
+    body: unknown,
+    timeoutMs: number,
+    limit: Limit = ANSWER_LIMIT,
+  ): Promise<{ bytes: Buffer }> {
     const payload = body === undefined ? '' : JSON.stringify(body);
     const headers: Record<string, string> = signRequest(this.opts.key, {
       method,
@@ -134,7 +194,7 @@ export class HttpSink implements SinkPort {
     });
     if (body !== undefined) headers['content-type'] = 'application/json';
     let res: Response;
-    let text: string;
+    let bytes: Buffer;
     try {
       res = await this.fetchImpl(`${this.base}${path}`, {
         method,
@@ -143,7 +203,7 @@ export class HttpSink implements SinkPort {
         signal: AbortSignal.timeout(timeoutMs),
       });
       // The same timeout covers the body: a sink that stalls or drops mid-answer is caught here.
-      text = await this.read(res);
+      bytes = await this.read(res, res.status >= 400 ? ANSWER_LIMIT : limit);
     } catch (err) {
       if (err instanceof SinkError) throw err;
       const name = (err as Error).name;
@@ -155,40 +215,32 @@ export class HttpSink implements SinkPort {
     if (res.status === 401) {
       throw refuse('internal', "the sink refused the bridge's signature: check its key");
     }
-    if (res.status >= 400) throw this.errorOf(res.status, text);
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw refuse('internal', "the sink's answer is not valid");
-    }
-    const parsed = schema.safeParse(json);
-    if (!parsed.success) throw refuse('internal', "the sink's answer is not valid");
-    return parsed.data;
+    if (res.status >= 400) throw this.errorOf(res.status, bytes.toString('utf8'));
+    return { bytes };
   }
 
-  /** The answer's text, refused past MAX_ANSWER_BYTES (by its length, or as it streams). */
-  private async read(res: Response): Promise<string> {
+  /** The answer's bytes, refused past `limit` (by its length, or as it streams). */
+  private async read(res: Response, limit: Limit): Promise<Buffer> {
     const declared = Number(res.headers.get('content-length') ?? '0');
-    if (declared > MAX_ANSWER_BYTES) {
+    if (declared > limit.bytes) {
       await res.body?.cancel().catch(() => undefined);
-      throw refuse('internal', "the sink's answer is too large");
+      throw limit.tooLarge();
     }
     const reader = res.body?.getReader();
-    if (!reader) return '';
+    if (!reader) return Buffer.alloc(0);
     const chunks: Uint8Array[] = [];
     let size = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_ANSWER_BYTES) {
+      if (size > limit.bytes) {
         await reader.cancel().catch(() => undefined);
-        throw refuse('internal', "the sink's answer is too large");
+        throw limit.tooLarge();
       }
       chunks.push(value);
     }
-    return Buffer.concat(chunks).toString('utf8');
+    return Buffer.concat(chunks);
   }
 
   /** A refusal as the sink sent it when it is a contract error; otherwise classed by status. */

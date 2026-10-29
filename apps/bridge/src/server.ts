@@ -15,7 +15,11 @@ const migrations =
   fileURLToPath(new URL('../../../db/bridge-migrations', import.meta.url));
 await migrateBridge(config.DATABASE_URL, migrations);
 
-const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 10 });
+// A connection per delivery runner, besides the API's and the other loops'.
+const pool = new pg.Pool({
+  connectionString: config.DATABASE_URL,
+  max: 10 + config.BRIDGE_DELIVERY_RUNNERS,
+});
 const built = await buildFromConfig(config, {
   pool,
   logger: { level: config.LOG_LEVEL },
@@ -54,20 +58,29 @@ async function loop(name: string, tick: () => Promise<boolean>, idleMs: number):
   }
 }
 
-/** A restore swapped in a database without this schema: migrate and seed again. */
-const repair = async () => {
-  app.log.warn('the bridge schema is missing (a restore?): migrating again');
-  await migrateBridge(config.DATABASE_URL, migrations);
-  await seedInternalConnection(app.deps.connections);
-};
+/**
+ * A restore swapped in a database without this schema: migrate and seed again, once for every
+ * runner that finds it missing at the same time.
+ */
+let repairing: Promise<void> | null = null;
+const repair = () =>
+  (repairing ??= (async () => {
+    app.log.warn('the bridge schema is missing (a restore?): migrating again');
+    await migrateBridge(config.DATABASE_URL, migrations);
+    await seedInternalConnection(app.deps.connections);
+  })().finally(() => {
+    repairing = null;
+  }));
 
-const loops = [
+// Several runners, so one slow sink never holds up the rest; the claim keeps each tenant
+// (a sink's instance) within its lanes however many run.
+const loops = Array.from({ length: config.BRIDGE_DELIVERY_RUNNERS }, (_, n) =>
   loop(
-    'delivery runner',
+    `delivery runner ${n + 1}`,
     withSchemaRepair(async () => (await runOnce(runner, new Date())) === 'worked', repair),
     1000,
   ),
-];
+);
 loops.push(
   loop(
     'package pruner',

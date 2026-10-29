@@ -3,7 +3,7 @@ import { TargetTestResultSchema, TargetViewSchema } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { Credentials } from '../src/connections/credential.js';
 import { MemoryConnectionRepo } from '../src/connections/repo.js';
-import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
+import { MemoryDeliveryRepo, UNLIMITED } from '../src/deliveries/repo.js';
 import { MemoryObjectStore } from '../src/s3/store.js';
 import { encryptSecret } from '../src/secrets.js';
 import { FakeSink } from '../src/sinks/fake.js';
@@ -294,7 +294,7 @@ describe('DELETE /v1/targets/:id', () => {
       (await call('GET', '/v1/targets')).json().targets.map((t: { id: string }) => t.id),
     ).toEqual(['b']);
     // Once its delivery is final the target goes, and its id is not taken up again.
-    const claimed = (await deliveries.claim(new Date(), 300))!;
+    const claimed = (await deliveries.claim(new Date(), 300, UNLIMITED))!;
     await deliveries.transition(
       claimed.id,
       { status: 'failed', error: { class: 'needs_user', code: 'not_found', message: 'x' } },

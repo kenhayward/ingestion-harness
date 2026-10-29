@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_TARGET_ID,
   normalisePrefix,
+  SinkInfoSchema,
   publishTargetIdFrom,
   TargetCreateBodySchema,
   TargetIdSchema,
@@ -192,5 +193,28 @@ describe('TargetTestResultSchema', () => {
       ),
     );
     expect(TargetTestResultSchema.strict().parse(json)).toEqual(json);
+  });
+});
+
+describe('SinkInfoSchema lanes', () => {
+  it('keeps lanes on an instance', () => {
+    const info = SinkInfoSchema.parse({
+      id: 's',
+      name: 'S',
+      status: 'available',
+      contractVersion: 2,
+      connectionKind: 'personal',
+      instances: [{ id: 't1', label: 'T', lanes: 10 }],
+      destinationFields: [],
+      credentialFields: [],
+      capabilities: {
+        browse: false,
+        replace: false,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files'],
+      },
+    });
+    expect(info.instances[0]?.lanes).toBe(10);
   });
 });

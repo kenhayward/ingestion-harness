@@ -7,6 +7,7 @@ import {
   CredentialFieldSchema,
   DestinationFieldSchema,
   DestinationSchema,
+  InstanceSchema,
   ReceiptSchema,
 } from './sink-api.js';
 
@@ -105,7 +106,7 @@ export const SinkViewSchema = z.strictObject({
   capabilities: CapabilitiesSchema,
   connectionKind: z.enum(['shared', 'personal']),
   /** The places a personal connection is made to, as the sink's describe lists them. */
-  instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+  instances: z.array(InstanceSchema),
   /** What a target of this sink records, so a producer can render its form (never values). */
   destinationFields: z.array(DestinationFieldSchema),
   /** What a connection to this sink asks for (ids, labels, which are secret; never values). */
@@ -162,6 +163,8 @@ export const TargetBrowseRequestSchema = z.strictObject({
   instanceId: z.string().nullable(),
   connectionId: z.string().regex(CONNECTION_ID).nullable(),
   field: z.string().min(1),
+  /** Which settings `field` belongs to; absent = `destination`. */
+  scope: z.enum(['destination', 'source']).optional(),
   parentId: z.string().nullable(),
   cursor: z.string().nullable(),
   actingUser: ActingUserSchema.nullable(),

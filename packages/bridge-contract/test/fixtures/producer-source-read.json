@@ -1,0 +1,6 @@
+{
+  "source": { "folder": "inbox" },
+  "actingUser": { "id": "u1", "name": "Ada", "email": "ada@example.com" },
+  "folder": "processing",
+  "name": "Report 1.docx"
+}

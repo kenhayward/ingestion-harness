@@ -17,7 +17,15 @@ from ingest_worker.bridge.models import (
     CreateDeliveriesRequest,
     DeliveryView,
     DocumentReceipt,
+    ProducerSourceList,
+    ProducerSourceMove,
+    ProducerSourcePut,
+    ProducerSourceRead,
     Receipt,
+    SourceListAnswer,
+    SourceListRequest,
+    SourceMoveRequest,
+    SourcePutRequest,
     TargetTestResult,
     decomposition_idempotency_key,
     graph_idempotency_key,
@@ -46,11 +54,32 @@ def fixture(name: str) -> Any:
         ("event.json", BridgeEvent),
         ("error.json", BridgeError),
         ("target-test-result.json", TargetTestResult),
+        ("source-list.json", SourceListRequest),
+        ("source-move.json", SourceMoveRequest),
+        ("source-put.json", SourcePutRequest),
+        ("producer-source-list.json", ProducerSourceList),
+        ("producer-source-read.json", ProducerSourceRead),
+        ("producer-source-move.json", ProducerSourceMove),
+        ("producer-source-put.json", ProducerSourcePut),
+        ("source-list-answer.json", SourceListAnswer),
     ],
 )
 def test_fixture_validates_and_reserialises_unchanged(name: str, model: type[BaseModel]) -> None:
     data = fixture(name)
     assert model.model_validate(data).model_dump(by_alias=True, mode="json") == data
+
+
+def test_a_list_answer_takes_any_non_empty_name() -> None:
+    # One odd file never invalidates the answer; requests keep the strict name rule.
+    file = {"size": 1, "modifiedAt": "2026-10-29T09:15:00Z", "etag": None}
+    odd = [r"a\b.pdf", "n" * 300]
+    SourceListAnswer.model_validate({"files": [{**file, "name": n} for n in odd]})
+    with pytest.raises(ValidationError):
+        SourceListAnswer.model_validate({"files": [{**file, "name": ""}]})
+    with pytest.raises(ValidationError):
+        ProducerSourceRead.model_validate(
+            {**fixture("producer-source-read.json"), "name": "n" * 300}
+        )
 
 
 def test_unknown_fields_are_refused() -> None:

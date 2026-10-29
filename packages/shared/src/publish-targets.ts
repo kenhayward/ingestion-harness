@@ -315,7 +315,13 @@ export const SinkInfoSchema = z.object({
   status: z.enum(['available', 'unavailable']),
   contractVersion: z.number().int(),
   connectionKind: z.enum(['shared', 'personal']),
-  instances: z.array(z.object({ id: z.string(), label: z.string() })),
+  instances: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      lanes: z.number().int().min(1).max(64).optional(),
+    }),
+  ),
   destinationFields: z.array(
     z.object({
       id: z.string(),

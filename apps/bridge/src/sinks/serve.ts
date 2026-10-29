@@ -4,6 +4,11 @@ import {
   ConnectionTestRequestSchema,
   MemoryNonceStore,
   SinkDeliverRequestSchema,
+  SOURCE_PATHS,
+  SourceListRequestSchema,
+  SourceMoveRequestSchema,
+  SourcePutRequestSchema,
+  SourceReadRequestSchema,
 } from '@ih/bridge-contract';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import type { z } from 'zod';
@@ -30,8 +35,16 @@ export async function serveSink(
 
   const answer = async (reply: FastifyReply, run: () => Promise<unknown>) => {
     try {
-      return reply.code(200).send(await run());
+      const result = await run();
+      if (result === undefined) return reply.code(204).send();
+      if (Buffer.isBuffer(result)) {
+        return reply.code(200).header('content-type', 'application/octet-stream').send(result);
+      }
+      return reply.code(200).send(result);
     } catch (err) {
+      if (err instanceof SinkError && err.error.code === 'not_found') {
+        return reply.code(404).send(err.error);
+      }
       if (err instanceof SinkError) {
         return reply.code(err.error.class === 'needs_user' ? 422 : 503).send(err.error);
       }
@@ -59,5 +72,30 @@ export async function serveSink(
   app.get('/deliveries/:sinkJobId', (req, reply) =>
     answer(reply, () => sink.deliveryStatus((req.params as { sinkJobId: string }).sinkJobId)),
   );
+
+  // Contract version 4: the watched folders, for a sink that has them. A Fastify route escapes
+  // the colon of each path.
+  const sources = sink.sources;
+  if (sources) {
+    const route = (path: string) => path.replace(':', '::');
+    app.post(route(SOURCE_PATHS.list), (req, reply) =>
+      answer(reply, async () => ({
+        files: await sources.list(parse(SourceListRequestSchema, req.body)),
+      })),
+    );
+    app.post(route(SOURCE_PATHS.read), (req, reply) =>
+      answer(reply, () => sources.read(parse(SourceReadRequestSchema, req.body), Infinity)),
+    );
+    app.post(route(SOURCE_PATHS.move), (req, reply) =>
+      answer(reply, async () => {
+        await sources.move(parse(SourceMoveRequestSchema, req.body));
+      }),
+    );
+    app.post(route(SOURCE_PATHS.put), (req, reply) =>
+      answer(reply, async () => {
+        await sources.put(parse(SourcePutRequestSchema, req.body));
+      }),
+    );
+  }
   return app;
 }

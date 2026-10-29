@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { AdministrationSchema, type Administration } from './administration.js';
 import { BridgeErrorSchema } from './errors.js';
 import { ActingUserSchema, ContractVersion, PACKAGE_PARTS, PackageSchema } from './package.js';
+import { CredentialSchema, DestinationFieldSchema } from './fields.js';
+import { WatchedFoldersSchema, type WatchedFolders } from './sources.js';
+
+export { CredentialSchema, DestinationFieldSchema, type DestinationField } from './fields.js';
 
 /** One credential a sink asks a connection for. */
 export const CredentialFieldSchema = z.strictObject({
@@ -9,17 +13,6 @@ export const CredentialFieldSchema = z.strictObject({
   label: z.string(),
   secret: z.boolean(),
 });
-
-/** One destination setting of a target: fixed, or a pattern resolved per document. */
-export const DestinationFieldSchema = z.strictObject({
-  id: z.string(),
-  label: z.string(),
-  kind: z.enum(['fixed', 'pattern']),
-  required: z.boolean(),
-  overridable: z.boolean(),
-  browse: z.boolean(),
-});
-export type DestinationField = z.infer<typeof DestinationFieldSchema>;
 
 export const CapabilitiesSchema = z.strictObject({
   browse: z.boolean(),
@@ -36,14 +29,21 @@ export const CapabilitiesSchema = z.strictObject({
     .optional(),
   /** Version 3: the sink's instances and clients can be administered through the bridge. */
   administration: AdministrationSchema.optional(),
+  /** Version 4: the sink holds files in folders that CT Studio watches and converts. */
+  watchedFolders: WatchedFoldersSchema.optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
 
 /**
- * The versions a sink may declare: the package versions, and 3 (version 2 plus administration,
- * which changes no package). A version 3 sink is sent version 2 packages (`packageVersionFor`).
+ * The versions a sink may declare: the package versions, 3 (version 2 plus administration) and 4
+ * (plus watched folders); neither changes a package. A version 3 or 4 sink is sent version 2 packages (`packageVersionFor`).
  */
-export const DescribeContractVersion = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+export const DescribeContractVersion = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+]);
 export type DescribeContractVersion = z.infer<typeof DescribeContractVersion>;
 
 /** The package version a sink of `version` is sent: packages stop at version 2. */
@@ -51,13 +51,27 @@ export function packageVersionFor(version: DescribeContractVersion): ContractVer
   return version === 1 ? 1 : 2;
 }
 
+/** The most deliveries one instance may take at once. */
+export const MAX_LANES = 64;
+
+/**
+ * One place a sink delivers to. `lanes` is how many deliveries it takes at once (default 1);
+ * it is independent of `contractVersion`.
+ */
+export const InstanceSchema = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  lanes: z.number().int().min(1).max(MAX_LANES).optional(),
+});
+export type Instance = z.infer<typeof InstanceSchema>;
+
 /** What a sink says about itself (`GET /describe`). */
 export const SinkDescribeSchema = z
   .strictObject({
     name: z.string(),
     contractVersion: DescribeContractVersion,
     connectionKind: z.enum(['shared', 'personal']),
-    instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+    instances: z.array(InstanceSchema),
     credentialFields: z.array(CredentialFieldSchema),
     destinationFields: z.array(DestinationFieldSchema),
     capabilities: CapabilitiesSchema,
@@ -79,6 +93,13 @@ export const SinkDescribeSchema = z
         message: 'administration needs contractVersion 3',
       });
     }
+    if (c.watchedFolders && d.contractVersion < 4) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'watchedFolders'],
+        message: 'watchedFolders needs contractVersion 4',
+      });
+    }
     if (!c.decomposedDocuments) return;
     if (d.contractVersion < 2 || !c.readBack || !takes('document') || !takes('images')) {
       ctx.addIssue({
@@ -98,9 +119,15 @@ export function administrationOf(
   return d.contractVersion >= 3 ? (d.capabilities.administration ?? null) : null;
 }
 
+/** What a sink offers for watched folders, or null for a sink that doesn't declare it. */
+export function watchedFoldersOf(
+  d: Pick<SinkDescribe, 'contractVersion' | 'capabilities'>,
+): WatchedFolders | null {
+  return d.contractVersion >= 4 ? (d.capabilities.watchedFolders ?? null) : null;
+}
+
 /** Resolved destination values (patterns already applied). */
 export const DestinationSchema = z.record(z.string(), z.string());
-export const CredentialSchema = z.record(z.string(), z.string());
 
 export const ConnectionTestRequestSchema = z.strictObject({
   instanceId: z.string(),
@@ -118,6 +145,8 @@ export const BrowseRequestSchema = z.strictObject({
   instanceId: z.string(),
   credential: CredentialSchema.nullable(),
   field: z.string(),
+  /** Which settings `field` belongs to; absent = `destination`. */
+  scope: z.enum(['destination', 'source']).optional(),
   parentId: z.string().nullable(),
   cursor: z.string().nullable(),
 });
@@ -214,3 +243,12 @@ export const SinkJobStatusSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('failed'), error: BridgeErrorSchema }),
 ]);
 export type SinkJobStatus = z.infer<typeof SinkJobStatusSchema>;
+
+/**
+ * How many deliveries an instance takes at once: its `lanes`, else 1 (also for an unknown one).
+ * A sink that lists no instances, and a target whose instance is null, always get 1 lane: they
+ * deliver one at a time per tenant. A sink wanting more declares an instance with `lanes`.
+ */
+export function lanesOf(d: { instances: readonly Instance[] }, instanceId: string): number {
+  return d.instances.find((i) => i.id === instanceId)?.lanes ?? 1;
+}

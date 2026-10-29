@@ -53,12 +53,16 @@ const EnvSchema = z
     /** Where delivery events are posted (CT Studio's API); unset: events stay in the outbox. */
     BRIDGE_EVENTS_URL: optional(z.string().url()),
     BRIDGE_MAX_PACKAGE_MB: z.preprocess(blank, z.coerce.number().int().positive().default(50)),
+    /** The largest watched-folder file the bridge reads (larger: 422 `content_rejected`). */
+    BRIDGE_MAX_SOURCE_MB: z.preprocess(blank, z.coerce.number().int().positive().default(100)),
     BRIDGE_PACKAGE_RETENTION_DAYS: z.preprocess(
       blank,
       z.coerce.number().int().positive().default(30),
     ),
     BRIDGE_MAX_ATTEMPTS: z.preprocess(blank, z.coerce.number().int().positive().default(8)),
     BRIDGE_LEASE_SECONDS: z.preprocess(blank, z.coerce.number().int().positive().default(300)),
+    /** Delivery runner loops in this process; each tenant's lanes still bound what runs at once. */
+    BRIDGE_DELIVERY_RUNNERS: z.preprocess(blank, z.coerce.number().int().min(1).max(32).default(4)),
     /** The deployment's own S3 (SeaweedFS): internal targets and the package staging bucket. */
     S3_ENDPOINT: z.string().url(),
     /** Another URL the deployment's S3 answers on: a connection there keeps to its bucket rules. */

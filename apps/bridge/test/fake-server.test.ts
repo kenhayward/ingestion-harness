@@ -86,7 +86,7 @@ describe('the fake external sink server, names', () => {
 });
 
 describe('the fake external sink server, documents mode', () => {
-  it('documents mode serves describe v2 and /_edit', async () => {
+  it('documents mode serves describe v4 and /_edit', async () => {
     const app = await buildFakeServer(KEY, false, 'documents');
     open.push(app);
     const signed = (method: 'GET' | 'POST', url: string, body?: unknown) => {
@@ -104,7 +104,7 @@ describe('the fake external sink server, documents mode', () => {
     const described = await signed('GET', '/describe');
     expect(described.statusCode).toBe(200);
     expect(described.json()).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 4,
       capabilities: { accepts: ['document', 'images'], readBack: true },
     });
 
@@ -170,6 +170,25 @@ describe('the fake external sink server, documents mode', () => {
       code: 'not_found',
       details: { reason: 'document_missing', persistentId },
     });
+  });
+
+  it('documents mode drops files into its watched folder and shows a folder, unsigned', async () => {
+    const app = await buildFakeServer(KEY, false, 'documents');
+    open.push(app);
+    const drop = (payload: object) => app.inject({ method: 'POST', url: '/_drop', payload });
+    expect(
+      (await drop({ name: 'a.pdf', content: Buffer.from('hello').toString('base64') })).statusCode,
+    ).toBe(204);
+    expect((await drop({ name: 'a/b.pdf', content: '' })).statusCode).toBe(400);
+    expect((await drop({ name: 'c.pdf' })).statusCode).toBe(400);
+
+    const root = await app.inject({ method: 'GET', url: '/_folder?f=' });
+    expect(root.statusCode).toBe(200);
+    expect(root.json().files).toMatchObject([{ name: 'a.pdf', size: 5 }]);
+    expect((await app.inject({ method: 'GET', url: '/_folder?f=failed' })).json()).toEqual({
+      files: [],
+    });
+    expect((await app.inject({ method: 'GET', url: '/_folder?f=elsewhere' })).statusCode).toBe(400);
   });
 
   it('has no /_edit outside documents mode', async () => {

@@ -1,0 +1,9 @@
+{
+  "instanceId": "main",
+  "credential": { "token": "t" },
+  "source": { "folder": "inbox" },
+  "actingUser": null,
+  "folder": "failed",
+  "name": "Report 1.docx.error.txt",
+  "content": "could not convert"
+}

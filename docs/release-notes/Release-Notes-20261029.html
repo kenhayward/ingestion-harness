@@ -163,7 +163,8 @@
         Thursday 29 October 2026: failed documents re-run in their own batch, which shows them going
         through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
         PR #362, and four more: PR #363. Earlier batches can be deleted, and the target picked is
-        remembered: PR #364.
+        remembered: PR #364. External targets take documents at their own pace, the groundwork for
+        watched folders: PR #368.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -203,7 +204,38 @@
             >
           </li>
         </ul>
+        <h4>Other updates</h4>
+        <ul>
+          <li>
+            <a href="#delivery-lanes">External targets take documents at their own pace</a>
+            <span>— groundwork for watched folders</span>
+          </li>
+        </ul>
       </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            The delivery contract is now version 4 (<code>@ih/bridge-contract</code> 0.11.0). Sinks
+            built for version 2 or 3 keep working. An external sink that declares no
+            <code>lanes</code> now gets one delivery at a time per tenant, and so does a sink that
+            lists no instances, or a target with no instance: to take more at once, the sink
+            declares an instance with <code>lanes</code>.
+          </li>
+          <li>
+            A new error code, <code>destination_exists</code> (needs a person): a watched-folder
+            move whose destination already holds a different file. List answers may now carry any
+            non-empty file name; requests still take one path segment of up to 255 characters.
+          </li>
+          <li>
+            Two new settings for the bridge: <code>BRIDGE_DELIVERY_RUNNERS</code> (delivery steps
+            the bridge runs at once, 1 to 32, default 4; a delivery waiting on its sink holds none)
+            and <code>BRIDGE_MAX_SOURCE_MB</code> (the largest file read from a watched folder,
+            default 100). Both are optional.
+          </li>
+        </ul>
+      </div>
 
       <h2 id="minor">Minor changes</h2>
 
@@ -406,6 +438,24 @@
         </li>
         <li>The decomposer version changes (1011).</li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="delivery-lanes">External targets take documents at their own pace</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/368">#368</a>
+      </p>
+      <p>
+        An external target can now say how many documents it can take at once, for each of its
+        tenants. The bridge sends no more than that, however many documents are waiting for other
+        targets, and a target that says nothing gets one at a time. The built-in targets are not
+        limited.
+      </p>
+      <p>
+        This also prepares the ground for watched folders: a target can offer folders that CT Studio
+        reads documents from and moves them out of once they are handled. Nothing uses them yet.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
   </body>

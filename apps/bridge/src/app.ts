@@ -14,6 +14,7 @@ import type { ProducerClient } from './producer/client.js';
 import { healthRoutes } from './routes/health.js';
 import { connectionRoutes } from './routes/connections.js';
 import { sinkAdminRoutes } from './routes/sink-admin.js';
+import { sourceRoutes } from './routes/sources.js';
 import { targetRoutes } from './routes/targets.js';
 import type { SinkRegistry } from './sinks/port.js';
 import type { TargetRepo } from './targets/repo.js';
@@ -24,6 +25,7 @@ export interface BridgeDeps {
     BridgeConfig,
     | 'BRIDGE_CLIENT_KEY'
     | 'BRIDGE_MAX_PACKAGE_MB'
+    | 'BRIDGE_MAX_SOURCE_MB'
     | 'BRIDGE_PACKAGE_RETENTION_DAYS'
     | 'BRIDGE_PUBLIC_URL'
     | 'BRIDGE_COOKIE_SECURE'
@@ -71,6 +73,7 @@ export async function buildBridge(deps: BridgeDeps): Promise<FastifyInstance> {
   await app.register(catalogRoutes);
   await app.register(sinkAdminRoutes);
   await app.register(targetRoutes);
+  await app.register(sourceRoutes);
   await app.register(connectionRoutes);
   await app.register(pageRoutes);
   return app;

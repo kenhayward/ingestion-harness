@@ -25,11 +25,19 @@ describe('bridge config', () => {
       HOST: '0.0.0.0',
       PORT: 3100,
       BRIDGE_MAX_PACKAGE_MB: 50,
+      BRIDGE_MAX_SOURCE_MB: 100,
       BRIDGE_MAX_ATTEMPTS: 8,
       BRIDGE_LEASE_SECONDS: 300,
       BRIDGE_PACKAGE_RETENTION_DAYS: 30,
+      BRIDGE_DELIVERY_RUNNERS: 4,
     });
     expect(c.BRIDGE_EVENTS_URL).toBeUndefined();
+  });
+
+  it('reads blank runners and source cap (compose passes them as empty) as the defaults', () => {
+    const c = loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '', BRIDGE_MAX_SOURCE_MB: '' });
+    expect(c.BRIDGE_DELIVERY_RUNNERS).toBe(4);
+    expect(c.BRIDGE_MAX_SOURCE_MB).toBe(100);
   });
 
   it('reads numbers from strings', () => {
@@ -37,6 +45,20 @@ describe('bridge config', () => {
       PORT: 4000,
       BRIDGE_MAX_ATTEMPTS: 3,
     });
+  });
+
+  it('runs 1 to 32 delivery runners', () => {
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '32' }).BRIDGE_DELIVERY_RUNNERS,
+    ).toBe(32);
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '1' }).BRIDGE_DELIVERY_RUNNERS,
+    ).toBe(1);
+    for (const bad of ['0', '33', '2.5']) {
+      expect(() => loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: bad })).toThrow(
+        /BRIDGE_DELIVERY_RUNNERS/,
+      );
+    }
   });
 
   it('needs BRIDGE_SECRETS_KEY as 32 bytes of base64, and parses the previous one', () => {
