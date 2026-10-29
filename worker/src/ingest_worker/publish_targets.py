@@ -55,6 +55,9 @@ class TargetRow:
     synced_at: datetime | None = None
     #: The sink's instance (one tenant with the sink); None for a sink without instances.
     instance_id: str | None = None
+    #: How many deliveries the tenant takes at once (the sink catalog, cached by the API's
+    #: target sync); None when not described (one at a time).
+    lanes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,8 @@ class Target:
     sink_id: str = S3_SINK_ID
     #: The sink's instance: with `sink_id`, the tenant the target writes to.
     instance_id: str | None = None
+    #: How many deliveries that tenant takes at once; None: not described (one at a time).
+    lanes: int | None = None
 
 
 class PublishTargetStore(Protocol):
@@ -85,7 +90,9 @@ class PublishTargetStore(Protocol):
         ...
 
 
-_COLUMNS = "id, label, kind, sink_id, destination, inert_at IS NOT NULL, synced_at, instance_id"
+_COLUMNS = (
+    "id, label, kind, sink_id, destination, inert_at IS NOT NULL, synced_at, instance_id, lanes"
+)
 
 
 class PgPublishTargetStore:
@@ -199,12 +206,23 @@ class LiveTargets:
             raise TargetNotSynced(target_id)
         if row.sink_id != S3_SINK_ID:
             return Target(
-                row.id, "", "", layout="sink", sink_id=row.sink_id, instance_id=row.instance_id
+                row.id,
+                "",
+                "",
+                layout="sink",
+                sink_id=row.sink_id,
+                instance_id=row.instance_id,
+                lanes=row.lanes,
             )
         d = row.destination
         layout = "package" if d.get("layout") == "package" else "files"
         return Target(
-            row.id, d.get("bucket", ""), d.get("prefix", ""), layout, instance_id=row.instance_id
+            row.id,
+            d.get("bucket", ""),
+            d.get("prefix", ""),
+            layout,
+            instance_id=row.instance_id,
+            lanes=row.lanes,
         )
 
     def removed(self, target_id: str) -> bool:

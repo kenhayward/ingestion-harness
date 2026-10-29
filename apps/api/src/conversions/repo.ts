@@ -288,6 +288,7 @@ export const RUNNING_OUTCOMES: readonly Item['outcome'][] = [
   'decomposing',
   'delivering',
   'awaiting_review',
+  'waiting_to_deliver',
 ];
 
 /** One row of `register_actions`: what a person did to a register entry. */

@@ -48,16 +48,27 @@ ItemOutcome = Literal[
     "failed",
     "awaiting_review",
     "rejected",
+    #: Decomposed, waiting for a free lane of its target's tenant (migration 202610291300).
+    "waiting_to_deliver",
 ]
 
 #: The outcomes the worker may still move an item from: nothing decided yet.
 UNDECIDED: tuple[ItemOutcome, ...] = ("queued", "decomposing")
 
 
+#: Outcomes that are not final: the worker's write leaves `finished_at` alone.
+NOT_FINAL: tuple[ItemOutcome, ...] = ("delivering", "waiting_to_deliver")
+
+
 def _writable(current: ItemOutcome, outcome: ItemOutcome) -> bool:
     """Whether the worker may record `outcome` over `current`: only while nothing is decided,
-    or `delivering` again over `delivering` (a retry resuming its own delivery)."""
-    return current in UNDECIDED or (current == outcome == "delivering")
+    or `delivering` again over `delivering` (a retry resuming its own delivery). A document
+    waiting for a lane is decided afresh when it gets one, so any outcome may follow it."""
+    return (
+        current in UNDECIDED
+        or current == "waiting_to_deliver"
+        or (current == outcome == "delivering")
+    )
 
 
 def _is_uuid(text: str) -> bool:
@@ -115,8 +126,9 @@ class ItemStore(Protocol):
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         """Record the worker's outcome (and the register entry it is about, when given), only
-        while the item is still `queued` or `decomposing`, or `delivering` again over
-        `delivering`. A final outcome (anything but `delivering`) records when it finished.
+        while the item is still `queued`, `decomposing` or `waiting_to_deliver`, or `delivering`
+        again over `delivering`. A final outcome (anything but `delivering` or
+        `waiting_to_deliver`) records when it finished.
         False when it had moved on (the bridge's event settled it, say)."""
         ...
 
@@ -177,7 +189,7 @@ class MemoryItemStore:
                 outcome=outcome,
                 detail=detail,
                 register_entry_id=entry_id or item.register_entry_id,
-                finished_at=item.finished_at if outcome == "delivering" else self._clock(),
+                finished_at=item.finished_at if outcome in NOT_FINAL else self._clock(),
             )
             return True
 
@@ -245,10 +257,10 @@ class PgItemStore:
             """UPDATE decomposition_items
                   SET outcome = %(outcome)s, detail = %(detail)s,
                       register_entry_id = COALESCE(%(entry)s::uuid, register_entry_id),
-                      finished_at = CASE WHEN %(outcome)s = 'delivering' THEN finished_at
-                                         ELSE now() END
+                      finished_at = CASE WHEN %(outcome)s IN ('delivering', 'waiting_to_deliver')
+                                         THEN finished_at ELSE now() END
                 WHERE id = %(id)s
-                  AND (outcome IN ('queued', 'decomposing')
+                  AND (outcome IN ('queued', 'decomposing', 'waiting_to_deliver')
                        OR (outcome = 'delivering' AND %(outcome)s = 'delivering'))""",
             {"outcome": outcome, "detail": detail, "entry": entry_id, "id": item_id},
         )

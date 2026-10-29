@@ -23,6 +23,11 @@ export interface TargetRecord {
   instanceId: string | null;
   connectionId: string | null;
   destination: Record<string, string>;
+  /**
+   * How many deliveries its tenant (sink + instance) takes at once, from the bridge's sink
+   * catalog (`pullTargets`); null when not described (one at a time).
+   */
+  lanes: number | null;
   /** False when the bridge's list last lacked it. */
   onBridge: boolean;
   /** When the cache last took it from the bridge (null: not yet). */
@@ -42,6 +47,8 @@ export interface CacheFacts {
   source?: 'env' | 'ui';
   seededAt?: string | null;
   by?: string | null;
+  /** The tenant's lanes as the sink catalog describes them (a pull); left out: kept. */
+  lanes?: number | null;
 }
 
 /**
@@ -159,6 +166,7 @@ export function cached(
     instanceId: view.instanceId,
     connectionId: view.connectionId,
     destination: { ...view.destination },
+    lanes: facts.lanes !== undefined ? facts.lanes : (current?.lanes ?? null),
     onBridge: true,
     syncedAt: now.toISOString(),
     source: facts.source ?? current?.source ?? 'ui',
@@ -189,6 +197,7 @@ export function initialDefault(now: Date): TargetRecord {
       storageClass: '',
       layout: 'files',
     },
+    lanes: null,
     onBridge: true,
     syncedAt: null,
     source: 'env',

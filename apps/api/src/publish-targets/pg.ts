@@ -28,6 +28,7 @@ interface Row {
   instance_id: string | null;
   connection_id: string | null;
   destination: Record<string, string>;
+  lanes: number | null;
   on_bridge: boolean;
   synced_at: Date | null;
   source: 'env' | 'ui';
@@ -47,6 +48,7 @@ const toRecord = (r: Row): TargetRecord => ({
   instanceId: r.instance_id,
   connectionId: r.connection_id,
   destination: r.destination,
+  lanes: r.lanes,
   onBridge: r.on_bridge,
   syncedAt: iso(r.synced_at),
   source: r.source,
@@ -57,8 +59,8 @@ const toRecord = (r: Row): TargetRecord => ({
 });
 
 /** The cache's columns (the old S3 and key columns are no longer read: a later migration drops them). */
-const COLUMNS = `id, label, kind, sink_id, instance_id, connection_id, destination, on_bridge,
-  synced_at, source, seeded_at, edited_at, updated_by, created_at`;
+const COLUMNS = `id, label, kind, sink_id, instance_id, connection_id, destination, lanes,
+  on_bridge, synced_at, source, seeded_at, edited_at, updated_by, created_at`;
 
 /**
  * Rows made inert (`inert_at`: a removed target, or a dropped external target of a copy restore,
@@ -96,8 +98,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     const { rows } = await this.pool.query<Row>(
       `INSERT INTO publish_targets AS t
          (id, label, kind, sink_id, instance_id, connection_id, destination, on_bridge, synced_at,
-          source, seeded_at, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, now(), coalesce($8, 'ui'), $9, $10)
+          source, seeded_at, updated_by, lanes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, now(), coalesce($8, 'ui'), $9, $10, $13)
        ON CONFLICT (id) DO UPDATE SET
          label = EXCLUDED.label,
          kind = EXCLUDED.kind,
@@ -110,7 +112,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
          source = coalesce($8, t.source),
          seeded_at = CASE WHEN $11 THEN EXCLUDED.seeded_at ELSE t.seeded_at END,
          updated_by = CASE WHEN $12 THEN EXCLUDED.updated_by ELSE t.updated_by END,
-         edited_at = CASE WHEN $12 THEN now() ELSE t.edited_at END
+         edited_at = CASE WHEN $12 THEN now() ELSE t.edited_at END,
+         lanes = CASE WHEN $14 THEN EXCLUDED.lanes ELSE t.lanes END
        RETURNING ${COLUMNS}`,
       [
         view.id,
@@ -125,6 +128,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         facts.by ?? null,
         facts.seededAt !== undefined,
         facts.by !== undefined,
+        facts.lanes ?? null,
+        facts.lanes !== undefined,
       ],
     );
     return toRecord(rows[0]!);

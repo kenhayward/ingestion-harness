@@ -96,6 +96,8 @@ class DecomposeParams(BaseModel):
     approved: bool = False
     #: The batch's Auto Approve: a PDF is delivered at once, never held for review.
     auto_approve: bool = Field(False, alias="autoApprove")
+    #: The document waited for a lane, which the dispatcher claimed for this run.
+    waited: bool = False
 
 
 @dataclass(frozen=True)
@@ -238,7 +240,7 @@ def _failing_on_error(
 
 #: The outcomes a run carries on from: nothing decided yet, or a delivery that may need resuming
 #: (the worker stopped after recording it, before the job was handed over).
-RUNNABLE: tuple[ItemOutcome, ...] = (*UNDECIDED, "delivering")
+RUNNABLE: tuple[ItemOutcome, ...] = (*UNDECIDED, "delivering", "waiting_to_deliver")
 
 #: How an outcome reads in the job's events.
 OUTCOME_LABELS: dict[ItemOutcome, str] = {
@@ -256,6 +258,7 @@ OUTCOME_LABELS: dict[ItemOutcome, str] = {
     "failed": "failed",
     "awaiting_review": "awaiting review",
     "rejected": "rejected",
+    "waiting_to_deliver": "waiting to deliver",
 }
 
 

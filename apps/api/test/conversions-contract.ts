@@ -298,7 +298,7 @@ export function conversionsContract(
       expect(listed[1]).toMatchObject({ ...first, itemCount: 2 });
       expect(listed[1]!.counts.queued).toBe(2);
       expect(listed[1]!.counts.created).toBe(0);
-      expect(Object.keys(listed[1]!.counts)).toHaveLength(14);
+      expect(Object.keys(listed[1]!.counts)).toHaveLength(15);
       expect(listed[0]).toMatchObject({ itemCount: 0 });
       expect(await repo.listBatches(1)).toHaveLength(1);
     });

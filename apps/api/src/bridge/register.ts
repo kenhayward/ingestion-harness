@@ -72,6 +72,7 @@ export const OUTCOME_LABELS: Record<ItemOutcome, string> = {
   failed: 'failed',
   awaiting_review: 'awaiting review',
   rejected: 'rejected',
+  waiting_to_deliver: 'waiting to deliver',
 };
 
 /** An outcome and its detail as one event message, e.g. `changed in target: …`. */

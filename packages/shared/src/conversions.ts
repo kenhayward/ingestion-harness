@@ -21,6 +21,8 @@ export const ITEM_OUTCOMES = [
   'failed',
   'awaiting_review',
   'rejected',
+  /** Decomposed, waiting for a free lane of its target's tenant (migration 202610291300). */
+  'waiting_to_deliver',
 ] as const;
 export const ItemOutcomeSchema = z.enum(ITEM_OUTCOMES);
 export type ItemOutcome = z.infer<typeof ItemOutcomeSchema>;
@@ -223,6 +225,8 @@ export const DecomposeParamsSchema = z
     approved: z.boolean().optional(),
     /** Deliver a PDF without holding it for review (the batch's Auto Approve). */
     autoApprove: z.boolean().optional(),
+    /** Deliver a document that waited for a lane (the dispatcher claimed one for it). */
+    waited: z.boolean().optional(),
   })
   .strict();
 export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;

@@ -100,6 +100,15 @@ def test_a_target_knows_its_sink_instance() -> None:
     assert (targets.get("docs").sink_id, targets.get("docs").instance_id) == ("docs", "tenant-1")
 
 
+def test_a_target_knows_its_tenants_lanes_from_the_cache() -> None:
+    docs = row(id="docs", kind="sink", sink_id="docs", destination={}, instance_id="eu", lanes=10)
+    lake = row(id="lake", lanes=3)
+    targets, _ = live([docs, lake, row()])
+    assert targets.get("docs").lanes == 10
+    assert targets.get("lake").lanes == 3
+    assert targets.get("default").lanes is None
+
+
 def test_a_target_not_synced_yet_is_not_ready_and_is_no_document_error() -> None:
     targets, store = live([row(synced_at=None)])
     with pytest.raises(TargetNotSynced, match="default"):
@@ -210,6 +219,15 @@ def test_pg_store_reads_the_cache_columns_and_moves_the_version(pg: PgPublishTar
     before = pg.version()
     pg._conn.execute("UPDATE publish_targets SET label = 'Renamed' WHERE id = 'default'")
     assert pg.version() > before
+
+
+@pytest.mark.integration
+def test_pg_store_reads_the_cached_lanes(pg: PgPublishTargetStore) -> None:
+    pg._conn.execute("UPDATE publish_targets SET lanes = 6 WHERE id = 'default'")
+    try:
+        assert LiveTargets(pg).get("default").lanes == 6
+    finally:
+        pg._conn.execute("UPDATE publish_targets SET lanes = NULL WHERE id = 'default'")
 
 
 @pytest.mark.integration

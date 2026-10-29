@@ -17,6 +17,7 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
   failed: { label: 'Failed', tone: 'danger' },
   awaiting_review: { label: 'Awaiting review', tone: 'warn' },
   rejected: { label: 'Rejected', tone: 'danger' },
+  waiting_to_deliver: { label: 'Waiting to deliver', tone: 'info' },
 };
 
 /**
@@ -115,6 +116,7 @@ export const OUTCOME_ICON: Record<ItemOutcome, StatusIcon> = {
   failed: 'failed',
   awaiting_review: 'review',
   rejected: 'rejected',
+  waiting_to_deliver: 'queued',
 };
 
 /** Delivered as a document: created or updated. */
