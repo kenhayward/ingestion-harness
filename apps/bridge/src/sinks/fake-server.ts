@@ -1,5 +1,10 @@
 import { pathToFileURL } from 'node:url';
-import { bridgeError, type BrowseRequest } from '@ih/bridge-contract';
+import {
+  bridgeError,
+  SourceFolderSchema,
+  sourceNameProblem,
+  type BrowseRequest,
+} from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { FakeDocumentSink } from './fake-documents.js';
 import { FakeSink } from './fake.js';
@@ -22,7 +27,10 @@ const KEPT = 50;
  * In `documents` mode (env `FAKE_SINK_MODE=documents`) it serves the FakeDocumentSink instead,
  * with an unsigned `POST /_edit` (`{persistentId, componentId}`, test stacks only) that changes one
  * component in the target, answering the component's new version or 404, and an unsigned
- * `POST /_delete` (`{persistentId}`) that deletes a document in the target (204, or 404).
+ * `POST /_delete` (`{persistentId}`) that deletes a document in the target (204, or 404). Its
+ * watched folders (contract version 4) have unsigned `POST /_drop` (`{name, content}`, content
+ * base64: a file arrives in the root of the location `inbox`, 204) and `GET /_folder?f=<folder>`
+ * (what that folder of `inbox` holds, as a list answer).
  */
 export async function buildFakeServer(
   key: string,
@@ -122,7 +130,8 @@ export async function buildFakeServer(
 }
 
 /**
- * The `documents` mode server: `sink` behind the signed routes, with `/_edit` and `/_delete`. A
+ * The `documents` mode server: `sink` behind the signed routes, with `/_edit`, `/_delete`,
+ * `/_drop` and `/_folder`. A
  * test passes its own sink to see what was delivered.
  */
 export async function buildDocumentServer(
@@ -130,7 +139,25 @@ export async function buildDocumentServer(
   logger = false,
   sink = new FakeDocumentSink(),
 ): Promise<FastifyInstance> {
-  const app = await serveSink(sink, key, { unsigned: ['/_edit', '/_delete'], logger });
+  const app = await serveSink(sink, key, {
+    unsigned: ['/_edit', '/_delete', '/_drop', '/_folder'],
+    logger,
+  });
+  app.post('/_drop', async (req, reply) => {
+    const { name, content } = (req.body ?? {}) as { name?: unknown; content?: unknown };
+    if (typeof name !== 'string' || sourceNameProblem(name) || typeof content !== 'string') {
+      return reply.code(400).send(bridgeError('content_rejected', 'send {name, content}'));
+    }
+    sink.drop(name, Buffer.from(content, 'base64'));
+    return reply.code(204).send();
+  });
+  app.get('/_folder', async (req, reply) => {
+    const parsed = SourceFolderSchema.safeParse((req.query as { f?: unknown }).f ?? '');
+    if (!parsed.success) {
+      return reply.code(400).send(bridgeError('content_rejected', 'f is not a folder'));
+    }
+    return { files: sink.folder(parsed.data) ?? [] };
+  });
   app.post('/_edit', async (req, reply) => {
     const body = (req.body ?? {}) as { persistentId?: unknown; componentId?: unknown };
     const edited =

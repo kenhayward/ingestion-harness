@@ -25,6 +25,7 @@ describe('bridge config', () => {
       HOST: '0.0.0.0',
       PORT: 3100,
       BRIDGE_MAX_PACKAGE_MB: 50,
+      BRIDGE_MAX_SOURCE_MB: 100,
       BRIDGE_MAX_ATTEMPTS: 8,
       BRIDGE_LEASE_SECONDS: 300,
       BRIDGE_PACKAGE_RETENTION_DAYS: 30,

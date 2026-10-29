@@ -9,8 +9,25 @@ import type {
   SinkDeliverResult,
   SinkDescribe,
   SinkJobStatus,
+  SourceFile,
+  SourceListRequest,
+  SourceMoveRequest,
+  SourcePutRequest,
+  SourceReadRequest,
   TargetTestResult,
 } from '@ih/bridge-contract';
+import { bridgeError } from '@ih/bridge-contract';
+
+/**
+ * Contract version 4: the watched folders of a sink instance. A read past `maxBytes` is refused
+ * with `sourceTooLarge` without holding the whole file.
+ */
+export interface SourcePort {
+  list(r: SourceListRequest): Promise<SourceFile[]>;
+  read(r: SourceReadRequest, maxBytes: number): Promise<Buffer>;
+  move(r: SourceMoveRequest): Promise<void>;
+  put(r: SourcePutRequest): Promise<void>;
+}
 
 /** A sink as the bridge drives it: built in, or an external one behind an HTTP adapter. */
 export interface SinkPort {
@@ -25,6 +42,11 @@ export interface SinkPort {
    * describe declares administration.
    */
   admin?(call: AdminCallName, id: string | null, request: unknown): Promise<unknown>;
+  /**
+   * Contract version 4: the sink's watched folders. Only sinks that hold files in folders have
+   * it; the bridge offers it only for a sink whose describe declares `watchedFolders`.
+   */
+  sources?: SourcePort;
 }
 
 /** Where a target writes: its connection's credential and its destination. */
@@ -93,4 +115,15 @@ export class MapSinkRegistry implements SinkRegistry {
   described(): null {
     return null;
   }
+}
+
+/** A source file larger than the bridge takes (`BRIDGE_MAX_SOURCE_MB`). */
+export function sourceTooLarge(maxBytes: number): SinkError {
+  const mb = Math.round((maxBytes / 2 ** 20) * 10) / 10;
+  return new SinkError(
+    bridgeError('content_rejected', `the file is larger than ${mb} MB`, {
+      reason: 'too_large',
+      maxBytes,
+    }),
+  );
 }

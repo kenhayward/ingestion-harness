@@ -1,7 +1,12 @@
-import { bridgeError, conformanceSuite } from '@ih/bridge-contract';
+import {
+  bridgeError,
+  conformanceSuite,
+  WATCH_CHECKS,
+  watchedFoldersSuite,
+} from '@ih/bridge-contract';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
+import { FAKE_SOURCE, FakeDocumentSink } from '../src/sinks/fake-documents.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import { HttpSink } from '../src/sinks/http.js';
 import { SinkError, type SinkPort } from '../src/sinks/port.js';
@@ -35,6 +40,7 @@ const run = (url: string) =>
     instanceId: 'any',
     credential: null,
     destination: { bucket: 'b' },
+    watchedFolders: { source: { folder: FAKE_SOURCE } },
   });
 
 describe('conformance suite', () => {
@@ -80,6 +86,7 @@ describe('conformance suite', () => {
       'same key again',
       ...DOCUMENT_CHECKS,
       'errors',
+      ...Object.values(WATCH_CHECKS),
     ]);
     // The version 1 delivery checks are covered by the document checks for a documents-only sink.
     for (const name of ['deliver', 'same key again']) {
@@ -109,6 +116,7 @@ describe('conformance suite', () => {
       testConnection: (req) => inner.testConnection(req),
       browse: () => inner.browse(),
       deliveryStatus: (id) => inner.deliveryStatus(id),
+      sources: inner.sources,
       deliver: async (req) => {
         if (req.update && seen.has(req.idempotencyKey)) {
           throw new SinkError(
@@ -134,6 +142,7 @@ describe('conformance suite', () => {
       testConnection: (req) => inner.testConnection(req),
       browse: () => inner.browse(),
       deliveryStatus: (id) => inner.deliveryStatus(id),
+      sources: inner.sources,
       deliver: async (req) => {
         const pid = seen.get(req.idempotencyKey);
         const stored = pid === undefined ? undefined : inner.documents.get(pid);
@@ -172,6 +181,7 @@ describe('conformance suite', () => {
       testConnection: (req) => inner.testConnection(req),
       browse: () => inner.browse(),
       deliveryStatus: (id) => inner.deliveryStatus(id),
+      sources: inner.sources,
       // Whatever the update expects, it writes over what the target holds.
       deliver: async (req) => {
         const stored = req.update && inner.documents.get(req.update.persistentId);
@@ -238,6 +248,39 @@ describe('conformance suite', () => {
       ok: false,
       detail: 'a personal sink declares the credential fields its users enter',
     });
+  });
+});
+
+describe('watched folders conformance', () => {
+  it('passes every watched folder check against the fake document sink served over HTTP', async () => {
+    const docs = new FakeDocumentSink();
+    const results = await watchedFoldersSuite({
+      url: await listen(await serveSink(docs, KEY)),
+      key: KEY,
+      instanceId: 'main',
+      credential: {},
+      source: { folder: FAKE_SOURCE },
+    });
+    expect(results.filter((r) => !r.ok)).toEqual([]);
+    expect(results.map((r) => r.name)).toEqual(Object.values(WATCH_CHECKS));
+    expect(results.every((r) => !r.detail?.startsWith('skipped'))).toBe(true);
+    // The suite never deletes: its file ends in failed.
+    expect(docs.folder('failed')).toHaveLength(1);
+  });
+
+  it('passes through the bridge adapter too', async () => {
+    const first = await listen(await serveSink(new FakeDocumentSink(), KEY));
+    const relayed = await listen(
+      await serveSink(new HttpSink({ id: 'docs', url: first, key: KEY }), KEY),
+    );
+    const results = await watchedFoldersSuite({
+      url: relayed,
+      key: KEY,
+      instanceId: 'main',
+      credential: {},
+      source: { folder: FAKE_SOURCE },
+    });
+    expect(results.filter((r) => !r.ok)).toEqual([]);
   });
 });
 

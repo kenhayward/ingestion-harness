@@ -102,9 +102,10 @@ export type SourceListAnswer = z.infer<typeof SourceListAnswerSchema>;
 /** A folder that does not exist is `not_found` with this `details.reason`. */
 export const FOLDER_MISSING_REASON = 'folder_missing';
 
+/** The sink's routes, as sent (a Fastify route registers them with the colon escaped, `::`). */
 export const SOURCE_PATHS = {
-  list: '/sources::list',
-  read: '/sources::read',
-  move: '/sources::move',
-  put: '/sources::put',
+  list: '/sources:list',
+  read: '/sources:read',
+  move: '/sources:move',
+  put: '/sources:put',
 } as const;

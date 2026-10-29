@@ -44,7 +44,8 @@ describe('contract version 4: watched folders', () => {
 
   it('names the four folders', () => {
     expect([...SOURCE_FOLDERS]).toEqual(['', 'processing', 'delivered', 'failed']);
-    expect(SOURCE_PATHS.list).toBe('/sources::list');
+    // The paths as sent, like `/connections:test` (a Fastify route escapes the colon: `::`).
+    expect(SOURCE_PATHS.list).toBe('/sources:list');
   });
 
   it('refuses names that are not one path segment', () => {

@@ -14,6 +14,7 @@ import {
   TargetSettingsTestRequestSchema,
   TargetTestResultSchema,
   TargetViewSchema,
+  watchedFoldersOf,
   type TargetTestResult,
 } from '@ih/bridge-contract';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
@@ -355,7 +356,7 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
     '/v1/targets::browse',
     {
       schema: {
-        summary: "Browse a sink's tree for a destination field",
+        summary: "Browse a sink's tree for a destination or source field",
         tags,
         body: TargetBrowseRequestSchema,
         response: { 200: BrowseResultSchema, 400: BridgeErrorSchema, 422: BridgeErrorSchema },
@@ -368,7 +369,12 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
         const sink = app.deps.sinks.get(body.sinkId);
         if (!sink) throw refuse('content_rejected', `there is no sink ${body.sinkId}`);
         const described = await sink.describe();
-        const field = described.destinationFields.find((f) => f.id === body.field);
+        // A source field (contract version 4) is one of the sink's watched folder settings.
+        const fields =
+          body.scope === 'source'
+            ? (watchedFoldersOf(described)?.sourceFields ?? [])
+            : described.destinationFields;
+        const field = fields.find((f) => f.id === body.field);
         if (!described.capabilities.browse || !field?.browse) {
           throw refuse('content_rejected', `${body.field} of ${body.sinkId} cannot be browsed`);
         }
@@ -409,6 +415,8 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
           instanceId: body.instanceId ?? '',
           credential,
           field: body.field,
+          // Sent only for a source field: a sink of an older contract knows no `scope`.
+          ...(body.scope === 'source' ? { scope: body.scope } : {}),
           parentId: body.parentId,
           cursor: body.cursor,
         });

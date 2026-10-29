@@ -32,6 +32,7 @@ export function signedInject(
 export const TEST_CONFIG: BridgeDeps['config'] = {
   BRIDGE_CLIENT_KEY: KEY,
   BRIDGE_MAX_PACKAGE_MB: 50,
+  BRIDGE_MAX_SOURCE_MB: 100,
   BRIDGE_PACKAGE_RETENTION_DAYS: 30,
   BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
   BRIDGE_COOKIE_SECURE: true,

@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import {
   bridgeError,
+  FOLDER_MISSING_REASON,
   documentMissing,
   changedInTargetDetails,
   type BrowseResult,
@@ -15,9 +17,40 @@ import {
   type SinkDeliverResult,
   type SinkDescribe,
   type SinkJobStatus,
+  type BrowseRequest,
+  type SourceFile,
+  type SourceFolder,
   textForm,
 } from '@ih/bridge-contract';
-import { SinkError, type SinkPort } from './port.js';
+import { SinkError, sourceTooLarge, type SinkPort, type SourcePort } from './port.js';
+
+/** The watched location the fake holds from the start (source field `folder`). */
+export const FAKE_SOURCE = 'inbox';
+
+/** One file in a watched folder. */
+interface HeldFile {
+  bytes: Buffer;
+  modifiedAt: string;
+}
+
+/** A watched location: its four folders, each a map of file name to file. */
+type Location = Record<SourceFolder, Map<string, HeldFile>>;
+
+const emptyLocation = (): Location => ({
+  '': new Map(),
+  processing: new Map(),
+  delivered: new Map(),
+  failed: new Map(),
+});
+
+const fileOf = (name: string, f: HeldFile): SourceFile => ({
+  name,
+  size: f.bytes.length,
+  modifiedAt: f.modifiedAt,
+  etag: createHash('md5').update(f.bytes).digest('hex'),
+});
+
+const byName = (a: SourceFile, b: SourceFile) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 type EquationForm = 'mathml' | 'latex' | 'image';
 type DocumentReceipt = NonNullable<Receipt['document']>;
@@ -98,11 +131,17 @@ function compareForms(
  * component changed (`changed_in_target`), refuses an update of a document deleted in the
  * target (`not_found` with the missing-document marker, `documentMissing`, as a real sink
  * does), and reads each write back through the shared comparison forms. `edit`, `remove` and `corruptNextReadBack` stand for what happens in a real
- * target.
+ * target. It also has watched folders (contract version 4, one instance `main` with 2 lanes): the
+ * locations named by the source field `folder`, `inbox` from the start, where `drop` puts a file.
  */
 export class FakeDocumentSink implements SinkPort {
   readonly documents = new Map<string, StoredDocument>();
+  /** Every watched folder call, with the credential it came with. */
+  readonly sourceCalls: Array<{ op: keyof SourcePort; credential: Record<string, string> }> = [];
+  /** The watched locations, by the value of the source field `folder`. */
+  private readonly locations = new Map<string, Location>([[FAKE_SOURCE, emptyLocation()]]);
   private readonly equations: EquationForm[];
+  private readonly connectionKind: 'shared' | 'personal';
   /** The receipt each idempotency key's write produced, returned as it was on a replay. */
   private readonly receipts = new Map<string, SinkDeliverResult>();
   private created = 0;
@@ -110,17 +149,24 @@ export class FakeDocumentSink implements SinkPort {
   /** The documents someone deleted in the target (`remove`). */
   private readonly deleted = new Set<string>();
 
-  constructor(opts: { equations?: EquationForm[] } = {}) {
+  constructor(opts: { equations?: EquationForm[]; connectionKind?: 'shared' | 'personal' } = {}) {
     this.equations = opts.equations ?? ['mathml', 'latex', 'image'];
+    this.connectionKind = opts.connectionKind ?? 'shared';
   }
 
   async describe(): Promise<SinkDescribe> {
+    const personal = this.connectionKind === 'personal';
     return {
       name: 'Fake document sink',
-      contractVersion: 2,
-      connectionKind: 'shared',
-      instances: [],
-      credentialFields: [],
+      contractVersion: 4,
+      connectionKind: this.connectionKind,
+      instances: [{ id: 'main', label: 'Main', lanes: 2 }],
+      credentialFields: personal
+        ? [
+            { id: 'username', label: 'User name', secret: false },
+            { id: 'password', label: 'Password', secret: true },
+          ]
+        : [],
       destinationFields: [
         {
           id: 'space',
@@ -132,12 +178,24 @@ export class FakeDocumentSink implements SinkPort {
         },
       ],
       capabilities: {
-        browse: false,
+        browse: true,
         replace: true,
         withdraw: false,
         readBack: true,
         accepts: ['document', 'images'],
         decomposedDocuments: { equations: [...this.equations] },
+        watchedFolders: {
+          sourceFields: [
+            {
+              id: 'folder',
+              label: 'Folder',
+              kind: 'fixed',
+              required: true,
+              overridable: false,
+              browse: true,
+            },
+          ],
+        },
       },
     };
   }
@@ -146,8 +204,87 @@ export class FakeDocumentSink implements SinkPort {
     return { ok: true, identity: `fake:${req.credential.username ?? 'user'}` };
   }
 
-  async browse(): Promise<BrowseResult> {
-    return { nodes: [], nextCursor: null };
+  /** Only the source field `folder` browses: its watched locations, one level. */
+  async browse(req?: BrowseRequest): Promise<BrowseResult> {
+    if (req?.scope !== 'source' || req.field !== 'folder' || req.parentId !== null) {
+      return { nodes: [], nextCursor: null };
+    }
+    const nodes = [...this.locations.keys()].sort().map((id) => ({
+      id,
+      label: id,
+      kind: 'folder',
+      hasChildren: false,
+      selectable: true,
+    }));
+    return { nodes, nextCursor: null };
+  }
+
+  /** The test hook: a file arrives in a location's root (a new location appears with it). */
+  drop(name: string, bytes: Buffer, location = FAKE_SOURCE): void {
+    let held = this.locations.get(location);
+    if (!held) this.locations.set(location, (held = emptyLocation()));
+    held[''].set(name, { bytes, modifiedAt: new Date().toISOString() });
+  }
+
+  /** The test hook: what one folder of a location holds, or null for an unknown location. */
+  folder(folder: SourceFolder, location = FAKE_SOURCE): SourceFile[] | null {
+    const held = this.locations.get(location);
+    if (!held) return null;
+    return [...held[folder]].map(([name, f]) => fileOf(name, f)).sort(byName);
+  }
+
+  /**
+   * Contract version 4 in memory: a location named by the source field `folder` has the four
+   * folders (empty until a file arrives); an unknown one is `folder_missing`. A move overwrites
+   * its destination, and a retried one (the source gone, the destination there) succeeds.
+   */
+  readonly sources: SourcePort = {
+    list: async (r) => {
+      this.sourceCalls.push({ op: 'list', credential: r.credential });
+      return this.folder(r.folder, this.locationOf(r.source))!;
+    },
+    read: async (r, maxBytes) => {
+      this.sourceCalls.push({ op: 'read', credential: r.credential });
+      const held = this.held(r.source)[r.folder].get(r.name);
+      if (!held) throw new SinkError(bridgeError('not_found', `there is no file ${r.name}`));
+      if (held.bytes.length > maxBytes) throw sourceTooLarge(maxBytes);
+      return Buffer.from(held.bytes);
+    },
+    move: async (r) => {
+      this.sourceCalls.push({ op: 'move', credential: r.credential });
+      const held = this.held(r.source);
+      const file = held[r.from.folder].get(r.from.name);
+      if (!file) {
+        if (held[r.to.folder].has(r.to.name)) return;
+        throw new SinkError(bridgeError('not_found', `there is no file ${r.from.name}`));
+      }
+      held[r.from.folder].delete(r.from.name);
+      held[r.to.folder].set(r.to.name, file);
+    },
+    put: async (r) => {
+      this.sourceCalls.push({ op: 'put', credential: r.credential });
+      this.held(r.source)[r.folder].set(r.name, {
+        bytes: Buffer.from(r.content, 'utf8'),
+        modifiedAt: new Date().toISOString(),
+      });
+    },
+  };
+
+  /** The location a request names, or `folder_missing`. */
+  private locationOf(source: Record<string, string>): string {
+    const location = source.folder ?? '';
+    if (!this.locations.has(location)) {
+      throw new SinkError(
+        bridgeError('not_found', `there is no folder ${location}`, {
+          reason: FOLDER_MISSING_REASON,
+        }),
+      );
+    }
+    return location;
+  }
+
+  private held(source: Record<string, string>): Location {
+    return this.locations.get(this.locationOf(source))!;
   }
 
   async deliveryStatus(sinkJobId: string): Promise<SinkJobStatus> {

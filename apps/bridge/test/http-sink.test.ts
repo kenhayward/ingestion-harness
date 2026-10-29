@@ -72,12 +72,12 @@ describe('HttpSink', () => {
     expect(fake.delivered).toHaveLength(1);
   });
 
-  it('describe v2 and a document receipt parse', async () => {
+  it('describe v4 and a document receipt parse', async () => {
     const fake = new FakeDocumentSink();
     const sink = adapter(await listen(await serveSink(fake, KEY)));
     const described = await sink.describe();
     expect(described).toEqual(await fake.describe());
-    expect(described.contractVersion).toBe(2);
+    expect(described.contractVersion).toBe(4);
     const created = await sink.deliver(
       deliverRequest({
         destination: { space: 'S' },
@@ -273,5 +273,58 @@ describe('HttpSink, a sink that misbehaves mid-answer', () => {
       ).deliver(deliverRequest()),
     );
     expect(small.error.details).toEqual({ field: 'name' });
+  });
+});
+
+describe('HttpSink, watched folders', () => {
+  const where = {
+    instanceId: 'main',
+    credential: {},
+    source: { folder: 'inbox' },
+    actingUser: null,
+  };
+
+  it('lists, reads, moves and puts through the sink contract routes', async () => {
+    const docs = new FakeDocumentSink();
+    docs.drop('a.pdf', Buffer.from('abc'));
+    const sink = adapter(await listen(await serveSink(docs, KEY)));
+    expect((await sink.sources.list({ ...where, folder: '' })).map((f) => f.name)).toEqual([
+      'a.pdf',
+    ]);
+    await sink.sources.move({
+      ...where,
+      from: { folder: '', name: 'a.pdf' },
+      to: { folder: 'processing', name: 'a.pdf' },
+    });
+    expect(await sink.sources.read({ ...where, folder: 'processing', name: 'a.pdf' }, 10)).toEqual(
+      Buffer.from('abc'),
+    );
+    await sink.sources.put({ ...where, folder: 'failed', name: 'a.pdf.md', content: 'why' });
+    expect(docs.folder('failed')?.map((f) => f.size)).toEqual([3]);
+  });
+
+  it('refuses a read past maxBytes as it streams, without a content length', async () => {
+    const app = Fastify();
+    app.post('/sources:read', (_req, reply) => {
+      reply.raw.writeHead(200, { 'content-type': 'application/octet-stream' });
+      // Chunks with no declared length: only counting them finds the file too large.
+      for (let i = 0; i < 40; i += 1) reply.raw.write(Buffer.alloc(64 * 1024, 1));
+      reply.raw.end();
+    });
+    const err = await failure(
+      adapter(await listen(app)).sources.read({ ...where, folder: '', name: 'big.pdf' }, 100_000),
+    );
+    expect(err.error).toMatchObject({
+      code: 'content_rejected',
+      details: { reason: 'too_large', maxBytes: 100_000 },
+    });
+  });
+
+  it("keeps a sink's own refusal of a missing folder", async () => {
+    const sink = adapter(await listen(await serveSink(new FakeDocumentSink(), KEY)));
+    const err = await failure(
+      sink.sources.list({ ...where, source: { folder: 'nowhere' }, folder: '' }),
+    );
+    expect(err.error).toMatchObject({ code: 'not_found', details: { reason: 'folder_missing' } });
   });
 });

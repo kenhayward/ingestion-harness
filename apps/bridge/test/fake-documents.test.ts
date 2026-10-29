@@ -75,12 +75,14 @@ const versions = (components: ComponentVersion[]) =>
   Object.fromEntries(components.map((c) => [c.element ?? 'map', c.version]));
 
 describe('FakeDocumentSink, describe', () => {
-  it('describes a version 2 sink that takes decomposed documents', async () => {
+  it('describes a version 4 sink that takes decomposed documents and has watched folders', async () => {
     const described = await new FakeDocumentSink({ equations: ['latex'] }).describe();
     expect(SinkDescribeSchema.safeParse(described).success).toBe(true);
     expect(described).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 4,
+      instances: [{ id: 'main', label: 'Main', lanes: 2 }],
       capabilities: {
+        watchedFolders: { sourceFields: [{ id: 'folder', browse: true }] },
         accepts: ['document', 'images'],
         readBack: true,
         replace: true,
@@ -90,6 +92,9 @@ describe('FakeDocumentSink, describe', () => {
     expect((await new FakeDocumentSink().describe()).capabilities.decomposedDocuments).toEqual({
       equations: ['mathml', 'latex', 'image'],
     });
+    const personal = await new FakeDocumentSink({ connectionKind: 'personal' }).describe();
+    expect(SinkDescribeSchema.safeParse(personal).success).toBe(true);
+    expect(personal.credentialFields.map((f) => f.id)).toEqual(['username', 'password']);
   });
 });
 

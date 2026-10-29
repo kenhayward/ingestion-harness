@@ -53,6 +53,8 @@ const EnvSchema = z
     /** Where delivery events are posted (CT Studio's API); unset: events stay in the outbox. */
     BRIDGE_EVENTS_URL: optional(z.string().url()),
     BRIDGE_MAX_PACKAGE_MB: z.preprocess(blank, z.coerce.number().int().positive().default(50)),
+    /** The largest watched-folder file the bridge reads (larger: 422 `content_rejected`). */
+    BRIDGE_MAX_SOURCE_MB: z.preprocess(blank, z.coerce.number().int().positive().default(100)),
     BRIDGE_PACKAGE_RETENTION_DAYS: z.preprocess(
       blank,
       z.coerce.number().int().positive().default(30),
