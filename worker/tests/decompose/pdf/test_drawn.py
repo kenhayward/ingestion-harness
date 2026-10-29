@@ -150,6 +150,32 @@ def test_a_picture_of_a_table_docling_read_is_dropped() -> None:
     assert not kept.ruled  # Docling's own
 
 
+def test_a_picture_whose_grid_is_a_table_docling_read_gives_its_text_to_the_cells() -> None:
+    # Docling gave the table and a picture of it, with the cells' text as the picture's items
+    # (a table of coloured bars, say): the picture goes, and so do its items in the table.
+    data = make_pdf([page()])
+    table = docling.table(
+        1, bl(72, 200, 372, 260), [(r, c) for r in range(3) for c in range(3)], rows=3, cols=3
+    )
+    for cell in table["data"]["table_cells"]:  # where the grid draws them
+        r, c = cell["start_row_offset_idx"], cell["start_col_offset_idx"]
+        cell["bbox"].update(l=XS[c], t=YS[r], r=XS[c + 1], b=YS[r + 1])
+    found = [*items(), table]
+    layout = parse_docling(docling.doc([(595, HEIGHT)], found))
+    kept = list(tables_from_drawings(layout, read_text_layer(data)).items)
+    assert not any(isinstance(i, LayoutPicture) for i in kept)
+    assert [i.label for i in kept if isinstance(i, LayoutText)] == ["caption"]
+
+    fake = FakeLayout(lambda first, last: docling.doc([(595, HEIGHT)], found))
+    doc = decompose_pdf(data, layout=fake, cropper=FakeCropper()).document
+    [read] = tables_of(doc)
+    assert grid_texts(read) == [
+        ["Strength", "50 mg", "75 mg"],
+        ["Batch 1", "T1", "T2"],
+        ["Batch 2", "T2", "T1"],
+    ]
+
+
 def test_a_picture_that_stays_over_a_table_docling_read_gives_its_text_to_the_cells() -> None:
     # An image under the picture keeps it a picture (a table of drawn structures, say).
     data = make_pdf([page(images=[Img(100, 205, 50, 30)])])

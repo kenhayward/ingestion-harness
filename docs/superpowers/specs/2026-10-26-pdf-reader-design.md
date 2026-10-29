@@ -146,6 +146,23 @@ figure runs at 90 or 270 degrees. Its chars make lines of their own, in the orde
 by the x of their baselines; and superscripts are measured across the line as it runs. Before,
 the 327-point char's line took in the two below it and a vertical label's chars were sorted by
 x, and the fidelity check refused both.
+(2026-10-29) A char's size is now its printed size: its font's size times its matrix's scale,
+for every char. Some PDFs set every font at 1 point and give the size in the matrix alone (ICH
+S5(R3) and S11), so with the page's usual scale as the yardstick their text read at about 1 point:
+a subscript 0.9 points below its line fell outside the half-size reach that keeps a line together,
+and "C" and "max" were read as lines of their own. Q5A(R2)'s cover still reads right: its
+327-point type shrunk 22 times prints at 15 points. Measured in points, Word's PDFs lower a
+subscript by less than half a point beside 11-point type (I with "Kr" below it, in S7B), though
+they raise a superscript by three; the old relative sizes had hidden that. So a char at most 0.85
+of its line's usual size is a subscript when its baseline is 0.03 of that size below the line's
+(a superscript still needs 0.2 above). S3A, S7B and S10 keep or gain their subscripts (Cmax,
+IC50, IKr), and S7B gains its superscripts (Na+, Ca2+).
+
+(2026-10-29) **Words drawn apart.** pdfium marks a word gap only between chars drawn one after
+the other. A table's columns can be drawn a column at a time, so the last word of one column's
+line and the first of the next, on one baseline, had no gap between them ("datagestation" on
+page 29 of S5(R3)). Two chars side by side on a line that were not drawn one after the other,
+with a quarter of an em or more between them, now have a space between them.
 
 (2026-10-28) **Text printed over itself.** A glyph drawn with the same text in the same box (to
 half a point) as one drawn before it on the page is read once, and counted on the page
@@ -301,6 +318,14 @@ Docling's table grid and spans are the starting point, then:
   inside that table dropped: they would take the cells' chars, the smallest box winning. The
   picture stays an image. On the Q3E Class 3 monographs, a table of fatty acids with their
   structures drawn in a column came as both.
+  (2026-10-29) And a picture dropped because its grid is a table Docling read (sharing 80% of the
+  smaller box) has the text items Docling gave inside that table dropped too, so the cells get
+  their chars. On S11's Appendix A, Docling gave a table of coloured age bars both as a table and
+  as a picture whose 56 text items covered its cells: the items' smaller boxes won the chars, the
+  cells were left empty, and the fidelity check found "Neonate" moved out of the table.
+- (2026-10-29) **A char inside a table but in no cell goes to the cell nearest it**, measured to
+  the cell's box (nought inside it), the nearer centre breaking a tie. It was measured to the
+  cell's centre, so a bullet at the left edge of a wide cell went to the narrow cell beside it.
 - **Tables split across pages are joined.** A table that ends a page and one that starts the next
   page, with the same columns and nothing between them but furniture, are one table. Header rows
   repeated at the top of the continuation are removed.

@@ -48,12 +48,19 @@ _SAME_BASELINE = 1.0
 _OVER = 0.5
 #: A mark needs a size at most this fraction of the line's usual size ...
 _MARK_SIZE = 0.85
-#: ... and a baseline this fraction of that size away from the line's.
+#: ... and a baseline this fraction of that size away from the line's: above it for a
+#: superscript, ...
 _MARK_SHIFT = 0.2
+#: ... and below it, this fraction, for a subscript. Word's PDFs lower a subscript by less than
+#: half a point beside 11-point type (I with Kr below it in ICH S7B), and raise a superscript by
+#: three.
+_SUB_SHIFT = 0.03
 #: Lines whose gap is under this many times the line height belong to one orphan piece.
 _ORPHAN_LINE_GAP = 1.5
 #: Orphan chars are in separate columns where no char crosses a gap this many ems wide.
 _COLUMN_GAP = 2.0
+#: Chars on a line not drawn one after the other, this many ems apart or more, are two words.
+_GAP = 0.25
 
 #: What the ledger holds for a char that was dropped: `dropped:<reason>`.
 DROPPED_PREFIX = "dropped:"
@@ -85,7 +92,8 @@ class Line:
         return "".join(run.text for run in self.runs())
 
     def runs(self) -> list[Text]:
-        """The line as text runs: spaces added where pdfium saw a word gap, marks from the chars."""
+        """The line as text runs: spaces added where pdfium saw a word gap, or between chars not
+        drawn one after the other with a gap between them (`_apart`), marks from the chars."""
         return [run for run, _ in self.char_runs()]
 
     def char_runs(self) -> list[tuple[Text, Char | None]]:
@@ -105,7 +113,7 @@ class Line:
             marks = _marks(c, size, baseline)
             if (
                 previous is not None
-                and c.space_before
+                and (c.space_before or _apart(previous, c, size))
                 and not previous.text.isspace()
                 and not c.text.isspace()
             ):
@@ -113,6 +121,13 @@ class Line:
             runs.append((Text(text=c.text, marks=marks), c))
             previous, previous_marks = c, marks
         return runs
+
+
+def _apart(before: Char, c: Char, size: float) -> bool:
+    """Whether `c`, next to `before` on a line, starts another word though pdfium saw no gap: it
+    was not drawn right after `before` (the end of one column, say, and the start of the next,
+    with a line of another column drawn between them) and the gap between them is a space's."""
+    return c.index != before.index + 1 and c.along - _along_end(before) >= _GAP * size
 
 
 def _usual(chars: list[Char]) -> tuple[float, float]:
@@ -133,7 +148,7 @@ def _marks(c: Char, size: float, baseline: float) -> frozenset[_Mark]:
     if c.size <= _MARK_SIZE * size:
         if baseline - c.across >= _MARK_SHIFT * size:  # across grows downward
             marks.add("superscript")
-        elif c.across - baseline >= _MARK_SHIFT * size:
+        elif c.across - baseline >= _SUB_SHIFT * size:
             marks.add("subscript")
     return frozenset(marks)
 
@@ -298,6 +313,15 @@ def _area(box: BBox) -> float:
 
 
 def _distance(box: BBox, point: tuple[float, float]) -> float:
+    """How far `point` is from `box` (squared; 0 inside it): from its nearest edge, not its centre,
+    so a char just outside a wide cell goes to it rather than to a narrow one whose centre is
+    nearer."""
+    dx = max(box[0] - point[0], 0.0, point[0] - box[2])
+    dy = max(box[1] - point[1], 0.0, point[1] - box[3])
+    return dx**2 + dy**2
+
+
+def _to_centre(box: BBox, point: tuple[float, float]) -> float:
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
     return (cx - point[0]) ** 2 + (cy - point[1]) ** 2
 
@@ -412,7 +436,8 @@ def _majority(targets: list[_Target | None]) -> _Target | None:
 def _nearest_cell(cells: list[tuple[BBox, _Target]], point: tuple[float, float]) -> _Target | None:
     if not cells:
         return None
-    return min(cells, key=lambda cell: _distance(cell[0], point))[1]
+    # On a tie (a char in a gap two cells' edges are as near), the nearer centre.
+    return min(cells, key=lambda cell: (_distance(cell[0], point), _to_centre(cell[0], point)))[1]
 
 
 def _cell_keys(table: LayoutTable) -> list[tuple[int, int]]:
