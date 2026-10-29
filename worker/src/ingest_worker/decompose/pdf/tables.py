@@ -33,11 +33,14 @@ from ingest_worker.decompose.model import (
 )
 from ingest_worker.decompose.pdf.layout import BBox, LayoutCell, LayoutTable
 from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece
-from ingest_worker.decompose.pdf.textlayer import PageText, TextLayer
+from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 from ingest_worker.decompose.tables import CAPTION_PREFIX, NOTE_PREFIX, caption_key
 
 #: Columns line up when their left edges are within this fraction of the table's width.
 _COLUMN_TOLERANCE = 0.05
+#: A header row given as text has its cells' words this many ems apart or more: wider than a
+#: word gap.
+_HEADER_GAP = 0.5
 #: Text is centred when its side gaps are within this fraction of the cell's width.
 _CENTRE_TOLERANCE = 0.15
 #: Text is right-aligned when its right gap is under this fraction of its left gap.
@@ -132,6 +135,93 @@ def _column_lefts(table: LayoutTable) -> dict[int, float]:
         if cell.bbox is not None:
             lefts[cell.col] = min(lefts.get(cell.col, cell.bbox[0]), cell.bbox[0])
     return lefts
+
+
+# --- A header row given as text --------------------------------------------------------------
+
+
+def headers_above_tables(pieces: list[Piece], ledger: Ledger) -> list[Piece]:
+    """The pieces with each table's header row that Docling gave as a text item of its own put
+    back in the table, as its first row (`_header_above`)."""
+    out: list[Piece] = []
+    for piece in pieces:
+        if out and (joined := _header_above(out[-1], piece, ledger)) is not None:
+            out[-1] = joined
+            continue
+        out.append(piece)
+    return out
+
+
+def _header_above(before: Piece, piece: Piece, ledger: Ledger) -> Piece | None:
+    """`piece`, a table, with `before` as its first row when `before` is the header row Docling
+    left out of it: one line of a text or heading item, right before it on its page, that runs
+    into the table's box but lies above its first row, with words in two columns or more, half an
+    em or more apart, and none across a column's left edge ("Abbreviation  Definition" over a list of abbreviations).
+    """
+    table = piece.table
+    if (
+        table is None
+        or piece.cells is None
+        or table.label != "table"
+        or before.label not in ("text", "section_header")
+        or before.page != piece.page
+        or before.layer == "furniture"
+        or len(before.lines) != 1
+        or before.bbox[3] <= piece.bbox[1]
+    ):
+        return None
+    line = before.lines[0]
+    first = [c.bbox[1] for c in table.cells if c.row == 0 and c.bbox is not None]
+    lefts = _column_lefts(table)
+    if not first or line.bbox[3] > min(first) or set(lefts) != set(range(_dims(table)[1])):
+        return None
+    edges = sorted((left, col) for col, left in lefts.items())
+    reach = _COLUMN_TOLERANCE * (piece.bbox[2] - piece.bbox[0])
+
+    by_col: dict[int, list[Char]] = {}
+    for word in _words(line):
+        # A word goes to the last column starting at or just after it, and must end before the
+        # next one starts.
+        at = max((i for i, (left, _) in enumerate(edges) if left - reach <= word[0].x0), default=0)
+        if at + 1 < len(edges) and word[-1].x1 > edges[at + 1][0]:
+            return None
+        by_col.setdefault(edges[at][1], []).extend(word)
+    if len(by_col) < 2:
+        return None
+    # A header row's cells stand apart; a sentence over the table (a caption) has word gaps only.
+    size = median(c.size for c in line.chars)
+    groups = [by_col[col] for col in sorted(by_col)]
+    if any(b[0].x0 - a[-1].x1 < _HEADER_GAP * size for a, b in pairwise(groups)):
+        return None
+    header = {
+        col: Line(line.page, tuple(chars), _union([(c.x0, c.y0, c.x1, c.y1) for c in chars]))
+        for col, chars in by_col.items()
+    }
+    cells = [
+        LayoutCell(0, col, 1, 1, header[col].bbox if col in header else None, True)
+        for col in range(_dims(table)[1])
+    ]
+    cells += [replace(c, row=c.row + 1) for c in table.cells]
+    rows = {(r + 1, c): lines for (r, c), lines in piece.cells.items()}
+    rows |= {(0, col): [h] for col, h in header.items()}
+    _owned_by([line], piece.ref, ledger)
+    return replace(
+        piece,
+        bbox=_union([piece.bbox, before.bbox]),
+        table=replace(table, rows=_dims(table)[0] + 1, cells=tuple(cells)),
+        cells=rows,
+    )
+
+
+def _words(line: Line) -> list[list[Char]]:
+    """The line's words, split where its text has a blank (`Line.char_runs`)."""
+    words: list[list[Char]] = [[]]
+    for run, c in line.char_runs():
+        if c is None or run.text.isspace():
+            words.append([])
+        else:
+            words[-1].append(c)
+    return [w for w in words if w]
 
 
 # --- Joining ---------------------------------------------------------------------------------

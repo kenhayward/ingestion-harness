@@ -236,7 +236,7 @@ def test_pdf_that_would_create_is_held() -> None:
     assert world.bridge.requests == [] and world.register.entries() == []
     manifest = _manifest(world, job)
     assert manifest["pageCount"] == 2
-    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 10
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 11
     assert manifest["startedBy"] == USER.model_dump(by_alias=True)
     assert manifest["document"]["sections"]
     for page in (1, 2):
@@ -423,7 +423,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     package = request.package
     assert package.document is not None
     assert package.document.model_dump(mode="json", by_alias=True) == held_document
-    assert package.provenance.decomposer_version == 1010  # type: ignore[union-attr]
+    assert package.provenance.decomposer_version == 1011  # type: ignore[union-attr]
     [entry] = world.register.entries()
     item = world.item(job)
     assert (item.outcome, item.register_entry_id) == ("delivering", entry.id)
