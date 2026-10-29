@@ -3,6 +3,7 @@ import type { WatchEvent, WatchView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
 import { Icon } from '../ui/Icon.js';
+import { runAsName } from './derive.js';
 
 const LEVEL_TONE = { info: 'neutral', warn: 'warn', error: 'danger' } as const;
 const onOff = (v: boolean) => (v ? 'On' : 'Off');
@@ -24,8 +25,16 @@ export function WatchDetail({
 }) {
   const [events, setEvents] = useState<WatchEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Read again when the watch moves: a pickup, a change of state, a delivery.
-  const stamp = JSON.stringify([watch.state, watch.lastPickupAt, watch.queue, watch.throughput]);
+  // Read again when the watch moves: a pickup, a change of state, a delivery, a look that
+  // failed or got through again.
+  const stamp = JSON.stringify([
+    watch.state,
+    watch.health,
+    watch.problem,
+    watch.lastPickupAt,
+    watch.queue,
+    watch.throughput,
+  ]);
   useEffect(() => {
     let live = true;
     api.getWatch(watch.id).then(
@@ -55,7 +64,7 @@ export function WatchDetail({
         <dt>Target</dt>
         <dd>{target}</dd>
         <dt>Runs as</dt>
-        <dd>{watch.runAs.name ?? 'Nobody'}</dd>
+        <dd>{runAsName(watch)}</dd>
         <dt>Force-load</dt>
         <dd>{onOff(watch.force)}</dd>
         <dt>Auto Approve</dt>

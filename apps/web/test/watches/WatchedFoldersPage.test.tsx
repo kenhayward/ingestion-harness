@@ -178,4 +178,47 @@ describe('the Watched folders page', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'New watch' }));
     expect(screen.getByRole('dialog', { name: 'New watch' })).toBeInTheDocument();
   });
+
+  it('marks the open watch pressed', async () => {
+    render(<WatchedFoldersPage api={pageApi()} now={NOW} />);
+    const name = await (await ledger()).findByRole('button', { name: 'Inbox' });
+    expect(name).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(name);
+    expect(name).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('says when the targets could not be read', async () => {
+    const api = pageApi([watchView()], {
+      listWatchSources: vi.fn(async () => {
+        throw new Error('the bridge is down');
+      }),
+    });
+    render(<WatchedFoldersPage api={api} now={NOW} />);
+    expect(
+      await screen.findByText('The targets could not be read: the bridge is down'),
+    ).toHaveAttribute('role', 'alert');
+  });
+
+  it('names nobody the same way in the ledger and the panel', async () => {
+    const w = watchView({ runAs: { id: null, name: null, email: null } });
+    render(<WatchedFoldersPage api={pageApi([w])} now={NOW} />);
+    const row = within((await (await ledger()).findByText('Inbox')).closest('tr')!);
+    expect(row.getByText('Nobody')).toBeInTheDocument();
+    await userEvent.click(row.getByRole('button', { name: 'Inbox' }));
+    const panel = within(await screen.findByRole('complementary', { name: 'Inbox' }));
+    expect(panel.getByText('Nobody')).toBeInTheDocument();
+  });
+
+  it('reads the events again when the watch gets or loses a problem', async () => {
+    const healthy = watchView();
+    const sick = watchView({ health: 'problem', problem: 'the bridge is down' });
+    let current = healthy;
+    const getWatch = vi.fn(async () => ({ watch: current, events: [] }));
+    const api = pageApi([], { listWatches: vi.fn(async () => [current]), getWatch });
+    render(<WatchedFoldersPage api={api} now={NOW} pollMs={20} />);
+    await userEvent.click(await (await ledger()).findByRole('button', { name: 'Inbox' }));
+    await waitFor(() => expect(getWatch).toHaveBeenCalledTimes(1));
+    current = sick;
+    await waitFor(() => expect(getWatch).toHaveBeenCalledTimes(2));
+  });
 });

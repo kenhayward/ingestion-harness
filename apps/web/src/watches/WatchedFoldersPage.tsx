@@ -8,7 +8,7 @@ import { RemoveWatchDialog } from './RemoveWatchDialog.js';
 import { StopWatchDialog } from './StopWatchDialog.js';
 import { WatchDetail } from './WatchDetail.js';
 import { WatchDialog } from './WatchDialog.js';
-import { HEALTH, START_HINT, figuresText, pickupText, queueText } from './derive.js';
+import { HEALTH, START_HINT, figuresText, pickupText, queueText, runAsName } from './derive.js';
 
 type Dialog =
   { kind: 'new' } | { kind: 'reconfigure' | 'stop' | 'remove'; watch: WatchView } | null;
@@ -31,6 +31,7 @@ export function WatchedFoldersPage({
   const [watches, setWatches] = useState<WatchView[] | null>(null);
   const [sources, setSources] = useState<WatchSource[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -49,7 +50,14 @@ export function WatchedFoldersPage({
   );
   useEffect(() => {
     void load();
-    api.listWatchSources().then(setSources, () => undefined); // labels and the form's targets
+    // The targets' labels, and the New watch form's targets.
+    api.listWatchSources().then(
+      (list) => {
+        setSources(list);
+        setSourcesError(null);
+      },
+      (err: Error) => setSourcesError(err.message),
+    );
   }, [api, load]);
   useEffect(() => {
     if (!pollMs) return;
@@ -93,6 +101,7 @@ export function WatchedFoldersPage({
       </div>
 
       {error && <p role="alert">The watches could not be read: {error}</p>}
+      {sourcesError && <p role="alert">The targets could not be read: {sourcesError}</p>}
       {actionError && <p role="alert">{actionError}</p>}
       {watches?.length === 0 && (
         <section className="card">
@@ -126,11 +135,12 @@ export function WatchedFoldersPage({
               </thead>
               <tbody>
                 {watches.map((w) => (
-                  <tr key={w.id} aria-selected={w.id === selectedId}>
+                  <tr key={w.id} className={w.id === selectedId ? 'selected' : undefined}>
                     <td>
                       <button
                         type="button"
                         className="doc-button"
+                        aria-pressed={w.id === selectedId}
                         onClick={() => setSelectedId(w.id === selectedId ? null : w.id)}
                       >
                         {w.name}
@@ -138,7 +148,7 @@ export function WatchedFoldersPage({
                     </td>
                     <td className="mono">{w.sourcePath}</td>
                     <td>{targetLabel(w.targetId)}</td>
-                    <td>{w.runAs.name}</td>
+                    <td>{runAsName(w)}</td>
                     <td>
                       <span className={`pill tone-${HEALTH[w.health].tone}`}>
                         {HEALTH[w.health].label}

@@ -40,7 +40,7 @@
 .watch-list tr:last-child td {
   border-bottom: 0;
 }
-.watch-list tr[aria-selected='true'] td {
+.watch-list tr.selected td {
   background: var(--ih-sel-row);
 }
 .watch-list .act-cell {

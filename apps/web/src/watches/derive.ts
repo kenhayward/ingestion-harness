@@ -10,6 +10,9 @@ export const HEALTH: Record<WatchHealth, { label: string; tone: Tone }> = {
 };
 
 /** "3 waiting · 2 in progress". */
+/** Who a watch runs as; one wording for a user the API cannot name. */
+export const runAsName = (w: Pick<WatchView, 'runAs'>) => w.runAs.name ?? 'Nobody';
+
 export const queueText = (w: Pick<WatchView, 'queue'>) =>
   `${w.queue.waiting} waiting · ${w.queue.inProgress} in progress`;
 
