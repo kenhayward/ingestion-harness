@@ -187,6 +187,14 @@ lowered under a sum and "n" raised over it, both 7-point beside 11-point text, w
 to the check and one to the document ("1n"), and ICH M9's f2 formula was refused ("'1'
 missing").
 
+(2026-10-29) **A line with both a superscript and a subscript.** How far below a line a char may
+be and stay in it is measured from the line's largest chars, not from its topmost char. Measured
+from the topmost, a line of 12-point text with 9-point superscripts raised five points ("#1",
+a table key) and 9-point subscripts lowered a point and a half ("Cmax", "AUC24h") spans six and
+a half points, more than half the line's size: its subscripts made a line of their own, read
+after it, and a clinical protocol's list of pharmacokinetic parameters was refused on page 79
+("'1' extra").
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
@@ -347,6 +355,15 @@ Docling's table grid and spans are the starting point, then:
   heights a hundredth of a point apart, were joined from the highest piece's start, and the
   line under S11 Table A1's first three header cells was lost, so "Cardiovascular" was read into
   the header cell above it and the sink refused a header cell spanning into the body.
+- (2026-10-29) **A header row given as text goes back in its table.** Docling can leave a
+  table's header row out of its grid and give it as a text or heading item of its own, its box
+  running into the table's. Such an item, right before the table on its page, is the table's
+  first row (a header row) when it is one line above the table's first row whose words each lie
+  in one column, in two columns or more, each column's words half an em or more from the next's. On a
+  clinical protocol's list of abbreviations, "Abbreviation  Definition" came as a heading over
+  the table, its words half inside the table's box, and the fidelity check found them moved out
+  of the table. A caption given the same way ("Table 4: Example of a testing approach", over a
+  table in ICH Q13) has word gaps only, and stays a caption.
 - (2026-10-29) **A char inside a table but in no cell goes to the cell nearest it**, measured to
   the cell's box (nought inside it), the nearer centre breaking a tie. It was measured to the
   cell's centre, so a bullet at the left edge of a wide cell went to the narrow cell beside it.

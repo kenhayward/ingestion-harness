@@ -7,7 +7,11 @@ from typing import Any
 from ingest_worker.decompose.model import Cell, Paragraph, Table, TableNote, Text
 from ingest_worker.decompose.pdf.layout import analyse_document, parse_docling
 from ingest_worker.decompose.pdf.pieces import Ledger, Piece, attach_text
-from ingest_worker.decompose.pdf.tables import build_table, join_split_tables
+from ingest_worker.decompose.pdf.tables import (
+    build_table,
+    headers_above_tables,
+    join_split_tables,
+)
 from ingest_worker.decompose.pdf.textlayer import TextLayer, read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeLayout
@@ -316,6 +320,57 @@ def test_no_join_when_text_lies_between() -> None:
     ]
     pieces, text, ledger = build(pages, items)
     assert len(tables_of(join_split_tables(pieces, text, ledger))) == 2
+
+
+# --- A header row given as text -------------------------------------------------------------
+
+BODY = {(0, 0): "AE", (0, 1): "Adverse event", (1, 0): "ULN", (1, 1): "Upper limit"}
+
+
+def header_above(
+    header: list[Run], *, bottom: float = 115, label: str = "section_header"
+) -> tuple[list[Piece], TextLayer, Ledger]:
+    """A two-column table at 110 with no header row, and a text item over it whose box runs
+    down to `bottom`: Docling's table box starts in it at 110 when `bottom` is past that."""
+    items = [
+        docling.text(label, 1, bl(60, 92, 400, bottom)),
+        grid(1, simple(2, 2, header_rows=0), rows=2, cols=2, top=110),
+    ]
+    return build([Page(runs=[*header, *cell_runs(BODY, top=110)])], items)
+
+
+def test_a_header_row_given_as_a_heading_goes_back_in_its_table() -> None:
+    # As a protocol's list of abbreviations: "Abbreviation  Definition" a heading of its own.
+    pieces, text, ledger = header_above([Run("Code", 76, 104), Run("Meaning", 176, 104)])
+    joined = headers_above_tables(pieces, ledger)
+    assert len(joined) == 1
+    table, _, _ = build_table(joined[0], "t-1", [], [], ledger, text.pages[0])
+    assert grid_texts(table) == [
+        ["Code", "Meaning"],
+        ["AE", "Adverse event"],
+        ["ULN", "Upper limit"],
+    ]
+    assert table.header_rows == 1
+    assert owner(ledger, text, 0, "M") == [joined[0].ref]
+
+
+def test_text_above_a_table_stays_out_of_it() -> None:
+    header = [Run("Code", 76, 104), Run("Meaning", 176, 104)]
+    # its box ends above the table's
+    pieces, _, ledger = header_above(header, bottom=108)
+    assert len(headers_above_tables(pieces, ledger)) == 2
+    # a picture's label, say
+    pieces, _, ledger = header_above(header, label="caption")
+    assert len(headers_above_tables(pieces, ledger)) == 2
+    # in one column
+    pieces, _, ledger = header_above([Run("Abbreviations used", 76, 104)])
+    assert len(headers_above_tables(pieces, ledger)) == 2
+    # a caption, its words spread over the columns with word gaps only (ICH Q13's Table 4)
+    pieces, _, ledger = header_above([Run("Table 4: Example of a testing approach", 140, 104)])
+    assert len(headers_above_tables(pieces, ledger)) == 2
+    # a word across a column's edge
+    pieces, _, ledger = header_above([Run("Abbreviations", 140, 104), Run("used", 300, 104)])
+    assert len(headers_above_tables(pieces, ledger)) == 2
 
 
 # --- Captions --------------------------------------------------------------------------------

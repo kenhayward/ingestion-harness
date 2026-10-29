@@ -81,6 +81,30 @@ def test_a_small_char_lowered_half_a_point_is_a_subscript() -> None:
     assert pieces[0].inlines() == [Text(text="The INa")]
 
 
+def test_a_line_with_a_superscript_keeps_its_subscripts() -> None:
+    # As a protocol draws "Cmax,#1 AUC24h": the superscript five points up and the subscripts
+    # a point and a half down are further apart than half the line's size, not than half of
+    # it from the line's own baseline.
+    pieces, _ = attach(
+        [
+            Run("Day 1 of the period: C", 72, 100, size=12),
+            Run("max", 200, 101.5, size=9),
+            Run(",", 216, 100, size=12),
+            Run("#1", 220, 95, size=9),
+            Run(" AUC", 230, 100, size=12),
+            Run("24h", 260, 101.5, size=9),
+        ],
+        [docling.text("text", 1, bl(60, 85, 400, 110))],
+    )
+    assert len(pieces[0].lines) == 1
+    marked = {i.text: i.marks for i in pieces[0].inlines() if i.marks}
+    assert marked == {
+        "max": frozenset({"subscript"}),
+        "#1": frozenset({"superscript"}),
+        "24h": frozenset({"subscript"}),
+    }
+
+
 def test_a_subscript_then_a_superscript_stay_in_their_word() -> None:
     # "Sum" with "t=1" lowered after it and "n" raised over it, as a formula draws a sum's limits:
     # the two small runs are further apart than half their own size, not than half the word's.
