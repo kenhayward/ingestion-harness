@@ -34,6 +34,12 @@ describe('bridge config', () => {
     expect(c.BRIDGE_EVENTS_URL).toBeUndefined();
   });
 
+  it('reads blank runners and source cap (compose passes them as empty) as the defaults', () => {
+    const c = loadBridgeConfig({ ...base, BRIDGE_DELIVERY_RUNNERS: '', BRIDGE_MAX_SOURCE_MB: '' });
+    expect(c.BRIDGE_DELIVERY_RUNNERS).toBe(4);
+    expect(c.BRIDGE_MAX_SOURCE_MB).toBe(100);
+  });
+
   it('reads numbers from strings', () => {
     expect(loadBridgeConfig({ ...base, PORT: '4000', BRIDGE_MAX_ATTEMPTS: '3' })).toMatchObject({
       PORT: 4000,

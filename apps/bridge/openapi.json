@@ -4404,7 +4404,8 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "size": {
                             "type": "integer",
@@ -4781,11 +4782,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response",
+            "description": "The file, as bytes.",
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "type": "string"
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }

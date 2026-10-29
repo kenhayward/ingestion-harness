@@ -185,7 +185,14 @@ export const sourceRoutes: FastifyPluginAsync = async (app) => {
         params: Params,
         body: ProducerSourceReadSchema,
         response: {
-          200: z.string().describe('The file, as bytes (application/octet-stream).'),
+          // A plain response object (not Zod): swagger takes its `content` map as it is, so the
+          // document says bytes, not a JSON string.
+          200: {
+            description: 'The file, as bytes.',
+            content: {
+              'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+            },
+          },
           ...ERRORS,
         },
       },

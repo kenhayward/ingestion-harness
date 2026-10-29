@@ -128,7 +128,7 @@ describe('watched folders through the bridge', () => {
     expect(names(failed.json().files)).toEqual([['x.pdf.md', Buffer.byteLength(content)]]);
   });
 
-  it('a read over the cap is refused while streaming', async () => {
+  it('a read over the cap is refused (the sink declares the length: content-length past the cap)', async () => {
     const { call, drop } = await overHttp({ maxSourceMb: 1 });
     await drop('big.pdf', Buffer.alloc(2 * 2 ** 20, 7));
     const read = await call('read', { folder: '', name: 'big.pdf' });

@@ -34,6 +34,17 @@ describe('bridge OpenAPI document', () => {
     expect(registered.sort()).toEqual(documented.sort());
   });
 
+  it('documents a source read as binary bytes, not JSON', async () => {
+    const { doc } = await document();
+    const op = doc.paths['/v1/targets/{id}/sources:read']?.post as {
+      responses: Record<string, { content?: Record<string, unknown> }>;
+    };
+    expect(Object.keys(op.responses['200']?.content ?? {})).toEqual(['application/octet-stream']);
+    expect(op.responses['200']?.content?.['application/octet-stream']).toMatchObject({
+      schema: { type: 'string', format: 'binary' },
+    });
+  });
+
   it('matches the committed openapi.json (npm run openapi -w @ih/bridge)', async () => {
     const { doc } = await document();
     await expect(`${JSON.stringify(doc, null, 2)}\n`).toMatchFileSnapshot('../openapi.json');
