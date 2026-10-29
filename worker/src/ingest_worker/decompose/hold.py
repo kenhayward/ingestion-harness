@@ -7,6 +7,10 @@ approval delivers with (the source's sha-256, the decomposer version, who starte
 the register entry the hold was decided against). The item records the manifest's sha-256, so `read_held` gives back exactly
 the bytes that were reviewed, or raises `HeldMismatch`. The API reads the manifest too (the
 review page), so its camelCase shape is a contract.
+
+A document waiting for a lane (lanes.py) is stored the same way, without page images
+(`pages=False`, `reason: lane`), so the run that gets the lane delivers it without decomposing it
+again.
 """
 
 from __future__ import annotations
@@ -56,8 +60,14 @@ class HeldUnproven(Wire):
     at: str | None
 
 
+#: Why a decomposition is held: for a person's review, or for a free lane of its tenant.
+HoldReason = Literal["review", "lane"]
+
+
 class HeldManifest(Wire):
     version: Literal[1] = 1
+    #: Older manifests are all review holds.
+    reason: HoldReason = "review"
     source_sha256: str
     decomposer_version: int
     #: Who started the batch: the approved delivery acts as them.
@@ -97,11 +107,13 @@ def write_held(
     started_by: ActingUser,
     entry: dict[str, Any] | None,
     render_preview: Callable[[bytes, int], bytes],
+    pages: bool = True,
 ) -> str:
-    """Hold `result`, the decomposition of the PDF `data`: its images, a JPEG of every page
-    (`render_preview`, 0-based page), then the manifest. Returns the manifest's sha-256, of its
-    exact bytes. A page that can't be rendered raises (the review needs every page), and what
-    was written is deleted first."""
+    """Hold `result`, the decomposition of `data`: its images, a JPEG of every page
+    (`render_preview`, 0-based page) for a review hold, then the manifest. Without `pages` (a
+    document waiting for a lane, Word or PDF) no page is rendered and the manifest's reason is
+    `lane`. Returns the manifest's sha-256, of its exact bytes. A page that can't be rendered
+    raises (the review needs every page), and what was written is deleted first."""
     written: list[str] = []
 
     def put(key: str, body: bytes, content_type: str) -> None:
@@ -117,18 +129,19 @@ def write_held(
             images.append(
                 HeldImage(id=image.id, key=key, sha256=_sha(body), content_type=image.content_type)
             )
-        pages = _page_count(data)
-        for index in range(pages):
+        page_count = _page_count(data) if pages else 0
+        for index in range(page_count):
             key = decomposition_held_page_key(item.batch_id, item.id, index + 1)
             put(key, render_preview(data, index), "image/jpeg")
         manifest = HeldManifest(
+            reason="review" if pages else "lane",
             source_sha256=_sha(data),
             decomposer_version=decomposer_version,
             started_by=started_by,
             entry=HeldEntry.model_validate(entry) if entry is not None else None,
             document=result.document,
             images=images,
-            page_count=pages,
+            page_count=page_count,
             page_map=result.page_map,
             unproven=[HeldUnproven(detail=u.detail, page=u.page, at=u.at) for u in result.unproven],
         )
@@ -170,7 +183,12 @@ def read_held(
 def delete_held(store: ObjectStore, bucket: str, item: ConversionItem) -> None:
     """Delete the item's held files: what the manifest names, then the manifest. Missing ones
     (no manifest at all, even) are no error."""
-    manifest_key = decomposition_held_manifest_key(item.batch_id, item.id)
+    delete_stored(store, bucket, item.batch_id, item.id)
+
+
+def delete_stored(store: ObjectStore, bucket: str, batch_id: str, item_id: str) -> None:
+    """`delete_held` by the item's batch and id."""
+    manifest_key = decomposition_held_manifest_key(batch_id, item_id)
     raw = store.get_optional(bucket, manifest_key)
     if raw is None:
         return
@@ -178,5 +196,5 @@ def delete_held(store: ObjectStore, bucket: str, item: ConversionItem) -> None:
     for image in manifest.images:
         store.delete(bucket, image.key)
     for page in range(1, manifest.page_count + 1):
-        store.delete(bucket, decomposition_held_page_key(item.batch_id, item.id, page))
+        store.delete(bucket, decomposition_held_page_key(batch_id, item_id, page))
     store.delete(bucket, manifest_key)

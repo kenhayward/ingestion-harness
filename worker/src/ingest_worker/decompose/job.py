@@ -9,6 +9,15 @@ has Auto Approve on (`autoApprove` params), when it is delivered as a Word file 
 hold (`approved` params, spec §14.4) is delivered as it was reviewed, without reading the PDF
 again, unless the held files or the source are not the reviewed ones, or the register's entry
 for the source has changed since the hold; its held files are deleted once it has an outcome.
+
+Before a document is handed to the bridge it takes a lane of its target's tenant (lanes.py,
+watched folders plan 2). With none free, its decomposition is stored like a hold, without page
+images, and the item waits (`waiting_to_deliver`, the job succeeding with "waiting to deliver");
+an approved PDF waits keeping its reviewed files. The dispatcher gives it a lane and queues a
+`waited` run, which delivers the stored copy without decomposing again: the register decides
+again then (an approved PDF's hold check is not repeated), and the stored copy is deleted once
+the item has an outcome. A document holds its lane until its outcome is final.
+
 The item records the outcome (R3):
 
 - `delivering`, with its register entry, when the bridge took the document: the API settles it
@@ -59,6 +68,7 @@ from ingest_worker.decompose.hold import (
     write_held,
 )
 from ingest_worker.decompose.items import UNDECIDED, ConversionItem, ItemOutcome, ItemStore
+from ingest_worker.decompose.lanes import LaneStore, lanes_for
 from ingest_worker.decompose.pdf.layout import LayoutAnalyser, LayoutUnavailable
 from ingest_worker.decompose.pdf.transcript import PageTranscriber, TranscriptionFailed
 from ingest_worker.decompose.register import RegisterStore
@@ -96,6 +106,8 @@ class DecomposeParams(BaseModel):
     approved: bool = False
     #: The batch's Auto Approve: a PDF is delivered at once, never held for review.
     auto_approve: bool = Field(False, alias="autoApprove")
+    #: The document waited for a lane, which the dispatcher claimed for this run.
+    waited: bool = False
 
 
 @dataclass(frozen=True)
@@ -104,6 +116,7 @@ class DecompositionStores:
 
     register: RegisterStore
     items: ItemStore
+    lanes: LaneStore
 
 
 @dataclass(frozen=True)
@@ -114,6 +127,10 @@ class DecomposeDeps:
     #: The job's events (the live view) and its cancellation.
     queue: JobQueue
     deliver: DeliverDeps
+    #: The lane gate of the targets' tenants.
+    lanes: LaneStore
+    #: How many documents a target's tenant takes at once, by target id.
+    target_lanes: Callable[[str], int]
     #: Reads a PDF's layout (None: a PDF fails its item).
     layout: LayoutAnalyser | None = None
     #: The OCR model reading a job's PDF, for its scanned pages (None: a PDF with a scanned
@@ -141,6 +158,9 @@ def decompose_deps(deps: PipelineDeps, queue: JobQueue) -> DecomposeDeps:
     def target_lookup(target_id: str) -> tuple[str, str | None]:
         target = targets.get(target_id)
         return target.sink_id, target.instance_id
+
+    def target_lanes(target_id: str) -> int:
+        return lanes_for(targets.get(target_id))
 
     renderer: Renderer = (
         ConverterRenderer(deps.converter) if deps.converter is not None else NoConverter()
@@ -175,6 +195,8 @@ def decompose_deps(deps: PipelineDeps, queue: JobQueue) -> DecomposeDeps:
             deployment=deps.deployment,
             layout=deps.layout,
         ),
+        lanes=stores.lanes,
+        target_lanes=target_lanes,
     )
 
 
@@ -211,6 +233,11 @@ def run_decompose(job: ClaimedJob, deps: DecomposeDeps) -> Outcome:
     if params.source_key != item.source_key:
         detail = f"the job's source key {params.source_key} is not the item's ({item.source_key})"
         return _decided(job, deps, item, DeliveryOutcome("failed", None, None, detail))
+    if params.waited:
+        return _from_wait(job, deps, params, item)
+    if item.outcome == "waiting_to_deliver":
+        # A retry of a run that left its item waiting: the dispatcher's run delivers it.
+        return Complete(note=f"item {item.id} is waiting for a lane")
     if params.approved:
         return _approved(job, deps, params, item)
     deps.queue.event(
@@ -238,7 +265,7 @@ def _failing_on_error(
 
 #: The outcomes a run carries on from: nothing decided yet, or a delivery that may need resuming
 #: (the worker stopped after recording it, before the job was handed over).
-RUNNABLE: tuple[ItemOutcome, ...] = (*UNDECIDED, "delivering")
+RUNNABLE: tuple[ItemOutcome, ...] = (*UNDECIDED, "delivering", "waiting_to_deliver")
 
 #: How an outcome reads in the job's events.
 OUTCOME_LABELS: dict[ItemOutcome, str] = {
@@ -256,6 +283,7 @@ OUTCOME_LABELS: dict[ItemOutcome, str] = {
     "failed": "failed",
     "awaiting_review": "awaiting review",
     "rejected": "rejected",
+    "waiting_to_deliver": "waiting to deliver",
 }
 
 
@@ -300,6 +328,12 @@ def _convert(
         if not params.auto_approve:
             return _hold(job, deps, params, item, data, result)
         deps.queue.event(job.id, "info", "auto-approved", {"itemId": item.id})
+    try:
+        claimed = _claim_lane(deps, params, item)
+    except TargetMissing as exc:
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+    if not claimed:
+        return _wait(job, deps, item, data, result)
     return _deliver(
         job,
         deps,
@@ -356,6 +390,117 @@ def _deliver(
         [(params.target_id, out.delivery_id)],
         note=f"handed {item.source_key} to the bridge",
     )
+
+
+def _claim_lane(deps: DecomposeDeps, params: DecomposeParams, item: ConversionItem) -> bool:
+    """Whether the item has a lane of its target's tenant, taking one when it is free. An item
+    already `delivering` (a retry resuming its hand-off) carries on whatever the gate says."""
+    tenant = deps.deliver.target_lookup(params.target_id)
+    claimed = deps.lanes.try_claim(item.id, tenant, deps.target_lanes(params.target_id))
+    return claimed or item.outcome == "delivering"
+
+
+#: A run whose document waits for a lane.
+WAITING = Complete(note="waiting to deliver")
+
+
+def _wait(
+    job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem, data: bytes, result: Decomposition
+) -> Outcome:
+    """No lane is free: the decomposition is stored (no page images) and the item waits for the
+    dispatcher, which queues a `waited` run once it has a lane."""
+    held_sha256 = write_held(
+        deps.store,
+        deps.runs_bucket,
+        item,
+        result,
+        data=data,
+        decomposer_version=decomposer_version(source_kind(data)),
+        started_by=deps.queue.uploader(job.id) or NO_USER,
+        entry=None,
+        render_preview=deps.render_preview,
+        pages=False,
+    )
+    if not deps.items.wait(item.id, held_sha256, None):
+        delete_held(deps.store, deps.runs_bucket, item)
+        return _wait_not_recorded(job, deps, item)
+    deps.queue.event(job.id, "info", "waiting for a lane", {"heldSha256": held_sha256})
+    return WAITING
+
+
+def _wait_not_recorded(job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem) -> Outcome:
+    deps.queue.event(
+        job.id,
+        "info",
+        "not recorded, the item had moved on: waiting to deliver",
+        {"outcome": "waiting_to_deliver", "recorded": False},
+    )
+    return Complete(note=f"{item.source_key}: had moved on; waiting to deliver not recorded")
+
+
+def _from_wait(
+    job: ClaimedJob, deps: DecomposeDeps, params: DecomposeParams, item: ConversionItem
+) -> Outcome:
+    """The dispatcher's run of a waiting item, whose lane it claimed: the stored decomposition
+    delivered as who started the batch, the register deciding again; the stored copy deleted
+    once the item has an outcome. A retry that finds the item `delivering` and the copy gone was
+    handed over already."""
+    manifest_key = decomposition_held_manifest_key(item.batch_id, item.id)
+    if (
+        item.outcome == "delivering"
+        and deps.store.get_optional(deps.runs_bucket, manifest_key) is None
+    ):
+        return Complete(note="delivery already handed over")
+    deps.queue.event(job.id, "info", "lane free: delivering", {"itemId": item.id})
+
+    def deliver() -> Outcome:
+        try:
+            manifest, held, data = _read_stored(deps, item)
+        except HeldMismatch as exc:
+            return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+        check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
+        return _deliver(
+            job,
+            deps,
+            params,
+            item,
+            data,
+            held,
+            started_by=manifest.started_by,
+            version=manifest.decomposer_version,
+        )
+
+    return _deleting_held(job, deps, item, deliver)
+
+
+def _deleting_held(
+    job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem, run: Callable[[], Outcome]
+) -> Outcome:
+    """`run()` (failing the item on a cancel or the last attempt's error), the item's held files
+    deleted once it has an outcome: unless it waits for a lane, or nothing was decided."""
+    try:
+        outcome = _failing_on_error(job, deps, item, run)
+    except TargetNotSynced:
+        raise  # nothing is decided: the held files wait with the job
+    except Exception as exc:
+        if isinstance(exc, JobCancelled) or job.attempts >= job.max_attempts:
+            delete_held(deps.store, deps.runs_bucket, item)  # the item was failed
+        raise
+    if outcome != WAITING:
+        delete_held(deps.store, deps.runs_bucket, item)
+    return outcome
+
+
+def _read_stored(
+    deps: DecomposeDeps, item: ConversionItem
+) -> tuple[HeldManifest, Decomposition, bytes]:
+    """The item's held manifest, decomposition and source; `HeldMismatch` when the held files or
+    the source are not the recorded ones."""
+    manifest, held = read_held(deps.store, deps.runs_bucket, item)
+    data = deps.store.get(deps.runs_bucket, item.object_key)
+    if hashlib.sha256(data).hexdigest() != manifest.source_sha256:
+        raise HeldMismatch(f"the source of {item.source_key} is not the reviewed one")
+    return manifest, held, data
 
 
 def _hold(
@@ -435,16 +580,27 @@ def _approved(
     deps.queue.event(
         job.id, "info", "approved", {"itemId": item.id, "heldSha256": item.held_sha256}
     )
-    try:
-        outcome = _failing_on_error(job, deps, item, lambda: _deliver_held(job, deps, params, item))
-    except TargetNotSynced:
-        raise  # nothing is decided: the hold waits with the job
-    except Exception as exc:
-        if isinstance(exc, JobCancelled) or job.attempts >= job.max_attempts:
-            delete_held(deps.store, deps.runs_bucket, item)  # the item was failed
-        raise
-    delete_held(deps.store, deps.runs_bucket, item)
-    return outcome
+
+    def deliver() -> Outcome:
+        try:
+            claimed = _claim_lane(deps, params, item)
+        except TargetMissing as exc:
+            return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+        if not claimed:
+            return _wait_approved(job, deps, item)
+        return _deliver_held(job, deps, params, item)
+
+    return _deleting_held(job, deps, item, deliver)
+
+
+def _wait_approved(job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem) -> Outcome:
+    """An approved PDF with no free lane waits keeping its reviewed files, which the `waited`
+    run delivers."""
+    assert item.held_sha256 is not None  # checked by _approved
+    if not deps.items.wait(item.id, item.held_sha256, item.held_entry):
+        return _wait_not_recorded(job, deps, item)
+    deps.queue.event(job.id, "info", "waiting for a lane", {"heldSha256": item.held_sha256})
+    return WAITING
 
 
 def _deliver_held(
@@ -455,10 +611,7 @@ def _deliver_held(
     a source that are not the reviewed ones fail the item, and so does a hold whose register
     entry has changed since (spec §14.4a)."""
     try:
-        manifest, held = read_held(deps.store, deps.runs_bucket, item)
-        data = deps.store.get(deps.runs_bucket, item.object_key)
-        if hashlib.sha256(data).hexdigest() != manifest.source_sha256:
-            raise HeldMismatch(f"the source of {item.source_key} is not the reviewed one")
+        manifest, held, data = _read_stored(deps, item)
     except HeldMismatch as exc:
         return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
     try:

@@ -19,6 +19,8 @@ from ingest_worker.bridge.models import (
     SourceFile,
     package_archive_keys,
 )
+from ingest_worker.decompose.items import ItemOutcome
+from ingest_worker.decompose.lanes import HOLDING, Tenant, check_tenant
 from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
@@ -45,7 +47,7 @@ from ingest_worker.publish_targets import (
     TargetMissing,
     TargetRow,
 )
-from ingest_worker.queue import ClaimedJob
+from ingest_worker.queue import ORPHAN_GRACE_S, ClaimedJob, EndedLane
 from ingest_worker.storage import MemoryObjectStore
 
 
@@ -215,6 +217,13 @@ class FakeQueue:
     suggested: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     suggest_removed: list[str] = field(default_factory=list)
     suggest_error: Exception | None = None
+    #: The items given a `waited` decompose job (queue_decompose_waited), in order.
+    waited_items: list[str] = field(default_factory=list)
+    #: Items holding a lane with no `waited` job (lanes_without_job), as a test sets them: each
+    #: with the seconds since its lane was claimed.
+    lane_orphans: dict[str, float] = field(default_factory=dict)
+    #: Lane holders whose job ended undecided (lanes_of_ended_jobs), as a test sets them.
+    ended_lanes: list[EndedLane] = field(default_factory=list)
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
@@ -341,6 +350,22 @@ class FakeQueue:
 
     def reap_stale(self, older_than_s: float) -> int:
         return 0
+
+    def queue_decompose_waited(self, item_id: str) -> str | None:
+        if item_id in self.waited_items:
+            return None
+        self.waited_items.append(item_id)
+        return f"decompose-waited-{len(self.waited_items)}"
+
+    def lanes_without_job(self) -> list[str]:
+        return [
+            i
+            for i, age in self.lane_orphans.items()
+            if age > ORPHAN_GRACE_S and i not in self.waited_items
+        ]
+
+    def lanes_of_ended_jobs(self) -> list[EndedLane]:
+        return list(self.ended_lanes)
 
     def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
         if self.suggest_error is not None:
@@ -1122,3 +1147,119 @@ class BucketView:
 
     def get(self, bucket: str, key: str) -> bytes:
         return self.bridge.get(bucket, key)
+
+
+@dataclass
+class _LaneBatch:
+    tenant: Tenant
+    created: int
+    last_lane: int | None = None
+    target_id: str = "target"
+
+
+@dataclass
+class _LaneItem:
+    batch_id: str
+    outcome: ItemOutcome
+    created: int
+    claimed: int | None = None
+
+
+class MemoryLaneStore:
+    """The lane gate (decompose/lanes.py) over items and batches in memory; a counter stands in
+    for the clock, so every claim and creation is ordered."""
+
+    def __init__(self) -> None:
+        self.batches: dict[str, _LaneBatch] = {}
+        self.items: dict[str, _LaneItem] = {}
+        self._clock = 0
+
+    def _tick(self) -> int:
+        self._clock += 1
+        return self._clock
+
+    def add_batch(self, batch_id: str, tenant: Tenant, target_id: str = "target") -> None:
+        self.batches[batch_id] = _LaneBatch(tenant, self._tick(), target_id=target_id)
+
+    def add_item(self, item_id: str, batch_id: str, outcome: ItemOutcome = "decomposing") -> None:
+        self.items[item_id] = _LaneItem(batch_id, outcome, self._tick())
+
+    def set_outcome(self, item_id: str, outcome: ItemOutcome) -> None:
+        self.items[item_id].outcome = outcome
+
+    def mark_claimed(self, item_id: str) -> None:
+        self.items[item_id].claimed = self._tick()
+
+    def _of(self, tenant: Tenant) -> list[tuple[str, _LaneItem]]:
+        return [
+            (item_id, item)
+            for item_id, item in self.items.items()
+            if self.batches[item.batch_id].tenant == tenant
+        ]
+
+    def _claim(self, item_id: str) -> None:
+        item = self.items[item_id]
+        item.claimed = self._tick()
+        self.batches[item.batch_id].last_lane = self._tick()
+
+    def in_flight(self, tenant: Tenant) -> int:
+        return sum(
+            1
+            for _, item in self._of(tenant)
+            if item.claimed is not None and item.outcome in HOLDING
+        )
+
+    def _waiting(self, tenant: Tenant) -> list[tuple[str, _LaneItem]]:
+        return [
+            (item_id, item)
+            for item_id, item in self._of(tenant)
+            if item.outcome == "waiting_to_deliver" and item.claimed is None
+        ]
+
+    def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
+        item = self.items.get(item_id)
+        if item is None:
+            raise LookupError(f"no conversion item {item_id}")
+        check_tenant(item_id, self.batches[item.batch_id].tenant, tenant)
+        if item.claimed is not None and item.outcome in HOLDING:
+            return True
+        if self.in_flight(tenant) >= lanes:
+            return False
+        if any(other != item_id for other, _ in self._waiting(tenant)):
+            return False
+        self._claim(item_id)
+        return True
+
+    def dispatch(self, tenant: Tenant, lanes: int) -> list[str]:
+        claimed: list[str] = []
+        free = lanes - self.in_flight(tenant)
+        while free > 0:
+            waiting = self._waiting(tenant)
+            if not waiting:
+                break
+
+            def turn(entry: tuple[str, _LaneItem]) -> tuple[bool, int, int, int]:
+                batch = self.batches[entry[1].batch_id]
+                last = batch.last_lane
+                return (last is not None, last or 0, batch.created, entry[1].created)
+
+            item_id, _ = min(waiting, key=turn)
+            self._claim(item_id)
+            claimed.append(item_id)
+            free -= 1
+        return claimed
+
+    def waiting_tenants(self) -> list[Tenant]:
+        tenants = {
+            self.batches[item.batch_id].tenant
+            for item in self.items.values()
+            if item.outcome == "waiting_to_deliver" and item.claimed is None
+        }
+        return sorted(tenants, key=lambda t: (t[0], t[1] is not None, t[1] or ""))
+
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str, str]]:
+        waiting = sorted(self._waiting(tenant), key=lambda entry: entry[1].created)
+        return [
+            (item_id, self.batches[item.batch_id].target_id, item.batch_id)
+            for item_id, item in waiting
+        ]

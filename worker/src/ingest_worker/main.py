@@ -20,8 +20,10 @@ from .bundle import run_export
 from .call_slots import PgCallSlots
 from .config import Settings
 from .convert import GotenbergConverter
+from .decompose.dispatch import LANE_DISPATCH_S, dispatch_lanes
 from .decompose.items import PgItemStore
 from .decompose.job import DecompositionStores, decompose_deps, run_decompose
+from .decompose.lanes import PgLaneStore
 from .decompose.pdf.layout import layout_analyser
 from .decompose.register import PgRegisterStore
 from .drafting import run_draft
@@ -110,11 +112,12 @@ def run_once(
     worker_id: str,
     heartbeat: JobHeartbeat | None = None,
     heartbeat_s: float = HEARTBEAT_S,
+    after: Callable[[ClaimedJob], None] | None = None,
 ) -> bool:
     """Claim and run one job (any task: process, publish, rerun, prepare, segment, draft,
     export, ontology, graph, suggest, embed, withdraw, republish, rebuild or decompose),
-    beating its heartbeat while it runs (heartbeat.py). Nothing is claimed while the queue is
-    paused. Returns False when the queue is empty."""
+    beating its heartbeat while it runs (heartbeat.py), then `after(job)`. Nothing is claimed
+    while the queue is paused. Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
@@ -129,14 +132,39 @@ def run_once(
         )  # fmt: skip
     if heartbeat is None:
         _run_claimed(job, queue, deps)
-        return True
+    else:
 
-    def lost() -> None:
-        log.warning("job %s is no longer this worker's: it stops at its next check", job.id)
+        def lost() -> None:
+            log.warning("job %s is no longer this worker's: it stops at its next check", job.id)
 
-    with beating(lambda: heartbeat.beat(job), heartbeat_s, on_lost=lost):
-        _run_claimed(job, queue, deps)
+        with beating(lambda: heartbeat.beat(job), heartbeat_s, on_lost=lost):
+            _run_claimed(job, queue, deps)
+    if after is not None:
+        after(job)
     return True
+
+
+def lane_round(deps: PipelineDeps, queue: JobQueue) -> int:
+    """Give the conversions' free lanes to waiting documents (decompose/dispatch.py); the jobs
+    queued. Advisory: a failure is logged, the next round tries again."""
+    stores, targets = deps.decomposition, deps.targets
+    if stores is None or targets is None:
+        return 0
+    try:
+        queued = dispatch_lanes(
+            stores.lanes,
+            targets,
+            queue,
+            stores.items,
+            store=deps.store,
+            runs_bucket=deps.buckets.runs,
+        )
+    except Exception:
+        log.warning("lane dispatch failed", exc_info=True)
+        return 0
+    if queued:
+        log.info("lanes: queued %d waiting documents", queued)
+    return queued
 
 
 def handle_process(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
@@ -448,6 +476,8 @@ class _Worker:
         # A model's parallel calls hold across every worker: slots as advisory locks on their own
         # connection, opened when a model with the setting is first called.
         self.call_slots = PgCallSlots(settings.database_url)
+        # The conversions' lane gate commits each claim on its own connection (lanes.py).
+        self.lanes_conn = psycopg.connect(settings.database_url, autocommit=True)
         # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in
         # Postgres, so a stopped job resumes at the step it stopped at (step_graph.py).
         self.step_checkpointer: BaseCheckpointSaver[Any] | None = None
@@ -495,6 +525,7 @@ class _Worker:
             decomposition=DecompositionStores(
                 register=PgRegisterStore.for_url(settings.database_url),
                 items=PgItemStore(self.library),
+                lanes=PgLaneStore(self.lanes_conn),
             ),
             ontology_max_triples=settings.ontology_max_triples,
             ontology_fetch=(
@@ -512,6 +543,7 @@ class _Worker:
         self.next_discovery = 0.0
         self.next_reap = 0.0
         self.next_config_check = 0.0
+        self.next_lane_dispatch = 0.0
         log.info(
             "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s, layout=%s, steps=%s",
             settings.worker_id,
@@ -545,8 +577,23 @@ class _Worker:
             if reaped := queue.reap_stale(settings.stale_lock_s):
                 log.warning("re-queued %d stale jobs", reaped)
             self.next_reap = now + 60
-        if not run_once(queue, deps, settings.worker_id, self.heartbeat, settings.heartbeat_s):
+        if now >= self.next_lane_dispatch:
+            self.dispatch_lanes()
+        ran = run_once(
+            queue,
+            deps,
+            settings.worker_id,
+            self.heartbeat,
+            settings.heartbeat_s,
+            # A lane this worker's run freed goes to a waiting document at once.
+            after=lambda job: self.dispatch_lanes() if job.task == "decompose" else None,
+        )
+        if not ran:
             idle(queue, self.stop, settings.poll_interval_s)
+
+    def dispatch_lanes(self) -> None:
+        lane_round(self.deps, self.queue)
+        self.next_lane_dispatch = time.monotonic() + LANE_DISPATCH_S
 
     def close(self) -> None:
         for close in (
@@ -556,6 +603,7 @@ class _Worker:
             self.target_store.close,
             self.library.close,
             self.graph_conn.close,
+            self.lanes_conn.close,
             self.call_slots.close,
             self.close_checkpointer,
         ):

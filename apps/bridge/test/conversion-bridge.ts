@@ -34,9 +34,18 @@ const SINK_KEY = 's'.repeat(32);
 /** The fake document sink, keeping the provenance each document's last write carried. */
 class RecordingDocumentSink extends FakeDocumentSink {
   readonly provenance = new Map<string, DecompositionProvenance>();
+  private active = 0;
+  /** The most deliveries in progress at once. */
+  max = 0;
 
   override async deliver(req: SinkDeliverRequest): Promise<SinkDeliverResult> {
-    const result = await super.deliver(req);
+    this.max = Math.max(this.max, ++this.active);
+    let result: SinkDeliverResult;
+    try {
+      result = await super.deliver(req);
+    } finally {
+      this.active--;
+    }
     const pid = result.status === 'succeeded' ? result.receipt.document?.persistentId : undefined;
     if (pid && isDecompositionProvenance(req.package.provenance)) {
       this.provenance.set(pid, req.package.provenance);
@@ -58,6 +67,8 @@ export interface ConversionBridge {
   text(persistentId: string): string | null;
   /** The provenance of the last write of a document the fake sink holds, or null if none. */
   provenance(persistentId: string): DecompositionProvenance | null;
+  /** The most deliveries the fake sink had in progress at once. */
+  maxConcurrent(): number;
   /** Runs every due delivery and sends every due event, until nothing is left to do. */
   settle(): Promise<void>;
   close(): Promise<void>;
@@ -129,6 +140,7 @@ export async function startConversionBridge(opts: {
       documents.documents.has(persistentId)
         ? (documents.provenance.get(persistentId) ?? null)
         : null,
+    maxConcurrent: () => documents.max,
     async settle() {
       for (;;) {
         let worked = false;

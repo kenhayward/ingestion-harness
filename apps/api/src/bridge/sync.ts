@@ -29,13 +29,53 @@ interface SyncDeps {
 }
 
 /**
+ * How many deliveries each tenant takes at once, by sink then instance, as the bridge's sink
+ * catalog describes it (an instance without `lanes` is absent: one at a time). Null when the
+ * catalog cannot be read: the cached lanes stay as they are.
+ */
+async function lanesBySink(deps: SyncDeps): Promise<Map<string, Map<string, number>> | null> {
+  try {
+    const sinks = await deps.bridge.listSinks();
+    return new Map(
+      sinks.map((s) => [
+        s.id,
+        new Map(
+          s.instances.flatMap((i) => (i.lanes === undefined ? [] : [[i.id, i.lanes] as const])),
+        ),
+      ]),
+    );
+  } catch (err) {
+    deps.log.warn(
+      { err },
+      "the delivery bridge's sink list could not be read: the targets' lanes stay as cached",
+    );
+    return null;
+  }
+}
+
+/**
  * Caches every target the bridge lists (on the bridge, synced now; CT Studio's own facts and
- * `inert_at` untouched). A cached row the bridge no longer lists is kept (the foreign keys) and
- * marked not on the bridge; a live one is logged. Nothing is written to the bridge.
+ * `inert_at` untouched), stamping each with its tenant's lanes from the sink catalog (null when
+ * its sink or instance is not described). A cached row the bridge no longer lists is kept (the
+ * foreign keys) and marked not on the bridge; a live one is logged. Nothing is written to the
+ * bridge.
  */
 export async function pullTargets(deps: SyncDeps): Promise<{ cached: number; missing: string[] }> {
   const listed = await deps.bridge.listTargets();
-  for (const view of listed) await deps.targets.cache(view, {});
+  const lanes = await lanesBySink(deps);
+  for (const view of listed) {
+    await deps.targets.cache(
+      view,
+      lanes === null
+        ? {}
+        : {
+            lanes:
+              view.instanceId === null
+                ? null
+                : (lanes.get(view.sinkId)?.get(view.instanceId) ?? null),
+          },
+    );
+  }
   const ids = new Set(listed.map((v) => v.id));
   const gone = (await deps.targets.cachedIds()).filter((c) => !ids.has(c.id));
   await deps.targets.markMissing(gone.map((c) => c.id));

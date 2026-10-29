@@ -126,9 +126,9 @@ function progressOf(items: Item[]): string {
 /**
  * One conversion batch (decomposition phase 3): a row per document with its outcome (§3), its
  * detail, its link in the target and its report, and the row actions that apply. It reads the
- * batch again every few seconds while any document is queued, decomposing or delivering (a
- * `decompose` job has no live events of its own here), and stops once none is; a first read that
- * fails is tried again on the same beat. Each time the number of unfinished documents changes, a
+ * batch again every few seconds while any document is queued, decomposing, waiting to deliver or
+ * delivering (a `decompose` job has no live events of its own here), and stops once none is; a
+ * first read that fails is tried again on the same beat. Each time the number of unfinished documents changes, a
  * polite status says how far it has got. A started batch carries on without the page, so
  * `#/conversion/<batchId>` picks it up after a reload. Each row says how long its document took
  * (or has run so far, as of the latest read). A row action's dialog is kept here, so a

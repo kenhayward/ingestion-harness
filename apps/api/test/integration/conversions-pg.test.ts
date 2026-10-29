@@ -242,7 +242,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     expect(rows.map((r) => r.indexdef)).toContainEqual(expect.stringMatching(/\(source_key\)$/));
   });
 
-  it('refuses an item outcome outside the twelve', async () => {
+  it('refuses an item outcome outside the fifteen', async () => {
     const { repo, p } = await make();
     const batch = await repo.createBatch({
       targetId: 'manuals',
@@ -266,6 +266,41 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       id,
     ]);
     expect((await repo.getItem(id))?.outcome).toBe('read_back_mismatch');
+    await p.query(`UPDATE decomposition_items SET outcome = 'waiting_to_deliver' WHERE id = $1`, [
+      id,
+    ]);
+    expect((await repo.getItem(id))?.outcome).toBe('waiting_to_deliver');
+  });
+
+  it('adds the lane columns and indexes the items holding or waiting for a lane', async () => {
+    const { p } = await make();
+    const { rows: cols } = await p.query<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE (table_name, column_name) IN (('decomposition_items', 'lane_claimed_at'),
+                                            ('decomposition_batches', 'last_lane_at'),
+                                            ('publish_targets', 'lanes'))`,
+    );
+    expect(cols.map((c) => `${c.table_name}.${c.column_name}`).sort()).toEqual([
+      'decomposition_batches.last_lane_at',
+      'decomposition_items.lane_claimed_at',
+      'publish_targets.lanes',
+    ]);
+    const { rows } = await p.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = 'decomposition_items'`,
+    );
+    expect(rows.map((r) => r.indexdef)).toContainEqual(
+      // Covers the lane count: every outcome that holds a lane, and the claim column.
+      expect.stringMatching(
+        /decomposition_items_lane_idx .*\(outcome, lane_claimed_at, batch_id\) WHERE .*decomposing.*waiting_to_deliver.*delivering/,
+      ),
+    );
+    const { rows: checks } = await p.query<{ def: string }>(
+      `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+        WHERE conrelid = 'publish_targets'::regclass AND contype = 'c'`,
+    );
+    expect(checks.map((c) => c.def)).toContainEqual(
+      expect.stringMatching(/lanes >= 1.*lanes <= 64/),
+    );
   });
 
   it('keeps decompose jobs out of the Jobs list and the queue counts', async () => {
@@ -388,6 +423,19 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     // A repeated event changes nothing.
     await applyEvent(t.deps, t.event({ sequence: 2 }));
     expect((await t.repo.getItem(t.itemId))?.outcome).toBe('created');
+  });
+
+  it("settles an item still waiting for its lane when its delivery's event comes first", async () => {
+    const t = await handedOff();
+    await t.p.query(`UPDATE decomposition_items SET outcome = 'waiting_to_deliver' WHERE id = $1`, [
+      t.itemId,
+    ]);
+    await applyEvent(t.deps, t.event());
+    expect(await t.repo.getItem(t.itemId)).toMatchObject({
+      outcome: 'created',
+      registerEntryId: t.entryId,
+      finishedAt: expect.any(String),
+    });
   });
 
   it('settles a changed document as changed_in_target, and the job never awaits review', async () => {

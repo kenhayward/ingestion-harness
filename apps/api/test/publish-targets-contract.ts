@@ -198,6 +198,27 @@ export function publishTargetsContract(
       });
     });
 
+    it("caches the lanes of the target's tenant, kept by a write that does not name them", async () => {
+      const { repo } = await make();
+      expect(await repo.get('default')).toMatchObject({ lanes: null });
+      const box = {
+        id: 'box',
+        label: 'Box',
+        sinkId: 'docs',
+        instanceId: 'eu',
+        connectionId: null,
+        destination: {},
+      };
+      await repo.cache(box, { lanes: 10 });
+      expect(await repo.get('box')).toMatchObject({ lanes: 10 });
+      // An edit made here names no lanes: the pulled count stays.
+      await repo.cache({ ...box, label: 'Box EU' }, { by: 'Ann' });
+      expect(await repo.get('box')).toMatchObject({ label: 'Box EU', lanes: 10 });
+      // A pull that finds the instance no longer described clears them.
+      await repo.cache(box, { lanes: null });
+      expect(await repo.get('box')).toMatchObject({ lanes: null });
+    });
+
     it('a cache write rewrites what code from before it left in a row', async () => {
       const { repo } = await make();
       // Old code inserted the triple store row as an S3 one with an empty destination.

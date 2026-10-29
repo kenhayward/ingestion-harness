@@ -94,6 +94,77 @@ describe('pullTargets', () => {
     expect(bridge.targetPuts).toBe(0);
   });
 
+  it("stamps each target with its sink instance's lanes, null when not described", async () => {
+    const { targets, bridge, log } = setup();
+    const sink = (id: string, instances: { id: string; label: string; lanes?: number }[]) =>
+      ({
+        id,
+        name: id,
+        status: 'available',
+        contractVersion: 2,
+        capabilities: { decomposedDocuments: true },
+        connectionKind: 'shared',
+        instances,
+        destinationFields: [],
+        credentialFields: [],
+      }) as unknown as (typeof bridge.sinkViews)[number];
+    bridge.sinkViews = [
+      sink('docs', [
+        { id: 'eu', label: 'EU', lanes: 10 },
+        { id: 'us', label: 'US' },
+      ]),
+    ];
+    const target = (id: string, sinkId: string, instanceId: string | null) => ({
+      id,
+      label: id,
+      sinkId,
+      instanceId,
+      connectionId: null,
+      destination: {},
+    });
+    onBridge(bridge, target('eu', 'docs', 'eu'));
+    onBridge(bridge, target('us', 'docs', 'us'));
+    onBridge(bridge, target('gone-instance', 'docs', 'apac'));
+    onBridge(bridge, target('no-instance', 'docs', null));
+    onBridge(bridge, target('undescribed', 'other', 'eu'));
+    onBridge(bridge, s3View({ id: 'lake' }));
+    await pullTargets({ targets, bridge, log });
+    const lanes = async (id: string) => (await targets.get(id))?.lanes;
+    expect(await lanes('eu')).toBe(10);
+    expect(await lanes('us')).toBeNull();
+    expect(await lanes('gone-instance')).toBeNull();
+    expect(await lanes('no-instance')).toBeNull();
+    expect(await lanes('undescribed')).toBeNull();
+    expect(await lanes('lake')).toBeNull();
+  });
+
+  it('keeps the cached lanes when the sink list cannot be read, and still pulls the targets', async () => {
+    const { targets, bridge, log, warnings } = setup();
+    await targets.cache(
+      {
+        id: 'eu',
+        label: 'EU',
+        sinkId: 'docs',
+        instanceId: 'eu',
+        connectionId: null,
+        destination: {},
+      },
+      { lanes: 4 },
+    );
+    onBridge(bridge, {
+      id: 'eu',
+      label: 'EU renamed',
+      sinkId: 'docs',
+      instanceId: 'eu',
+      connectionId: null,
+      destination: {},
+    });
+    bridge.listSinks = () => Promise.reject(new Error('sinks down'));
+    await pullTargets({ targets, bridge, log });
+    expect(await targets.get('eu')).toMatchObject({ label: 'EU renamed', lanes: 4 });
+    expect(warnings.join('\n')).toMatch(/lanes/);
+  });
+
   it('pull never touches inert_at, source, seeded_at or edited_at', async () => {
     const { targets, bridge, log } = setup();
     const at = '2026-10-01T00:00:00.000Z';

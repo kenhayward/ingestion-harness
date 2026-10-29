@@ -65,7 +65,13 @@ export function ConversionHelp() {
         <strong>Open</strong> for the document in the target once it is there, and a{' '}
         <strong>⋯</strong> menu. The lines are as many as fit the window, with{' '}
         <strong>‹ Prev</strong> and <strong>Next ›</strong> between pages. While any document is
-        still queued, decomposing or delivering, the lines refresh every few seconds.
+        still queued, decomposing, waiting to deliver or delivering, the lines refresh every few
+        seconds.
+      </p>
+      <p>
+        <strong>Waiting to deliver</strong> means the target takes a limited number of documents at
+        once, so this one has been converted and waits its turn. It goes on by itself as soon as the
+        target has room, and the batch counts it as still under way.
       </p>
       <p>
         Click a line to see the document beside the list: why it failed or needs attention, when it

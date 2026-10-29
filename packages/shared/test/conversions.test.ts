@@ -18,7 +18,7 @@ const BATCH = '0f6c1c52-3a54-4c7e-9a43-6a1d1f0e2b11';
 const ITEM = '9b2e4a7d-5c10-4f2e-8d3a-1e7c5a9b4f20';
 
 describe('item outcomes', () => {
-  it('are exactly the fourteen', () => {
+  it('are exactly the fifteen', () => {
     expect([...ITEM_OUTCOMES]).toEqual([
       'queued',
       'decomposing',
@@ -34,7 +34,12 @@ describe('item outcomes', () => {
       'failed',
       'awaiting_review',
       'rejected',
+      'waiting_to_deliver',
     ]);
+  });
+
+  it('take waiting to deliver (a document waiting for a free lane of its tenant)', () => {
+    expect(ItemOutcomeSchema.parse('waiting_to_deliver')).toBe('waiting_to_deliver');
   });
 
   it('take the review outcomes', () => {
@@ -67,6 +72,19 @@ describe('decompose params', () => {
       approved: true,
     };
     expect(DecomposeParamsSchema.parse(params)).toEqual(params);
+  });
+
+  it('may say the run delivers a document that waited for a lane', () => {
+    const params = {
+      batchId: BATCH,
+      itemId: ITEM,
+      targetId: 'default',
+      sourceKey: 'policies/leave.docx',
+      force: false,
+      waited: true,
+    };
+    expect(DecomposeParamsSchema.parse(params)).toEqual(params);
+    expect(() => DecomposeParamsSchema.parse({ ...params, waited: 'yes' })).toThrow();
   });
 });
 

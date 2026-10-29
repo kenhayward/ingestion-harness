@@ -33,7 +33,7 @@ import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
-import { resyncAfterRestore, startTargetSync } from './bridge/sync.js';
+import { pullTargets, resyncAfterRestore, startTargetSync } from './bridge/sync.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { reconcileUsersOnce } from './bridge/users-reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
@@ -287,6 +287,15 @@ setInterval(
       .then((n) => n && app.log.info({ moved: n }, 'deliveries reconciled with the bridge'))
       .catch((err: unknown) => app.log.warn({ err }, 'delivery reconcile failed')),
   60_000,
+).unref();
+// The registry and the sinks' lanes are pulled again every 10 minutes, so a tenant's lane count
+// changed on its sink reaches the worker without a restart (the start's sync pulls first).
+setInterval(
+  () =>
+    void pullTargets({ targets, bridge, log: app.log }).catch((err: unknown) =>
+      app.log.warn({ err }, 'publishing targets could not be pulled from the bridge'),
+    ),
+  600_000,
 ).unref();
 // The personal connections of users who are gone are deleted on the bridge: now and hourly.
 const reconcileUsers = () => reconcileUsersOnce({ users: access, bridge, log: app.log });

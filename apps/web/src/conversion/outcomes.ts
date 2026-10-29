@@ -17,13 +17,19 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
   failed: { label: 'Failed', tone: 'danger' },
   awaiting_review: { label: 'Awaiting review', tone: 'warn' },
   rejected: { label: 'Rejected', tone: 'danger' },
+  waiting_to_deliver: { label: 'Waiting to deliver', tone: 'info' },
 };
 
 /**
  * Still under way: the batch view refreshes while any item is. `in_flight` is not: the item is
  * final, because another batch's delivery owns the document's register entry.
  */
-export const UNFINISHED: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
+export const UNFINISHED: readonly ItemOutcome[] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'waiting_to_deliver',
+];
 
 /**
  * Outcomes a person should look at (the "Needs attention" filter), until resolved. A rejected
@@ -115,6 +121,7 @@ export const OUTCOME_ICON: Record<ItemOutcome, StatusIcon> = {
   failed: 'failed',
   awaiting_review: 'review',
   rejected: 'rejected',
+  waiting_to_deliver: 'queued',
 };
 
 /** Delivered as a document: created or updated. */

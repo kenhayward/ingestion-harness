@@ -12379,7 +12379,8 @@
                                 "unresolved",
                                 "failed",
                                 "awaiting_review",
-                                "rejected"
+                                "rejected",
+                                "waiting_to_deliver"
                               ]
                             },
                             "additionalProperties": {
@@ -12400,7 +12401,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           }
                         },
@@ -12629,7 +12631,8 @@
                         "unresolved",
                         "failed",
                         "awaiting_review",
-                        "rejected"
+                        "rejected",
+                        "waiting_to_deliver"
                       ]
                     },
                     "detail": {
@@ -13845,7 +13848,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           },
                           "detail": {
@@ -14536,7 +14540,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           },
                           "detail": {
@@ -15290,7 +15295,8 @@
                             "unresolved",
                             "failed",
                             "awaiting_review",
-                            "rejected"
+                            "rejected",
+                            "waiting_to_deliver"
                           ]
                         },
                         "detail": {
@@ -16680,7 +16686,8 @@
                         "unresolved",
                         "failed",
                         "awaiting_review",
-                        "rejected"
+                        "rejected",
+                        "waiting_to_deliver"
                       ]
                     },
                     "detail": {
@@ -17264,7 +17271,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           },
                           "detail": {
@@ -17881,7 +17889,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           },
                           "detail": {
@@ -18500,7 +18509,8 @@
                         "unresolved",
                         "failed",
                         "awaiting_review",
-                        "rejected"
+                        "rejected",
+                        "waiting_to_deliver"
                       ]
                     },
                     "detail": {
@@ -19055,7 +19065,8 @@
                               "unresolved",
                               "failed",
                               "awaiting_review",
-                              "rejected"
+                              "rejected",
+                              "waiting_to_deliver"
                             ]
                           },
                           "detail": {
@@ -19812,7 +19823,8 @@
                             "unresolved",
                             "failed",
                             "awaiting_review",
-                            "rejected"
+                            "rejected",
+                            "waiting_to_deliver"
                           ]
                         },
                         "detail": {

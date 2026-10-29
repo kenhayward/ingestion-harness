@@ -325,6 +325,16 @@ describe('a conversion item, settled from the bridge events', () => {
     }
   });
 
+  it("settles an item still waiting for its lane when its delivery's event comes first", async () => {
+    // A waited run hands the stored decomposition over while the item still reads
+    // `waiting_to_deliver`; the bridge's final event may land before it records `delivering`.
+    const t = await delivered();
+    t.repo.conversionItems.get(t.item().id)!.outcome = 'waiting_to_deliver';
+    await applyEvent(t.deps, event(t.deliveryId));
+    expect(t.item()).toMatchObject({ outcome: 'created', registerEntryId: t.entryId });
+    expect(t.workerRecords()).toBe(false);
+  });
+
   it('leaves an item the worker already decided alone', async () => {
     const t = await delivered();
     t.repo.conversionItems.get(t.item().id)!.outcome = 'already_loaded';

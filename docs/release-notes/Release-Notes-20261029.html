@@ -164,10 +164,17 @@
         through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
         PR #362, and four more: PR #363. Earlier batches can be deleted, and the target picked is
         remembered: PR #364. External targets take documents at their own pace, the groundwork for
-        watched folders: PR #368.
+        watched folders: PR #368. Documents to one target take turns: PR #369.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#conversion-turns">Documents to one target take turns</a>
+            <span>— a document is read while another is delivered, and none waits unseen</span>
+          </li>
+        </ul>
         <h4>Minor changes</h4>
         <ul>
           <li>
@@ -229,6 +236,14 @@
             non-empty file name; requests still take one path segment of up to 255 characters.
           </li>
           <li>
+            Migration <code>202610291300_decomposition_lanes</code> adds
+            <code>decomposition_items.lane_claimed_at</code>,
+            <code>decomposition_batches.last_lane_at</code>, <code>publish_targets.lanes</code> and
+            the outcome <code>waiting_to_deliver</code>. Run the new API before the new worker: the
+            API stamps each target's lanes from the bridge's sink list, and a target not stamped yet
+            gets one lane.
+          </li>
+          <li>
             Two new settings for the bridge: <code>BRIDGE_DELIVERY_RUNNERS</code> (delivery steps
             the bridge runs at once, 1 to 32, default 4; a delivery waiting on its sink holds none)
             and <code>BRIDGE_MAX_SOURCE_MB</code> (the largest file read from a watched folder,
@@ -236,6 +251,33 @@
           </li>
         </ul>
       </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="conversion-turns">Documents to one target take turns</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/369">PR #369</a>
+      </p>
+      <p>
+        A target takes only so many documents at once, and a batch used to hand the bridge every
+        document as soon as it was read, however long the queue there. Now a document asks for a
+        free slot of its target before it is delivered; the worker reads the next document while the
+        last one is delivered, and a document that finds no slot shows
+        <strong>Waiting to deliver</strong> on its line and is counted in the list of earlier
+        batches.
+      </p>
+      <ul>
+        <li>
+          Batches to the same target take turns: when a slot frees, the batch that had one longest
+          ago gets it, and within a batch the oldest waiting document goes first.
+        </li>
+        <li>
+          Nothing needs doing for a waiting document: it moves on by itself once a slot frees,
+          within a few seconds when a worker is free (a worker busy with a long job hands the slot
+          on when that job ends).
+        </li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h2 id="minor">Minor changes</h2>
 

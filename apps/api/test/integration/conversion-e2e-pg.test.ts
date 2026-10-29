@@ -63,6 +63,8 @@ interface ConversionBridge {
   documents(): string[];
   text(persistentId: string): string | null;
   provenance(persistentId: string): DecompositionProvenance | null;
+  /** The most deliveries the fake sink had in progress at once (the bridge's lanes). */
+  maxConcurrent(): number;
   settle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -94,6 +96,8 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
   let bridge: ConversionBridge;
   let objects: string;
   let targetId: string;
+  /** What `runAndSettle` saw after each worker run: the most lanes held, and a document waiting. */
+  const seen = { held: 0, waited: false };
 
   const clear = async () => {
     await pool.query('DELETE FROM register_actions');
@@ -193,6 +197,31 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     }
   }
 
+  /**
+   * The worker's runs and the bridge's deliveries until no document waits for a lane: a lane
+   * (one, as the fake sink describes none) frees once the bridge's event settles its delivery,
+   * and the next run's dispatcher gives it to the next waiting document.
+   */
+  async function runAndSettle(): Promise<void> {
+    for (let round = 0; round < 20; round++) {
+      await runWorker();
+      const held = await pool.query<{ held: string; waiting: string }>(
+        `SELECT count(*) FILTER (WHERE lane_claimed_at IS NOT NULL
+                  AND outcome IN ('decomposing', 'waiting_to_deliver', 'delivering')) AS held,
+                count(*) FILTER (WHERE outcome = 'waiting_to_deliver') AS waiting
+           FROM decomposition_items`,
+      );
+      seen.held = Math.max(seen.held, Number(held.rows[0]?.held));
+      seen.waited ||= Number(held.rows[0]?.waiting) > 0;
+      await bridge.settle();
+      const { rows } = await pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM decomposition_items WHERE outcome = 'waiting_to_deliver'`,
+      );
+      if (Number(rows[0]?.n) === 0) return;
+    }
+    throw new Error('documents still wait for a lane after 20 runs');
+  }
+
   /** A batch of `files` (source key → bytes) through the Conversion tab's calls, to its end. */
   async function convert(files: Record<string, Buffer>): Promise<Record<string, Item>> {
     const batch = BatchSchema.parse(
@@ -227,8 +256,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       url: `/api/conversions/batches/${batch.id}/start`,
     });
     if (started.statusCode !== 200) throw new Error(`start: ${started.body}`);
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const detail = BatchDetailSchema.parse(
       (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
     );
@@ -287,8 +315,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     });
     expect(res.statusCode, res.body).toBe(201);
     const { batch } = BatchDetailSchema.parse(res.json());
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const detail = BatchDetailSchema.parse(
       (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
     );
@@ -452,14 +479,14 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       payload: { note: 'reads well' },
     });
     expect(approved.statusCode, approved.body).toBe(202);
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const delivered = await itemNow(approve);
     expect(delivered.outcome, delivered.detail ?? '').toBe('created');
     const { persistentId } = await documentOf(delivered);
     expect(bridge.provenance(persistentId)).toMatchObject({
       sourceKey: 'pdf/two-pages.pdf',
-      decomposerVersion: 1001,
+      // DECOMPOSER_VERSION * 1000 + PDF_READER_VERSION (worker/src/ingest_worker/decompose/pdf/__init__.py)
+      decomposerVersion: 1011,
     });
     expect(bridge.documents()).toHaveLength(before + 2);
     expect(heldFiles(approve)).toEqual([]);
@@ -474,8 +501,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     const rejectedItem = ItemSchema.parse(rejected.json());
     expect(rejectedItem).toMatchObject({ outcome: 'rejected', held: false });
     expect(rejectedItem.finishedAt).not.toBeNull();
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     expect((await itemNow(reject)).outcome).toBe('rejected');
     expect(heldFiles(reject)).toEqual([]);
     expect(bridge.documents()).toHaveLength(before + 2);
@@ -522,5 +548,30 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       `SELECT action, details FROM register_actions ORDER BY at DESC LIMIT 1`,
     );
     expect(rows[0]).toMatchObject({ action: 'detach', details: { reason: 'gone' } });
+  });
+
+  it('documents to one target take turns: one lane, three Word files, all created', async () => {
+    // The target has no instance, so the sink gives it one lane (the bridge's and the worker's).
+    seen.held = 0;
+    seen.waited = false;
+    const before = bridge.documents().length;
+    const items = await convert({
+      'lanes/a.docx': word('Lane one'),
+      'lanes/b.docx': word('Lane two'),
+      'lanes/c.docx': word('Lane three'),
+    });
+    expect(outcomes(items)).toEqual({
+      'lanes/a.docx': 'created',
+      'lanes/b.docx': 'created',
+      'lanes/c.docx': 'created',
+    });
+    expect(bridge.documents()).toHaveLength(before + 3);
+    expect(seen.held).toBeLessThanOrEqual(1);
+    expect(seen.waited).toBe(true);
+    expect(bridge.maxConcurrent()).toBe(1);
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM jobs j WHERE task = 'decompose' AND (params->>'waited')::boolean`,
+    );
+    expect(Number(rows[0]?.n)).toBeGreaterThanOrEqual(1);
   });
 });

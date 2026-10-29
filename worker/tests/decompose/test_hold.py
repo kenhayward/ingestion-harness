@@ -11,7 +11,13 @@ import pytest
 
 from ingest_worker.bridge.models import ActingUser
 from ingest_worker.decompose import Decomposition
-from ingest_worker.decompose.hold import HeldMismatch, delete_held, read_held, write_held
+from ingest_worker.decompose.hold import (
+    HeldManifest,
+    HeldMismatch,
+    delete_held,
+    read_held,
+    write_held,
+)
 from ingest_worker.decompose.items import ConversionItem
 from ingest_worker.decompose.pdf import decompose_pdf
 from ingest_worker.storage import (
@@ -87,6 +93,7 @@ def test_the_manifest_is_camel_case_as_the_api_reads_it() -> None:
 
     assert set(manifest) == {
         "version",
+        "reason",
         "sourceSha256",
         "decomposerVersion",
         "startedBy",
@@ -99,6 +106,7 @@ def test_the_manifest_is_camel_case_as_the_api_reads_it() -> None:
     }
     assert manifest["unproven"] == []
     assert manifest["version"] == 1
+    assert manifest["reason"] == "review"
     assert manifest["entry"] == ENTRY
     assert manifest["startedBy"] == {"id": "u1", "name": "Operator", "email": None}
     first = result.document.images[0]
@@ -170,3 +178,42 @@ def test_a_page_that_cannot_be_rendered_leaves_nothing_held() -> None:
         )
 
     assert store.objects == {}
+
+
+def test_a_lane_hold_renders_no_pages_and_round_trips() -> None:
+    """A document waiting for a lane is stored without page images (`reason: lane`)."""
+    store = MemoryObjectStore()
+    data, result = _decomposed()
+
+    def no_pages(pdf: bytes, index: int) -> bytes:
+        raise AssertionError("a lane hold renders no page")
+
+    sha = write_held(
+        store,
+        "runs",
+        ITEM,
+        result,
+        data=data,
+        decomposer_version=1001,
+        started_by=USER,
+        entry=None,
+        render_preview=no_pages,
+        pages=False,
+    )
+
+    manifest = json.loads(store.get("runs", decomposition_held_manifest_key("b1", "i1")))
+    assert (manifest["reason"], manifest["pageCount"]) == ("lane", 0)
+    held_item = replace(ITEM, held_sha256=sha)
+    _, held = read_held(store, "runs", held_item)
+    assert held.document == result.document
+    delete_held(store, "runs", held_item)
+    assert store.objects == {}
+
+
+def test_an_older_manifest_reads_as_a_review_hold() -> None:
+    store = MemoryObjectStore()
+    data, result = _decomposed()
+    _write(store, data, result)
+    raw = json.loads(store.get("runs", decomposition_held_manifest_key("b1", "i1")))
+    del raw["reason"]
+    assert HeldManifest.model_validate(raw).reason == "review"

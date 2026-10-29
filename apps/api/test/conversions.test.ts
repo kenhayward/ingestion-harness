@@ -427,6 +427,10 @@ describe('conversion batches', () => {
     c.repo.conversionItems.get(a.id)!.outcome = 'created';
     c.repo.conversionItems.get(b.id)!.outcome = 'awaiting_review';
     expect((await del()).json()).toMatchObject({ error: '1 document is not finished yet' });
+    c.repo.conversionItems.get(b.id)!.outcome = 'waiting_to_deliver';
+    const waiting = await del();
+    expect(waiting.statusCode).toBe(409);
+    expect(waiting.json()).toEqual({ error: '1 document is not finished yet', code: 'running' });
 
     // b, failed, was force-loaded in another batch from the file it was stored as: that stays
     c.repo.conversionItems.get(b.id)!.outcome = 'failed';
