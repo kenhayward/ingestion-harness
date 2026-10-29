@@ -305,11 +305,10 @@ class _Cycle:
         )
 
     def _in_folder(self, folder: str, p: Pickup, name: str) -> bool:
-        """`folder` holds the pickup's own file under `name`: same size and modified time."""
-        return any(
-            f.name == name and f.size == p.size and modified_of(f) == p.modified_at
-            for f in self._list(folder)
-        )
+        """`folder` holds the pickup's own file under `name`: same name and size. Not the modified
+        time, which a sink's move (read, upload, delete) stamps anew; open pickups' working names
+        are reserved (`_taken`), so no other pickup's file holds that name there."""
+        return any(f.name == name and f.size == p.size for f in self._list(folder))
 
     def _resume_stored(self, p: Pickup, root: list[SourceFile]) -> None:
         working = p.working_name

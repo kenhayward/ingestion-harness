@@ -714,18 +714,21 @@ def test_working_names_of_open_pickups_are_reserved() -> None:
     assert w.files("processing")["a_1.pdf"] == pdf()
 
 
-def test_a_file_in_processing_with_another_modified_time_is_not_the_pickups() -> None:
+def test_a_move_that_stamps_a_new_modified_time_is_still_recovered() -> None:
+    """A real sink's move is read, upload and delete: the file in `processing/` gets a new
+    modified time. A stop between the move and its record is still recovered (by name and size:
+    open pickups' working names are reserved, so no other pickup holds that name there)."""
     w = World()
     w.drop("a.pdf", pdf())
     w.cycle(T0)
-    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
-    w.cycle(T0 + timedelta(seconds=10))
-    w.bridge.sources.pop(FakeBridge.source_key(TARGET, SOURCE, "", "a.pdf"))
+    w.store.fail_next["advance:moved"] = RuntimeError("the worker stopped")
+    with pytest.raises(RuntimeError):
+        w.cycle(T0 + timedelta(seconds=10))
     key = FakeBridge.source_key(TARGET, SOURCE, "processing", "a.pdf")
-    w.bridge.sources[key] = pdf()  # same name and size, but not the file the pickup took
-    w.bridge.modified[key] = "2026-10-29T11:59:00.000Z"
-    w.cycle(T0 + timedelta(seconds=20))
-    assert w.store.items == {} and w.store.pickups(w.watch_id) == []
+    w.bridge.modified[key] = "2026-10-29T12:00:10.000Z"  # stamped by the move
+    assert w.cycle(T0 + timedelta(seconds=20)).admitted == 1
+    assert set(w.files("processing")) == {"a.pdf"}
+    assert len(w.store.items) == 1 and len(w.store.jobs) == 1
 
 
 def test_a_refusal_the_store_left_alone_moves_nothing() -> None:
