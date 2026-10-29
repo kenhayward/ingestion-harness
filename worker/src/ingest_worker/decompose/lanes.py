@@ -70,6 +70,11 @@ class LaneStore(Protocol):
         """The tenants with an item waiting without a lane, sorted."""
         ...
 
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+        """The tenant's items waiting without a lane, oldest first, each with its batch's target
+        id (the dispatcher reads each target's lanes, and fails the items of one that is gone)."""
+        ...
+
 
 class PgLaneStore:
     """The lanes on Postgres. Every tenant's method runs in one transaction holding the tenant's
@@ -183,3 +188,12 @@ class PgLaneStore:
                 ORDER BY t.sink_id, t.instance_id NULLS FIRST"""
         ).fetchall()
         return [(str(sink), None if instance is None else str(instance)) for sink, instance in rows]
+
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+        rows = self._conn.execute(
+            f"""SELECT i.id::text, b.target_id {self._TENANT_ITEMS}
+                  AND i.outcome = 'waiting_to_deliver' AND i.lane_claimed_at IS NULL
+                ORDER BY i.created_at, i.id""",
+            {"sink": tenant[0], "instance": tenant[1]},
+        ).fetchall()
+        return [(str(item), str(target)) for item, target in rows]

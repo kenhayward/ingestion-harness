@@ -190,6 +190,18 @@ class JobQueue(Protocol):
         API's createSuggestJob; the new job's id and the ids it replaced."""
         ...
 
+    def queue_decompose_waited(self, item_id: str) -> str | None:
+        """Queue the `decompose` run of a conversion item that waited for a lane and now holds
+        one (decompose/dispatch.py): its batch's params (DecomposeParams) with `waited: true`,
+        recorded as the item's job. None, queuing nothing, when the item is not waiting with a
+        lane or its job is such a run already (another dispatcher queued it)."""
+        ...
+
+    def lanes_without_job(self) -> list[str]:
+        """Items waiting with a lane whose job is not a `waited` run: a worker stopped between
+        the lane's claim and the job's insert. The dispatcher queues them again."""
+        ...
+
 
 # Project-scoped jobs (task segment) have no document: its columns come back as ''/0.
 CLAIM_SQL = """
@@ -218,6 +230,10 @@ SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.proj
 
 #: A `suggest` job's priority: the API's SEGMENT_PRIORITY, like the Survey tab's Refresh.
 SUGGEST_PRIORITY = -5
+
+#: A `decompose` job's priority and attempts: the API's DECOMPOSE_JOB (startBatch).
+DECOMPOSE_PRIORITY = 0
+DECOMPOSE_MAX_ATTEMPTS = 3
 
 #: Guard for every worker status write: the row is still running under *this* claim.
 _MINE = "id = %(id)s AND status = 'running' AND locked_at IS NOT DISTINCT FROM %(claimed)s"
@@ -540,6 +556,59 @@ class PgJobQueue:
             ).fetchone()
         assert row is not None
         return str(row[0]), [str(r[0]) for r in removed]
+
+    def queue_decompose_waited(self, item_id: str) -> str | None:
+        with self._conn.transaction():
+            # The item's row lock: two dispatchers queueing one item take turns, and the second
+            # finds the first one's job.
+            row = self._conn.execute(
+                """SELECT i.batch_id::text, i.source_key, b.target_id, b.force, b.auto_approve,
+                          COALESCE(j.params->>'waited' = 'true', false),
+                          j.created_by, j.created_by_user
+                     FROM decomposition_items i
+                     JOIN decomposition_batches b ON b.id = i.batch_id
+                     LEFT JOIN jobs j ON j.id = i.job_id
+                    WHERE i.id = %s::uuid AND i.outcome = 'waiting_to_deliver'
+                      AND i.lane_claimed_at IS NOT NULL
+                      FOR UPDATE OF i""",
+                (item_id,),
+            ).fetchone()
+            if row is None or row[5]:
+                return None
+            batch_id, source_key, target_id, force, auto_approve, _, by, by_user = row
+            # As startBatch (TS): autoApprove only when the batch has it.
+            params: dict[str, Any] = {
+                "batchId": batch_id,
+                "itemId": item_id,
+                "targetId": target_id,
+                "sourceKey": source_key,
+                "force": bool(force),
+            }
+            if auto_approve:
+                params["autoApprove"] = True
+            params["waited"] = True
+            # Queued by whoever queued the item's first run (the Jobs page's "Queued by").
+            job = self._conn.execute(
+                """INSERT INTO jobs (task, priority, max_attempts, params, created_by,
+                                    created_by_user)
+                   VALUES ('decompose', %s, %s, %s, %s, %s) RETURNING id::text""",
+                (DECOMPOSE_PRIORITY, DECOMPOSE_MAX_ATTEMPTS, json.dumps(params), by, by_user),
+            ).fetchone()
+            assert job is not None
+            self._conn.execute(
+                "UPDATE decomposition_items SET job_id = %s WHERE id = %s", (job[0], item_id)
+            )
+        return str(job[0])
+
+    def lanes_without_job(self) -> list[str]:
+        rows = self._conn.execute(
+            """SELECT i.id::text FROM decomposition_items i
+                 LEFT JOIN jobs j ON j.id = i.job_id
+                WHERE i.outcome = 'waiting_to_deliver' AND i.lane_claimed_at IS NOT NULL
+                  AND (j.id IS NULL OR j.params->>'waited' IS DISTINCT FROM 'true')
+                ORDER BY i.lane_claimed_at, i.id"""
+        ).fetchall()
+        return [str(r[0]) for r in rows]
 
     def reap_stale(self, older_than_s: float) -> int:
         """Re-queue jobs whose worker died mid-run: no heartbeat (heartbeat.py) for

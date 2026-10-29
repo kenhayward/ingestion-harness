@@ -193,6 +193,23 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     }
   }
 
+  /**
+   * The worker's runs and the bridge's deliveries until no document waits for a lane: a lane
+   * (one, as the fake sink describes none) frees once the bridge's event settles its delivery,
+   * and the next run's dispatcher gives it to the next waiting document.
+   */
+  async function runAndSettle(): Promise<void> {
+    for (let round = 0; round < 20; round++) {
+      await runWorker();
+      await bridge.settle();
+      const { rows } = await pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM decomposition_items WHERE outcome = 'waiting_to_deliver'`,
+      );
+      if (Number(rows[0]?.n) === 0) return;
+    }
+    throw new Error('documents still wait for a lane after 20 runs');
+  }
+
   /** A batch of `files` (source key → bytes) through the Conversion tab's calls, to its end. */
   async function convert(files: Record<string, Buffer>): Promise<Record<string, Item>> {
     const batch = BatchSchema.parse(
@@ -227,8 +244,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       url: `/api/conversions/batches/${batch.id}/start`,
     });
     if (started.statusCode !== 200) throw new Error(`start: ${started.body}`);
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const detail = BatchDetailSchema.parse(
       (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
     );
@@ -287,8 +303,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     });
     expect(res.statusCode, res.body).toBe(201);
     const { batch } = BatchDetailSchema.parse(res.json());
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const detail = BatchDetailSchema.parse(
       (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
     );
@@ -452,8 +467,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       payload: { note: 'reads well' },
     });
     expect(approved.statusCode, approved.body).toBe(202);
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     const delivered = await itemNow(approve);
     expect(delivered.outcome, delivered.detail ?? '').toBe('created');
     const { persistentId } = await documentOf(delivered);
@@ -474,8 +488,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     const rejectedItem = ItemSchema.parse(rejected.json());
     expect(rejectedItem).toMatchObject({ outcome: 'rejected', held: false });
     expect(rejectedItem.finishedAt).not.toBeNull();
-    await runWorker();
-    await bridge.settle();
+    await runAndSettle();
     expect((await itemNow(reject)).outcome).toBe('rejected');
     expect(heldFiles(reject)).toEqual([]);
     expect(bridge.documents()).toHaveLength(before + 2);

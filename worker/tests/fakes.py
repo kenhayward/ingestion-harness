@@ -217,6 +217,10 @@ class FakeQueue:
     suggested: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     suggest_removed: list[str] = field(default_factory=list)
     suggest_error: Exception | None = None
+    #: The items given a `waited` decompose job (queue_decompose_waited), in order.
+    waited_items: list[str] = field(default_factory=list)
+    #: Items holding a lane with no `waited` job (lanes_without_job), as a test sets them.
+    lane_orphans: list[str] = field(default_factory=list)
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
@@ -343,6 +347,15 @@ class FakeQueue:
 
     def reap_stale(self, older_than_s: float) -> int:
         return 0
+
+    def queue_decompose_waited(self, item_id: str) -> str | None:
+        if item_id in self.waited_items:
+            return None
+        self.waited_items.append(item_id)
+        return f"decompose-waited-{len(self.waited_items)}"
+
+    def lanes_without_job(self) -> list[str]:
+        return [i for i in self.lane_orphans if i not in self.waited_items]
 
     def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
         if self.suggest_error is not None:
@@ -1131,6 +1144,7 @@ class _LaneBatch:
     tenant: Tenant
     created: int
     last_lane: int | None = None
+    target_id: str = "target"
 
 
 @dataclass
@@ -1154,8 +1168,8 @@ class MemoryLaneStore:
         self._clock += 1
         return self._clock
 
-    def add_batch(self, batch_id: str, tenant: Tenant) -> None:
-        self.batches[batch_id] = _LaneBatch(tenant, self._tick())
+    def add_batch(self, batch_id: str, tenant: Tenant, target_id: str = "target") -> None:
+        self.batches[batch_id] = _LaneBatch(tenant, self._tick(), target_id=target_id)
 
     def add_item(self, item_id: str, batch_id: str, outcome: ItemOutcome = "decomposing") -> None:
         self.items[item_id] = _LaneItem(batch_id, outcome, self._tick())
@@ -1232,3 +1246,7 @@ class MemoryLaneStore:
             if item.outcome == "waiting_to_deliver" and item.claimed is None
         }
         return sorted(tenants, key=lambda t: (t[0], t[1] is not None, t[1] or ""))
+
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+        waiting = sorted(self._waiting(tenant), key=lambda entry: entry[1].created)
+        return [(item_id, self.batches[item.batch_id].target_id) for item_id, item in waiting]

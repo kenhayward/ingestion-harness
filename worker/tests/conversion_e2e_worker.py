@@ -7,7 +7,9 @@ Faked: the object store (a MemoryObjectStore filled from the files the test list
 back when the run ends, so a hold's files reach the API and an approved run finds them), the
 target cache (the one target, as the test names it) and the layout analyser (each PDF fixture in
 tests/decompose/pdf/fixtures answered with its saved Docling output). Only `decompose` jobs are
-claimed, so another suite's rows left in the throwaway database are never run.
+claimed, so another suite's rows left in the throwaway database are never run. Documents waiting
+for a lane are dispatched as the worker does (`lane_round`), once the test's earlier runs'
+deliveries are settled.
 
 Environment: E2E_DATABASE_URL, E2E_BRIDGE_URL, E2E_BRIDGE_KEY, E2E_OBJECTS (a JSON list of
 {bucket, key, path}), E2E_OBJECTS_AFTER (where the store is written back, a JSON list of
@@ -31,7 +33,7 @@ from ingest_worker.decompose.items import PgItemStore
 from ingest_worker.decompose.job import DecompositionStores
 from ingest_worker.decompose.lanes import PgLaneStore
 from ingest_worker.decompose.register import PgRegisterStore
-from ingest_worker.main import run_once
+from ingest_worker.main import lane_round, run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetMissing
 from ingest_worker.queue import CLAIM_SQL, ClaimedJob, PgJobQueue
@@ -83,6 +85,28 @@ class FixtureLayout:
         return "fixtures"
 
 
+def cache_target(conn: psycopg.Connection[Any], target_id: str, sink_id: str) -> None:
+    """The target's row in the API's cache (`publish_targets`): the lane gate finds an item's
+    tenant through it (lanes.py). The API side of the test keeps its targets in memory."""
+    conn.execute(
+        """INSERT INTO publish_targets (id, label, kind, sink_id, destination, synced_at)
+           VALUES (%s, %s, 'sink', %s, '{}', now())
+           ON CONFLICT (id) DO NOTHING""",
+        (target_id, target_id, sink_id),
+    )
+
+
+def run_until_settled(queue: DecomposeQueue, deps: PipelineDeps) -> None:
+    """Every queued job run, documents waiting for a lane given the free ones as the worker's
+    dispatcher does (`lane_round`), until nothing more can run. A lane held by a delivery frees
+    only once the bridge's event settles it, after this run: the test's next run dispatches it."""
+    while True:
+        while run_once(queue, deps, "conversion-e2e", after=lambda _job: lane_round(deps, queue)):
+            pass
+        if not lane_round(deps, queue):
+            return
+
+
 def write_back(store: MemoryObjectStore, path: Path) -> None:
     objects = [
         {
@@ -108,6 +132,7 @@ def main() -> None:
         psycopg.connect(database_url, autocommit=True) as items_conn,
         psycopg.connect(database_url, autocommit=True) as lanes_conn,
     ):
+        cache_target(lanes_conn, target["id"], target["sinkId"])
         deps = PipelineDeps(
             store=store,
             specs=None,  # type: ignore[arg-type]
@@ -123,8 +148,7 @@ def main() -> None:
                 lanes=PgLaneStore(lanes_conn),
             ),
         )
-        while run_once(queue, deps, "conversion-e2e"):
-            pass
+        run_until_settled(queue, deps)
     write_back(store, Path(os.environ["E2E_OBJECTS_AFTER"]))
 
 
