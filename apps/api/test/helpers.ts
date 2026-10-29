@@ -26,6 +26,7 @@ export const TEST_BRIDGE_KEY = 'b'.repeat(32);
 import { MemoryObjectStore, type ObjectStore } from '../src/storage/object-store.js';
 import type { S3Options } from '../src/storage/s3.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
+import { MemoryWatchRepo } from '../src/watches/repo.js';
 import { MemoryWorkbenchRepo } from '../src/workbench/repo.js';
 import { installConformance } from './openapi-conformance.js';
 
@@ -105,6 +106,8 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
   const usedRepo = (deps.repo ?? repo) as MemoryRepo;
   const usedTemplates = (deps.templates ?? templates) as MemoryTemplateRepo;
   const s3KeyRepo = new MemoryS3KeyRepo();
+  const watches = new MemoryWatchRepo();
+  const usedWatches = (deps.watches ?? watches) as MemoryWatchRepo;
   const targets = new MemoryPublishTargetRepo({
     publishedDefinitions: async () =>
       [...usedTemplates.records.values()]
@@ -132,6 +135,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
           (j.status === 'queued' || j.status === 'running') &&
           withdrawTargets(j.params).includes(id),
       ).length,
+    watchCount: async (id) => usedWatches.countForTarget(id),
   });
   // The default as the API's seed leaves it (written to the bridge, then cached).
   await cacheS3(
@@ -171,6 +175,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     llm,
     ontologies,
     mappingMemory,
+    watches,
     ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
     linkedData: new MemoryLinkedDataRepo(),
     maintenance: new MemoryMaintenanceRepo(),
@@ -220,6 +225,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     llm: llmRepo,
     ontologies: ontologyRepo,
     mappingMemory: (deps.mappingMemory ?? mappingMemory) as MemoryMappingMemoryRepo,
+    watches: usedWatches,
   };
 }
 

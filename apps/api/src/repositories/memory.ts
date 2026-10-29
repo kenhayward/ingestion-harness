@@ -1385,9 +1385,24 @@ export class MemoryRepo implements IngestionRepo {
       autoApprove,
       createdAt: new Date().toISOString(),
       startedAt: null,
+      watch: null,
     };
     this.conversionBatches.set(batch.id, batch);
     return structuredClone(batch);
+  }
+
+  /** Test hook: the watched folder that owns a batch (the worker makes such a batch in production). */
+  markWatchBatch(batchId: string, watch: NonNullable<Batch['watch']>): void {
+    this.conversionBatches.get(batchId)!.watch = { ...watch };
+    this.watchBatches.set(watch.id, batchId);
+  }
+  /** Test hooks: the step of the pickup behind a watched item, and each watch's current batch. */
+  readonly watchPickups = new Map<string, string>();
+  /** Test hook: copies of watched files the worker stored but has not admitted (key → watch). */
+  readonly watchHeldCopies = new Map<string, string>();
+  private readonly watchBatches = new Map<string, string | null>();
+  watchBatchOf(watchId: string): string | null {
+    return this.watchBatches.get(watchId) ?? null;
   }
 
   async getBatch(id: string): Promise<Batch | null> {
@@ -1485,7 +1500,7 @@ export class MemoryRepo implements IngestionRepo {
     batch.state = 'discarded';
     const objectKeys = [...this.conversionItems.values()]
       .filter((i) => i.batchId === id)
-      .map((i) => i.objectKey);
+      .flatMap((i) => (i.objectKey ? [i.objectKey] : []));
     return { ok: true, objectKeys };
   }
 
@@ -1494,14 +1509,39 @@ export class MemoryRepo implements IngestionRepo {
     if (!batch) return { ok: false, reason: 'missing' };
     if (batch.state !== 'started') return { ok: false, reason: 'not_started' };
     const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
-    const running = items.filter((i) => RUNNING_OUTCOMES.includes(i.outcome)).length;
-    if (running > 0) return { ok: false, reason: 'running', running };
+    // A watched document is not finished while the watch has not filed its file (its pickup).
+    const unfinished = (i: StoredItem) =>
+      RUNNING_OUTCOMES.includes(i.outcome) ||
+      (batch.watch !== null &&
+        this.watchPickups.has(i.id) &&
+        !['finished', 'abandoned'].includes(this.watchPickups.get(i.id)!));
+    const running = items.filter(unfinished).length;
+    if (running > 0 && !batch.watch) return { ok: false, reason: 'running', running };
+    if (running > 0) {
+      const finished = items.filter((i) => !unfinished(i));
+      // The next pickup starts a new batch.
+      this.watchBatches.set(batch.watch!.id, null);
+      for (const i of finished) this.conversionItems.delete(i.id);
+      const named = new Set(
+        [...this.conversionItems.values()].map((i) => i.objectKey).filter((k) => k !== null),
+      );
+      const keys = finished.flatMap((i) => [i.objectKey, i.reportKey]).filter((k) => k !== null);
+      return { ok: true, kept: [], remove: [...new Set(keys)].filter((k) => !named.has(k)).sort() };
+    }
     const prefix = decompositionBatchPrefix(id);
     const kept = [
       ...new Set(
         [...this.conversionItems.values()]
-          .filter((i) => i.batchId !== id && i.objectKey.startsWith(prefix))
-          .map((i) => i.objectKey),
+          .filter((i) => i.batchId !== id && i.objectKey?.startsWith(prefix))
+          .map((i) => i.objectKey as string)
+          // A watch's file stored under this batch but not admitted yet keeps its copy.
+          .concat(
+            batch.watch
+              ? [...this.watchHeldCopies]
+                  .filter(([key, watchId]) => watchId === batch.watch!.id && key.startsWith(prefix))
+                  .map(([key]) => key)
+              : [],
+          ),
       ),
     ].sort();
     for (const i of items) this.conversionItems.delete(i.id);
@@ -1536,6 +1576,7 @@ export class MemoryRepo implements IngestionRepo {
       autoApprove: false,
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
+      watch: null,
     };
     const item: StoredItem = {
       id: itemId,

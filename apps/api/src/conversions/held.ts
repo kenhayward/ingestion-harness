@@ -45,7 +45,11 @@ export const isHeldKey = (item: Pick<Item, 'batchId' | 'id'>, key: string) =>
   key.startsWith(heldPrefix(item)) && !key.includes('..');
 
 /** The item's held manifest. A storage error is thrown (the caller says it is unavailable). */
-export async function readHeld(store: ObjectStore, bucket: string, item: Item): Promise<HeldRead> {
+export async function readHeld(
+  store: ObjectStore,
+  bucket: string,
+  item: Pick<Item, 'batchId' | 'id'>,
+): Promise<HeldRead> {
   const raw = await store.get(bucket, decompositionHeldManifestKey(item.batchId, item.id));
   if (!raw) return { ok: false, reason: 'gone' };
   try {
@@ -61,7 +65,11 @@ export async function readHeld(store: ObjectStore, bucket: string, item: Item): 
  * worker's `delete_held`). Missing objects, and no manifest at all, are no error. A manifest the
  * API cannot read is left alone: it cannot say what else is held.
  */
-export async function deleteHeld(store: ObjectStore, bucket: string, item: Item): Promise<void> {
+export async function deleteHeld(
+  store: ObjectStore,
+  bucket: string,
+  item: Pick<Item, 'batchId' | 'id'>,
+): Promise<void> {
   const held = await readHeld(store, bucket, item);
   if (!held.ok) {
     if (held.reason === 'bad') throw new Error('the held manifest is not readable');

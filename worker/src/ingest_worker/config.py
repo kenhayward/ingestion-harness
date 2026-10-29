@@ -46,6 +46,11 @@ class Settings:
     ontology_fetch_allow: tuple[str, ...] = ()
     #: Fetched ontology files over this many bytes are refused.
     ontology_max_bytes: int = 104_857_600
+    #: Largest source a watched folder may hand over, as the API's `MAX_UPLOAD_MB` (default 50).
+    max_upload_mb: float = 50
+    #: The app's public address (`APP_PUBLIC_URL`, trailing slash trimmed), for links in reason
+    #: files; None: no link.
+    app_public_url: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -96,4 +101,6 @@ class Settings:
                 h.strip() for h in env.get("ONTOLOGY_FETCH_ALLOW", "").split(",") if h.strip()
             ),
             ontology_max_bytes=int(env.get("ONTOLOGY_MAX_BYTES", "104857600")),
+            max_upload_mb=float(env.get("MAX_UPLOAD_MB") or 50),
+            app_public_url=(env.get("APP_PUBLIC_URL") or "").rstrip("/") or None,
         )

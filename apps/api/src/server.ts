@@ -26,6 +26,7 @@ import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
 import { captureDeps, reconcileAll } from './mapping-memory/capture.js';
 import { PgMappingMemoryRepo } from './mapping-memory/pg.js';
+import { PgWatchRepo } from './watches/pg.js';
 import { PgGitHubSyncRepo } from './github-sync/pg.js';
 import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
@@ -122,6 +123,7 @@ if (config.LINKED_DATA_CUSTOMER) {
 const store = new S3ObjectStore(s3);
 const ontologies = new PgOntologyRepo(makePool(2));
 const mappingMemory = new PgMappingMemoryRepo(makePool(2));
+const watches = new PgWatchRepo(makePool(2));
 const githubSync = new PgGitHubSyncRepo(makePool(2));
 const buckets = {
   inbox: config.S3_BUCKET_INBOX,
@@ -184,6 +186,7 @@ const app = await buildApp({
   llm: new PgLlmConfigRepo(makePool(2)),
   ontologies,
   mappingMemory,
+  watches,
   linkedData,
   maintenance,
   ontologyFetch: {

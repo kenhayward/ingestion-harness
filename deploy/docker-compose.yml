@@ -392,6 +392,10 @@ services:
       # The LangGraph trial (docs/design/langgraph-trial.md): `langgraph` checkpoints a recipe's
       # steps so a stopped job resumes where it stopped; empty: the steps run as before.
       WORKER_STEP_GRAPH: ${WORKER_STEP_GRAPH:-}
+      # Watched folders: the largest file picked up (as the API's upload limit), and the app's
+      # address for the link in a reason file (empty: no link).
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
     networks: [default, converter, layout]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host

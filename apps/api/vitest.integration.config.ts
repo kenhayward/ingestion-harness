@@ -18,5 +18,8 @@ export default defineConfig({
     include: ['test/integration/**/*.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 60_000,
+    // One file at a time: the conversion and watched folder end to ends share one throwaway
+    // database and clear the same tables (decomposition batches, items, decompose jobs).
+    fileParallelism: false,
   },
 });

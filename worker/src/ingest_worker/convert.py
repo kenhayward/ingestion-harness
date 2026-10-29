@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+import zlib
 from typing import Protocol
 
 import httpx
@@ -34,7 +35,7 @@ def is_docx(data: bytes) -> bool:
             if info.file_size > _MAX_TYPES_BYTES:
                 return False
             types = z.read(info).decode("utf-8", errors="replace")
-    except (zipfile.BadZipFile, KeyError, OSError, ValueError, EOFError):
+    except (zipfile.BadZipFile, KeyError, OSError, ValueError, EOFError, zlib.error, RuntimeError):
         return False
     return any(
         _attr(tag, "PartName") == "/word/document.xml"

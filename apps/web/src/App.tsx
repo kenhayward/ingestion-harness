@@ -12,6 +12,8 @@ import { ConnectionsDialog } from './access/ConnectionsDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { ConversionPage } from './conversion/ConversionPage.js';
+import { WatchedFoldersPage } from './watches/WatchedFoldersPage.js';
+import { useWatchProblems } from './watches/useWatchProblems.js';
 import { ConversionReviewPage } from './conversion/review/ConversionReviewPage.js';
 import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
@@ -313,6 +315,7 @@ function SignedInApp({
   // The installed app (docs/design/pwa.md): the taskbar badge and toasts for your own jobs.
   useAppBadge(attentionCount(attentionJobs));
   const notify = useNotifySetting();
+  const watchProblems = useWatchProblems(api, me.role === 'admin');
   const creator = useMemo(() => ({ name: me.label, userId: me.userId }), [me.label, me.userId]);
   useJobNotifications({ jobs, loaded, me: creator, enabled: notify.state === 'on' });
   const [query, setQuery] = useState('');
@@ -333,6 +336,14 @@ function SignedInApp({
         <p>
           Operators upload documents, follow and review jobs, read results and convert documents.
         </p>
+        <a href="#/">Go to Home</a>
+      </section>
+    );
+  } else if (route.name === 'watches' && me.role !== 'admin') {
+    page = (
+      <section className="card not-for-operators">
+        <h1>Not available</h1>
+        <p>Watched folders are set up by administrators.</p>
         <a href="#/">Go to Home</a>
       </section>
     );
@@ -398,6 +409,8 @@ function SignedInApp({
         {...(route.batchId ? { batchId: route.batchId } : {})}
       />
     );
+  } else if (route.name === 'watches') {
+    page = <WatchedFoldersPage api={api} />;
   } else if (route.name === 'conversionReview') {
     page = <ConversionReviewPage key={route.itemId} api={api} itemId={route.itemId} />;
   } else if (route.name === 'workbench') {
@@ -444,6 +457,7 @@ function SignedInApp({
       me={me}
       route={route}
       jobs={attentionJobs}
+      watchProblems={watchProblems}
       query={query}
       onQuery={setQuery}
       install={install}

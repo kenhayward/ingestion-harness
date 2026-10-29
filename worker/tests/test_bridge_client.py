@@ -351,3 +351,33 @@ def test_the_fake_bridge_keeps_each_watch_apart() -> None:
         bridge.read_source("docs", elsewhere, "", "a.txt", None)
     with pytest.raises(BridgeRefused):
         bridge.move_source("other", SOURCE, ("", "a.txt"), ("processing", "a.txt"), None)
+
+
+@pytest.mark.parametrize(
+    ("here", "there", "expected", "left"),
+    [
+        (b"x", None, None, {"processing": b"x"}),
+        (None, b"x", None, {"processing": b"x"}),
+        (b"x", b"y", None, {"processing": b"y"}),
+        (b"x", b"yy", "destination_exists", {"": b"x", "processing": b"yy"}),
+        (None, None, "not_found", {}),
+    ],
+    ids=["moves", "already moved", "equal sizes", "different sizes", "neither"],
+)
+def test_the_fake_bridge_moves_idempotently(
+    here: bytes | None, there: bytes | None, expected: str | None, left: dict[str, bytes]
+) -> None:
+    """SourceMoveRequestSchema's rule: a retried move never fails or overwrites."""
+    from .fakes import FakeBridge
+
+    bridge = FakeBridge(sinks={"docs"})
+    for folder, body in (("", here), ("processing", there)):
+        if body is not None:
+            bridge.sources[FakeBridge.source_key("docs", SOURCE, folder, "a.docx")] = body
+    if expected is None:
+        bridge.move_source("docs", SOURCE, ("", "a.docx"), ("processing", "a.docx"), None)
+    else:
+        with pytest.raises(BridgeRefused) as refused:
+            bridge.move_source("docs", SOURCE, ("", "a.docx"), ("processing", "a.docx"), None)
+        assert refused.value.error.code == expected
+    assert {k[2]: v for k, v in bridge.sources.items()} == left

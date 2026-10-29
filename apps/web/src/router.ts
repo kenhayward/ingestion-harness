@@ -44,6 +44,8 @@ export type Route =
   | { name: 'workbench' }
   /** The Conversion tab: a new batch, or one batch (`#/conversion/<batchId>`). */
   | { name: 'conversion'; batchId?: string }
+  /** Watched folders (admins): `#/watched-folders`. */
+  | { name: 'watches' }
   /** A held conversion item's review page (`#/conversion/items/<itemId>/review`). */
   | { name: 'conversionReview'; itemId: string }
   /** `view`: a tab within the project tab (`#/workbench/<id>/survey/ontologies`). */
@@ -102,6 +104,7 @@ export function parseHash(hash: string): Route {
   const about = /^#\/about(?:\/(\d{4}-\d{2}-\d{2}(?:-\d+)?))?$/.exec(hash);
   if (about) return about[1] ? { name: 'about', note: about[1] } : { name: 'about' };
   if (hash === '#/upload') return { name: 'home', focusUpload: true };
+  if (hash === '#/watched-folders') return { name: 'watches' };
   if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
@@ -120,7 +123,7 @@ export function parseHash(hash: string): Route {
  * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs, #/jobs/<jobId>,
  * #/review/<jobId>, #/results, #/results/<jobId>, #/templates, #/templates/<id>/<version>,
  * #/ontologies, #/ontologies/<id>, #/conversion, #/conversion/<batchId>,
- * #/conversion/items/<itemId>/review, #/workbench,
+ * #/conversion/items/<itemId>/review, #/watched-folders, #/workbench,
  * #/workbench/<id>[/<tab>[/<view>]] (Overview by default; a view is a tab within that tab, e.g.
  * survey/ontologies).
  */

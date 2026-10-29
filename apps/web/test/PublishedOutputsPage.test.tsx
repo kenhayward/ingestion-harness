@@ -20,6 +20,7 @@ const NO_USE = {
   deliveredOutputs: 0,
   consumers: 0,
   pendingJobs: 0,
+  watches: 0,
 };
 
 function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
@@ -282,6 +283,7 @@ describe('PublishedOutputsPage', () => {
           deliveredOutputs: 14,
           consumers: 1,
           pendingJobs: 0,
+          watches: 0,
         },
       }),
       external({ usage: { ...NO_USE, deliveredOutputs: 3 } }),

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BatchDetailSchema,
   BatchSchema,
@@ -35,6 +36,18 @@ conversionsContract('memory', async () => {
             }
           : null;
       },
+      watch: async (batchId, name) => {
+        const id = randomUUID();
+        repo.markWatchBatch(batchId, { id, name });
+        return id;
+      },
+      pickup: async (itemId, step) => {
+        repo.watchPickups.set(itemId, step);
+      },
+      heldCopy: async (watchId, objectKey) => {
+        repo.watchHeldCopies.set(objectKey, watchId);
+      },
+      watchBatch: async (watchId) => repo.watchBatchOf(watchId),
       entry: async (seed) => {
         const { state, lastReceipt, lastError, ...rest } = seed;
         const put = repo.putRegisterEntry({

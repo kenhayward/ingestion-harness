@@ -87,6 +87,9 @@ from .template_pipeline import (
     rerun_template_job,
 )
 from .version import app_version
+from .watch.cycle import WatchDeps
+from .watch.runner import WATCH_TICK_S, PgWatchLocks, WatchRunner
+from .watch.store import PgWatchStore
 from .withdrawal import run_republish, run_withdraw
 from .workbench import prepare_sample, run_segment
 
@@ -165,6 +168,18 @@ def lane_round(deps: PipelineDeps, queue: JobQueue) -> int:
     if queued:
         log.info("lanes: queued %d waiting documents", queued)
     return queued
+
+
+def watch_round(runner: WatchRunner) -> int:
+    """Look at the watched folders that are due (watch/runner.py); the cycles run. Advisory: a
+    failure is logged and the next round tries again, except a lost connection, which reconnects."""
+    try:
+        return runner.tick()
+    except psycopg.OperationalError:
+        raise
+    except Exception:
+        log.warning("watched folders: the round failed", exc_info=True)
+        return 0
 
 
 def handle_process(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
@@ -492,6 +507,7 @@ class _Worker:
                 self.step_checkpointer,
                 functools.partial(pg_orphaned_threads, settings.database_url),
             )
+        bridge = HttpBridgeClient(settings.bridge_url, settings.bridge_client_key)
         self.deps = PipelineDeps(
             store=S3ObjectStore(
                 settings.s3_endpoint,
@@ -505,7 +521,7 @@ class _Worker:
             buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
             ocr=ocr,
             targets=self.targets,
-            bridge=HttpBridgeClient(settings.bridge_url, settings.bridge_client_key),
+            bridge=bridge,
             converter=(
                 GotenbergConverter(settings.converter_url) if settings.converter_url else None
             ),
@@ -540,6 +556,22 @@ class _Worker:
             layout=layout_analyser(settings.layout_url, settings.layout_fallback_url),
         )
         self.heartbeat = PgJobHeartbeat(settings.database_url)
+        # Watched folders: the cycle's writes on their own connection, and one poller per watch
+        # across every worker through advisory locks on another (watch/runner.py).
+        self.watch_conn = psycopg.connect(settings.database_url, autocommit=True)
+        self.watch_locks = PgWatchLocks(settings.database_url)
+        self.watches = WatchRunner(
+            WatchDeps(
+                store=PgWatchStore(self.watch_conn),
+                bridge=bridge,
+                objects=self.deps.store,
+                runs_bucket=settings.bucket_runs,
+                max_bytes=int(settings.max_upload_mb * 1024 * 1024),
+                app_url=settings.app_public_url,
+            ),
+            self.watch_locks,
+        )
+        self.next_watch_tick = 0.0
         self.next_discovery = 0.0
         self.next_reap = 0.0
         self.next_config_check = 0.0
@@ -579,6 +611,9 @@ class _Worker:
             self.next_reap = now + 60
         if now >= self.next_lane_dispatch:
             self.dispatch_lanes()
+        if now >= self.next_watch_tick:
+            watch_round(self.watches)
+            self.next_watch_tick = time.monotonic() + WATCH_TICK_S
         ran = run_once(
             queue,
             deps,
@@ -604,6 +639,8 @@ class _Worker:
             self.library.close,
             self.graph_conn.close,
             self.lanes_conn.close,
+            self.watch_conn.close,
+            self.watch_locks.close,
             self.call_slots.close,
             self.close_checkpointer,
         ):

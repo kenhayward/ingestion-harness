@@ -10,7 +10,8 @@ that long; another idle worker dispatches it within `LANE_DISPATCH_S`.
 
 Each round first frees the lanes nothing will release: an item holding one whose job ended
 without deciding it (given up while its target never synced, cancelled by a restore, sent to
-review) is failed, its stored copy deleted (`JobQueue.lanes_of_ended_jobs`). Then an item that
+review) is failed, its stored copy deleted (`JobQueue.lanes_of_ended_jobs`). So is a converting
+item with no lane whose job ended a while ago (a Stop now cancelled it). Then an item that
 got a lane but no job (the worker stopped in between) is queued again
 (`JobQueue.lanes_without_job`); queueing is once per item, so two dispatchers never queue one
 item twice.

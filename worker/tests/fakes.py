@@ -5,8 +5,10 @@ import hashlib
 import json
 import math
 import re
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import Any
 
 from ingest_worker.bridge.client import BridgeRefused, BridgeUnavailable
@@ -49,6 +51,19 @@ from ingest_worker.publish_targets import (
 )
 from ingest_worker.queue import ORPHAN_GRACE_S, ClaimedJob, EndedLane
 from ingest_worker.storage import MemoryObjectStore
+from ingest_worker.watch.store import (
+    DECOMPOSE_MAX_ATTEMPTS,
+    DECOMPOSE_PRIORITY,
+    EventLevel,
+    ItemState,
+    Pickup,
+    PickupStep,
+    Watch,
+    WatchState,
+    batch_creator,
+    job_params,
+    modified_of,
+)
 
 
 def fake_vector(text: str, dims: int = 16) -> list[float]:
@@ -889,6 +904,9 @@ class FakeTargets:
         return target_id in self.removed_ids
 
 
+#: A watched file's modified time unless `FakeBridge.modified` gives one.
+SOURCE_MODIFIED = "2026-10-29T00:00:00.000Z"
+
 #: A watched file in `FakeBridge.sources`: target, the location's fields sorted, folder, name.
 SourceKey = tuple[str, tuple[tuple[str, str], ...], str, str]
 
@@ -936,7 +954,11 @@ class FakeBridge:
         #: never share a tree. `fail_next` maps an operation (list, read, move, put) to an
         #: exception its next call raises.
         self.sources: dict[SourceKey, bytes] = {}
+        #: A watched file's modified time as listed (default `SOURCE_MODIFIED`); moves keep it.
+        self.modified: dict[SourceKey, str] = {}
         self.fail_next: dict[str, Exception] = {}
+        #: Called with (src, dst) at the start of every source move (a file arriving meanwhile).
+        self.on_move: Callable[[tuple[str, str], tuple[str, str]], None] | None = None
         self._ids = 0
 
     def _next_refusal(self) -> None:
@@ -1055,9 +1077,14 @@ class FakeBridge:
     ) -> list[SourceFile]:
         self._source_op("list", target_id)
         return [
-            SourceFile(name=n, size=len(b), modified_at="2026-10-29T00:00:00.000Z", etag=None)
-            for (t, s, f, n), b in sorted(self.sources.items())
-            if (t, s, f) == (target_id, _where(source), folder)
+            SourceFile(
+                name=k[3],
+                size=len(b),
+                modified_at=self.modified.get(k, SOURCE_MODIFIED),
+                etag=None,
+            )
+            for k, b in sorted(self.sources.items())
+            if k[:3] == (target_id, _where(source), folder)
         ]
 
     def read_source(
@@ -1083,12 +1110,34 @@ class FakeBridge:
         acting_user: ActingUser | None,
     ) -> None:
         self._source_op("move", target_id)
+        if self.on_move is not None:
+            self.on_move(src, dst)
         src_key = self.source_key(target_id, source, *src)
         dst_key = self.source_key(target_id, source, *dst)
-        if src_key in self.sources:
-            self.sources[dst_key] = self.sources.pop(src_key)
-        elif dst_key not in self.sources:  # a retried move whose destination is there succeeds
+        # The contract's idempotent move (SourceMoveRequestSchema): a retried move whose source
+        # is gone and destination present succeeds; both present with equal sizes deletes the
+        # source; different sizes refuse with destination_exists; neither present is not_found.
+        here, there = self.sources.get(src_key), self.sources.get(dst_key)
+        if here is None and there is None:
             raise self._no_file(*src)
+        if here is None:
+            return
+        if there is not None and len(there) != len(here):
+            raise BridgeRefused(
+                BridgeError.model_validate(
+                    {
+                        "class": "needs_user",
+                        "code": "destination_exists",
+                        "message": f"{dst[1]} already exists in {dst[0] or 'the root'}",
+                    }
+                )
+            )
+        del self.sources[src_key]
+        modified = self.modified.pop(src_key, None)
+        if there is None:
+            self.sources[dst_key] = here
+            if modified is not None:
+                self.modified[dst_key] = modified
 
     def put_source_text(
         self,
@@ -1263,3 +1312,334 @@ class MemoryLaneStore:
             (item_id, self.batches[item.batch_id].target_id, item.batch_id)
             for item_id, item in waiting
         ]
+
+
+#: Outcomes still on their way: a watched item reaching one wakes nothing.
+WAKE_SKIPS = ("queued", "decomposing", "delivering", "waiting_to_deliver", "awaiting_review")
+
+
+class MemoryWatchStore:
+    """WatchStore in memory: watches (`watched`, rows as dicts), pickups, the batches, items and
+    jobs a pickup becomes, finishes and events. `fail_next` maps an operation (`admit`, `see`, or
+    `advance:<step>`) to an exception its next call raises before writing anything."""
+
+    def __init__(self) -> None:
+        self.watched: dict[str, dict[str, Any]] = {}
+        self._pickups: dict[str, Pickup] = {}
+        self.batches: dict[str, dict[str, Any]] = {}
+        self.items: dict[str, dict[str, Any]] = {}
+        self.jobs: list[dict[str, Any]] = []
+        self.finishes: list[tuple[str, bool, datetime]] = []
+        self.events: list[dict[str, Any]] = []
+        self.fail_next: dict[str, Exception] = {}
+        #: The database's clock, as the wake trigger reads it (`set_outcome`).
+        self.now = datetime.min.replace(tzinfo=UTC)
+
+    def _fail(self, op: str) -> None:
+        failure = self.fail_next.pop(op, None)
+        if failure is not None:
+            raise failure
+
+    def add_watch(
+        self,
+        *,
+        target_id: str,
+        source: dict[str, str],
+        source_path: str,
+        run_as: ActingUser,
+        state: WatchState = "running",
+        name: str = "Intake",
+        force: bool = False,
+        auto_approve: bool = True,
+        reason_files: bool = True,
+        sleep_seconds: int = 30,
+        admit: int = 10,
+    ) -> str:
+        watch_id = str(uuid.uuid4())
+        self.watched[watch_id] = {
+            "id": watch_id,
+            "name": name,
+            "target_id": target_id,
+            "source": dict(source),
+            "source_path": source_path,
+            "run_as": run_as,
+            "force": force,
+            "auto_approve": auto_approve,
+            "reason_files": reason_files,
+            "sleep_seconds": sleep_seconds,
+            "admit": admit,
+            "state": state,
+            "batch_id": None,
+            "problem": None,
+            "root_waiting": 0,
+            "next_look_at": datetime.min.replace(tzinfo=UTC),
+            "last_look_at": None,
+            "last_pickup_at": None,
+            "total_delivered": 0,
+            "total_failed": 0,
+        }
+        return watch_id
+
+    def set_outcome(self, item_id: str, outcome: str, detail: str | None = None) -> None:
+        """As every writer of an outcome does; a watched item turning final makes its watch due
+        at `now`, unless it is stopped (the trigger `watch_item_finished`)."""
+        item = self.items[item_id]
+        before = item["outcome"]
+        item["outcome"] = outcome
+        item["detail"] = detail
+        if item["watched"] and outcome != before and outcome not in WAKE_SKIPS:
+            watch_id = self.batches[item["batch_id"]]["watch_id"]
+            if self.watched[watch_id]["state"] != "stopped":
+                self.watched[watch_id]["next_look_at"] = self.now
+
+    @staticmethod
+    def _watch(w: dict[str, Any]) -> Watch:
+        return Watch(**{f: w[f] for f in Watch.__dataclass_fields__})
+
+    def due(self, now: datetime) -> list[Watch]:
+        rows = sorted(self.watched.values(), key=lambda w: (w["next_look_at"], w["id"]))
+        return [
+            self._watch(w)
+            for w in rows
+            if w["state"] in ("running", "draining") and w["next_look_at"] <= now
+        ]
+
+    def watch(self, watch_id: str) -> Watch | None:
+        w = self.watched.get(watch_id)
+        return self._watch(w) if w else None
+
+    def pickups(self, watch_id: str) -> list[Pickup]:
+        return [
+            p
+            for p in self._pickups.values()
+            if p.watch_id == watch_id and p.step not in ("finished", "abandoned")
+        ]
+
+    def see(self, watch_id: str, f: SourceFile, now: datetime) -> None:
+        self._fail("see")
+        modified = modified_of(f)
+        for p in self._pickups.values():
+            if (p.watch_id, p.original_name, p.size, p.modified_at) != (
+                watch_id,
+                f.name,
+                f.size,
+                modified,
+            ):
+                continue
+            if p.step in ("finished", "abandoned"):
+                self._pickups[p.id] = replace(
+                    p,
+                    step="seen",
+                    first_seen_at=now,
+                    etag=f.etag,
+                    working_name=None,
+                    item_id=None,
+                    object_key=None,
+                )
+            return
+        pickup_id = str(uuid.uuid4())
+        self._pickups[pickup_id] = Pickup(
+            id=pickup_id,
+            watch_id=watch_id,
+            original_name=f.name,
+            size=f.size,
+            modified_at=modified,
+            etag=f.etag,
+            first_seen_at=now,
+            step="seen",
+        )
+
+    def forget_unlisted(self, watch_id: str, listed: set[str]) -> None:
+        for p in list(self._pickups.values()):
+            if p.watch_id == watch_id and p.step == "seen" and p.id not in listed:
+                del self._pickups[p.id]
+
+    def advance(self, pickup_id: str, step: PickupStep, **fields: str | None) -> None:
+        self._fail(f"advance:{step}")
+        current = self._pickups[pickup_id]
+        if "working_name" in fields and current.item_id in self.items:
+            self.items[current.item_id]["filename"] = fields["working_name"]
+        self._pickups[pickup_id] = replace(
+            current,
+            step=step,
+            working_name=fields.get("working_name", current.working_name),
+            item_id=fields.get("item_id", current.item_id),
+            object_key=fields.get("object_key", current.object_key),
+        )
+
+    def batch_of(self, watch: Watch) -> str:
+        w = self.watched[watch.id]
+        if w["batch_id"] is None or w["batch_id"] not in self.batches:
+            batch_id = str(uuid.uuid4())
+            self.batches[batch_id] = {
+                "id": batch_id,
+                "target_id": watch.target_id,
+                "created_by": batch_creator(watch),
+                "state": "started",
+                "force": watch.force,
+                "auto_approve": watch.auto_approve,
+                "watch_id": watch.id,
+            }
+            w["batch_id"] = batch_id
+        return str(w["batch_id"])
+
+    def _item(
+        self,
+        item_id: str,
+        batch_id: str,
+        source_key: str,
+        working_name: str,
+        content_sha256: str,
+        size: int,
+        object_key: str | None,
+        **more: Any,
+    ) -> None:
+        self.items[item_id] = {
+            "id": item_id,
+            "batch_id": batch_id,
+            "source_key": source_key,
+            "filename": working_name,
+            "content_sha256": content_sha256,
+            "size_bytes": size,
+            "object_key": object_key,
+            "watched": True,
+            "outcome": "queued",
+            "detail": None,
+            "job_id": None,
+            **more,
+        }
+
+    def admit(
+        self,
+        watch: Watch,
+        pickup: Pickup,
+        item_id: str,
+        object_key: str,
+        working_name: str,
+        content_sha256: str,
+        source_key: str,
+        now: datetime,
+        *,
+        fresh: bool = False,
+    ) -> str:
+        self._fail("admit")
+        current = self._pickups[pickup.id]
+        state = self.watched[watch.id]["state"]
+        if not (state == "running" or (state == "draining" and not fresh)):
+            if current.step in ("stored", "moved"):
+                self._pickups[pickup.id] = replace(current, step="abandoned")
+            return False
+        if current.step not in ("stored", "moved"):
+            return False
+        batch_id = self.batch_of(watch)
+        self._item(
+            item_id, batch_id, source_key, working_name, content_sha256, pickup.size, object_key
+        )
+        job_id = str(uuid.uuid4())
+        self.jobs.append(
+            {
+                "id": job_id,
+                "task": "decompose",
+                "priority": DECOMPOSE_PRIORITY,
+                "max_attempts": DECOMPOSE_MAX_ATTEMPTS,
+                "params": job_params(watch, batch_id, item_id, source_key),
+                "created_by": watch.run_as.name,
+                "created_by_user": watch.run_as.id,
+            }
+        )
+        self.items[item_id]["job_id"] = job_id
+        self._pickups[pickup.id] = replace(
+            current,
+            step="queued",
+            item_id=item_id,
+            object_key=object_key,
+            working_name=working_name,
+        )
+        self.watched[watch.id]["last_pickup_at"] = now
+        return True
+
+    def refuse(
+        self,
+        watch: Watch,
+        pickup: Pickup,
+        working_name: str,
+        reason: str,
+        content_sha256: str,
+        source_key: str,
+        now: datetime,
+    ) -> str:
+        self._fail("refuse")
+        current = self._pickups[pickup.id]
+        if current.step != "seen":
+            return current.item_id or ""
+        if self.watched[watch.id]["state"] != "running":
+            return ""
+        item_id = str(uuid.uuid4())
+        batch_id = self.batch_of(watch)
+        self._item(
+            item_id,
+            batch_id,
+            source_key,
+            working_name,
+            content_sha256,
+            pickup.size,
+            None,
+            outcome="failed",
+            detail=reason,
+        )
+        self._pickups[pickup.id] = replace(
+            current, step="refusing", working_name=working_name, item_id=item_id
+        )
+        self.watched[watch.id]["last_pickup_at"] = now
+        return item_id
+
+    def move_failed(self, pickup_id: str) -> int:
+        current = self._pickups[pickup_id]
+        self._pickups[pickup_id] = replace(current, move_failures=current.move_failures + 1)
+        return current.move_failures + 1
+
+    def item_state(self, item_id: str) -> ItemState | None:
+        item = self.items.get(item_id)
+        if item is None:
+            return None
+        return ItemState(outcome=item["outcome"], detail=item["detail"], batch_id=item["batch_id"])
+
+    def finish(
+        self, watch_id: str, delivered: bool, at: datetime, pickup_id: str | None = None
+    ) -> None:
+        if pickup_id is not None:
+            if self._pickups[pickup_id].step in ("finished", "abandoned"):
+                return
+            self._pickups[pickup_id] = replace(self._pickups[pickup_id], step="finished")
+        self.finishes.append((watch_id, delivered, at))
+        self.watched[watch_id]["total_delivered" if delivered else "total_failed"] += 1
+
+    def set_health(
+        self, watch_id: str, problem: str | None, root_waiting: int | None, now: datetime
+    ) -> None:
+        w = self.watched[watch_id]
+        w["problem"] = problem
+        if root_waiting is not None:
+            w["root_waiting"] = root_waiting
+        w["last_look_at"] = now
+
+    def schedule(self, watch_id: str, next_look_at: datetime, seen: datetime | None = None) -> None:
+        w = self.watched[watch_id]
+        if seen is not None and w["next_look_at"] != seen:
+            next_look_at = min(next_look_at, w["next_look_at"])
+        w["next_look_at"] = next_look_at
+
+    def event(
+        self,
+        watch_id: str,
+        level: EventLevel,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.events.append(
+            {"watch_id": watch_id, "level": level, "message": message, "details": details}
+        )
+
+    def set_state(self, watch_id: str, state: WatchState, expect: WatchState | None = None) -> None:
+        if expect is None or self.watched[watch_id]["state"] == expect:
+            self.watched[watch_id]["state"] = state

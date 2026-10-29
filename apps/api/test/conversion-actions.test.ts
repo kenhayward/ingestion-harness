@@ -331,9 +331,9 @@ describe('redeliver', () => {
       objectKey: decompositionSourceKey(batch.id, rerun.id, 'docx'),
       redeliverOf: item.id,
     });
-    expect(await c.store.get('runs', rerun.objectKey)).toEqual(replacement);
+    expect(await c.store.get('runs', rerun.objectKey!)).toEqual(replacement);
     // The original's file stays: its row still has a report and a source.
-    expect(await c.store.get('runs', item.objectKey)).not.toBeNull();
+    expect(await c.store.get('runs', item.objectKey!)).not.toBeNull();
     expect(jobOf(c, rerun)!.params).toMatchObject({ sourceKey: item.sourceKey, force: true });
   });
 

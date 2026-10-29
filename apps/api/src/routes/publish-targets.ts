@@ -60,20 +60,22 @@ const base = (operationId: string, summary: string, description: string) => ({
 
 /** What uses a target, for a 409: up to three document types, else outputs and consumers. */
 export function usageText(u: TargetUsage): string {
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
   if (u.documentTypes.length > 0) {
     const named = u.documentTypes.slice(0, 3).join(', ');
     const more = u.documentTypes.length - 3;
-    return more > 0 ? `${named} and ${more} more` : named;
+    const types = more > 0 ? `${named} and ${more} more` : named;
+    return u.watches > 0 ? `${types} and ${plural(u.watches, 'watched folder')}` : types;
   }
-  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
   return [
     ...(u.deliveredOutputs > 0 ? [plural(u.deliveredOutputs, 'delivered output')] : []),
     ...(u.consumers > 0 ? [plural(u.consumers, 'S3 key consumer')] : []),
     ...(u.pendingJobs > 0 ? [plural(u.pendingJobs, 'pending withdrawal')] : []),
+    ...(u.watches > 0 ? [plural(u.watches, 'watched folder')] : []),
   ].join(' and ');
 }
 
-/** What keeps a target from being removed, for its 409: key consumers and pending withdrawals. */
+/** What keeps a target from being removed, for its 409: key consumers, pending withdrawals and watches. */
 const blockingText = (u: TargetUsage): string =>
   usageText({ ...u, documentTypes: [], deliveredOutputs: 0, publishedVersions: 0 });
 

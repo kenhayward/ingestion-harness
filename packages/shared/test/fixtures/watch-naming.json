@@ -1,0 +1,64 @@
+{
+  "workingNames": [
+    { "original": "report.docx", "taken": [], "expected": "report.docx" },
+    { "original": "report.docx", "taken": ["report.docx"], "expected": "report_1.docx" },
+    {
+      "original": "report.docx",
+      "taken": ["report.docx", "report_1.docx"],
+      "expected": "report_2.docx"
+    },
+    {
+      "original": "archive.tar.pdf",
+      "taken": ["archive.tar.pdf"],
+      "expected": "archive.tar_1.pdf"
+    },
+    { "original": "README", "taken": ["README"], "expected": "README_1" },
+    { "original": "report_1.docx", "taken": ["report_1.docx"], "expected": "report_1_1.docx" },
+    { "original": "Scan.PDF", "taken": ["Scan.PDF"], "expected": "Scan_1.PDF" }
+  ],
+  "sourcePaths": [
+    {
+      "fields": ["site", "area"],
+      "source": { "site": "/Plant A/", "area": "Intake" },
+      "expected": "Plant A/Intake"
+    },
+    { "fields": ["site", "area"], "source": { "site": "Plant A" }, "expected": "Plant A" },
+    { "fields": ["site"], "source": { "site": "  ", "other": "x" }, "expected": "" },
+    { "fields": [], "source": { "site": "x" }, "expected": "" },
+    { "fields": ["a", "b"], "source": { "b": "two", "a": "one" }, "expected": "one/two" }
+  ],
+  "candidates": [
+    { "name": "a.PDF", "expected": true },
+    { "name": "a.docx", "expected": true },
+    { "name": "a.DocX", "expected": true },
+    { "name": "a.doc", "expected": false },
+    { "name": "a.pdf.tmp", "expected": false },
+    { "name": ".hidden.pdf", "expected": false },
+    { "name": "", "expected": false },
+    { "name": "..", "expected": false },
+    { "name": "dir/a.pdf", "expected": false },
+    { "name": "dir\\a.pdf", "expected": false },
+    { "name": "a\u0000.pdf", "expected": false },
+    { "name": "~$report.docx", "expected": false },
+    { "name": "~$report.pdf", "expected": false },
+    { "name": "a~$.pdf", "expected": true },
+    { "name": "a.pdf", "expected": true }
+  ],
+  "sourceKeys": [
+    { "key": "Plant A/Intake/a.pdf", "problem": null },
+    { "key": "a.pdf", "problem": null },
+    { "key": "", "problem": "the source key is empty" },
+    { "key": "/a.pdf", "problem": "the source key must not start or end with /" },
+    { "key": "a//b/a.pdf", "problem": "the source key has an empty part (//)" },
+    { "key": "a/../a.pdf", "problem": "the source key has a `..` part" },
+    { "key": "a/./a.pdf", "problem": "the source key has a `.` part" },
+    { "key": "a/b\u0007.pdf", "problem": "the source key holds a control character" },
+    {
+      "key": "a\\b.pdf",
+      "problem": "the source key holds a backslash: use / between folders"
+    },
+    { "key": "x", "repeat": 1024, "problem": null },
+    { "key": "x", "repeat": 1025, "problem": "the source key is longer than 1024 characters" },
+    { "key": "e\u0301", "repeat": 600, "problem": null }
+  ]
+}

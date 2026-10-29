@@ -5,6 +5,15 @@ import type {
   BatchDetail,
   BatchSummary,
   ConversionReview,
+  WatchBrowseBody,
+  WatchCreateBody,
+  WatchDetail,
+  WatchPatchRequest,
+  WatchSource,
+  WatchTestBody,
+  WatchTestResult,
+  WatchView,
+  StopBody,
   ConversionTarget,
   CreateBatch,
   RetryItems,
@@ -916,6 +925,27 @@ export interface Api {
   /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
   startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
   getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
+  /** Watched folders (admins; plan 3): the watches, their problem count, and what a watch needs. */
+  listWatches(): Promise<WatchView[]>;
+  /** One watch with its newest events. */
+  getWatch(id: string): Promise<WatchDetail>;
+  /** How many running or draining watches have a problem (the nav badge). */
+  getWatchProblems(): Promise<{ count: number }>;
+  /** The targets a watch may name, each with the source fields that make up a folder path. */
+  listWatchSources(): Promise<WatchSource[]>;
+  /** One level of a target's tree for a source field, as the signed-in admin. */
+  browseWatchSource(
+    body: WatchBrowseBody,
+  ): Promise<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>;
+  /** Lists the folder's root without saving anything. */
+  testWatch(body: WatchTestBody): Promise<WatchTestResult>;
+  /** Rejects with an ApiError (`name_taken`, `source_test_failed`, …) whose body has a `code`. */
+  createWatch(body: WatchCreateBody): Promise<WatchView>;
+  updateWatch(id: string, body: WatchPatchRequest): Promise<WatchView>;
+  stopWatch(id: string, body: StopBody): Promise<WatchView>;
+  /** Also retries the moves the sink refused earlier. */
+  startWatch(id: string): Promise<WatchView>;
+  removeWatch(id: string): Promise<void>;
   /** The Conversion tab (phase 3): the targets that take documents (operators may read it). */
   listConversionTargets(): Promise<ConversionTarget[]>;
   /** An open batch for one target; files go up one per request, then it starts. */
@@ -1947,6 +1977,21 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
+    listWatches: () => apiFetch(`${base}/watches`).then(json<WatchView[]>),
+    getWatch: (id) => apiFetch(`${base}/watches/${encodeURIComponent(id)}`).then(json<WatchDetail>),
+    getWatchProblems: () => apiFetch(`${base}/watches/problems`).then(json<{ count: number }>),
+    listWatchSources: () => apiFetch(`${base}/watches/sources`).then(json<WatchSource[]>),
+    browseWatchSource: (body) =>
+      post<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>(`${base}/watches/browse`, body),
+    testWatch: (body) => post<WatchTestResult>(`${base}/watches/test`, body),
+    createWatch: (body) => post<WatchView>(`${base}/watches`, body),
+    updateWatch: (id, body) =>
+      post<WatchView>(`${base}/watches/${encodeURIComponent(id)}`, body, 'PATCH'),
+    stopWatch: (id, body) =>
+      post<WatchView>(`${base}/watches/${encodeURIComponent(id)}/stop`, body),
+    startWatch: (id) => post<WatchView>(`${base}/watches/${encodeURIComponent(id)}/start`, {}),
+    removeWatch: (id) =>
+      noContent(apiFetch(`${base}/watches/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     listConversionTargets: () =>
       apiFetch(`${base}/conversions/targets`)
         .then(json<{ targets: ConversionTarget[] }>)

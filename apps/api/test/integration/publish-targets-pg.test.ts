@@ -27,6 +27,7 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
       'TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions, job_deliveries',
     );
     await pool.query('DELETE FROM published_graphs');
+    await pool.query('DELETE FROM watched_folders');
     await pool.query('DELETE FROM jobs');
     await pool.query('DELETE FROM documents');
     // Published recipes refuse deletion; this is a throwaway database.
@@ -76,6 +77,13 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
           await p.query(
             `INSERT INTO jobs (task, status, params) VALUES ('withdraw', $1::job_status, $2)`,
             [status, JSON.stringify(params)],
+          );
+        },
+        watch: async (targetId: string) => {
+          await p.query(
+            `INSERT INTO watched_folders (name, target_id, source, source_path, run_as, created_by)
+             VALUES ('w', $1, '{}', '', '{}', '{}')`,
+            [targetId],
           );
         },
         legacyKeys: async (k: LegacyKeys) => {

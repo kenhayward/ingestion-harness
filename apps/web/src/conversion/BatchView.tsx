@@ -13,11 +13,7 @@ import { moveFocus, usePopover } from '../ui/usePopover.js';
 import {
   ItemActions,
   ItemDialog,
-  canDetach,
-  canForce,
-  canRedeliver,
-  canReload,
-  canResolve,
+  hasItemActions,
   type ActionResult,
   type DialogKind,
 } from './ItemActions.js';
@@ -79,8 +75,8 @@ function storeFilter(batchId: string, f: Filter) {
  * Re-run applies to a failed document of a started batch that was never run again: a document
  * is re-run once, and a failed re-run is re-run from its own batch (`Item.rerunIn`).
  */
-const canRetry = (started: boolean, item: Item) =>
-  started && item.outcome === 'failed' && item.rerunIn === null;
+const canRetry = (started: boolean, item: Item, watched: boolean) =>
+  started && !watched && item.outcome === 'failed' && item.rerunIn === null;
 const fileTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit',
@@ -277,7 +273,8 @@ export function BatchView({
   /** The item of the open dialog, as last read (all items: the filter may hide its row). */
   const open = dialog ? items.find((i) => i.id === dialog.itemId) : undefined;
   const failed = items.filter(isFailed);
-  const retryable = items.filter((i) => canRetry(started, i));
+  const watched = batch.watch !== null;
+  const retryable = items.filter((i) => canRetry(started, i, watched));
   const attention = items.filter(needsAttention);
   const chips: FilterChip<Filter>[] = [
     { value: 'all', label: 'All', count: items.length },
@@ -321,6 +318,7 @@ export function BatchView({
             {took && ` · took ${took}`}
             {batch.force && <span className="force-tag">Force-load</span>}
             {batch.autoApprove && <span className="force-tag">Auto Approve</span>}
+            {batch.watch && <span className="force-tag">Watched: {batch.watch.name}</span>}
           </p>
         </div>
         <div className="batch-head-actions">
@@ -461,7 +459,8 @@ export function BatchView({
                       api={api}
                       item={item}
                       selected={item.id === selected?.id}
-                      canRerun={canRetry(started, item)}
+                      watched={watched}
+                      canRerun={canRetry(started, item, watched)}
                       onSelect={() => setSelectedId(item.id)}
                       onRerun={() => retryOne(item)}
                       onReport={() => setReport(item)}
@@ -480,7 +479,8 @@ export function BatchView({
             key={selected.id}
             api={api}
             item={selected}
-            canRerun={canRetry(started, selected)}
+            watched={watched}
+            canRerun={canRetry(started, selected, watched)}
             onRerun={() => retryOne(selected)}
             onReport={() => setReport(selected)}
             onOpen={(kind) => setDialog({ itemId: selected.id, kind })}
@@ -567,6 +567,8 @@ function Totals({ items }: { items: Item[] }) {
 interface RowProps {
   api: Api;
   item: Item;
+  /** The batch belongs to a watched folder: no force-load, redeliver or reload. */
+  watched: boolean;
   canRerun: boolean;
   onRerun: () => void;
   onReport: () => void;
@@ -681,7 +683,7 @@ function RerunLink({ item }: { item: Item }) {
  * an item closes it and puts focus back on its button, so a dialog it opens gives focus back
  * there. It opens upward when the list's box has no room for it below its row.
  */
-function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: RowProps) {
+function RowMenu({ api, item, watched, canRerun, onRerun, onReport, onOpen, onResult }: RowProps) {
   const p = usePopover();
   const menu = useRef<HTMLDivElement>(null);
   const [up, setUp] = useState(false);
@@ -698,8 +700,7 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
     if (p.open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [p.open]);
   const name = `Actions for ${item.sourceKey}`;
-  const more =
-    canForce(item) || canRedeliver(item) || canReload(item) || canResolve(item) || canDetach(item);
+  const more = hasItemActions(item, watched);
   const run = (f: () => void) => () => {
     p.close();
     f();
@@ -738,11 +739,20 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
           <button type="button" role="menuitem" onClick={run(onReport)}>
             View report
           </button>
-          <a role="menuitem" href={api.conversionSourceUrl(item.id)} download={item.filename}>
-            Download original
-          </a>
+          {item.objectKey !== null && (
+            <a role="menuitem" href={api.conversionSourceUrl(item.id)} download={item.filename}>
+              Download original
+            </a>
+          )}
           {more && <div role="separator" className="menu-separator" />}
-          <ItemActions api={api} item={item} onOpen={onOpen} onResult={onResult} menu />
+          <ItemActions
+            api={api}
+            item={item}
+            onOpen={onOpen}
+            onResult={onResult}
+            watched={watched}
+            menu
+          />
         </div>
       )}
     </div>
@@ -767,7 +777,16 @@ function ErrorLinks({ item }: { item: Item }) {
 }
 
 /** The picked document beside the list: why it stands where it does, its times, its actions. */
-function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: RowProps) {
+function DocumentPanel({
+  api,
+  item,
+  watched,
+  canRerun,
+  onRerun,
+  onReport,
+  onOpen,
+  onResult,
+}: RowProps) {
   const link = webLink(item.link);
   const timing = itemTiming(item, Date.now());
   const folder = folderOf(item.sourceKey);
@@ -871,10 +890,12 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
             <Icon name="refresh" size={14} /> Re-run this document
           </button>
         )}
-        <ItemActions api={api} item={item} onOpen={onOpen} onResult={onResult} />
-        <a className="button" href={api.conversionSourceUrl(item.id)} download={item.filename}>
-          Download original
-        </a>
+        <ItemActions api={api} item={item} onOpen={onOpen} onResult={onResult} watched={watched} />
+        {item.objectKey !== null && (
+          <a className="button" href={api.conversionSourceUrl(item.id)} download={item.filename}>
+            Download original
+          </a>
+        )}
       </div>
     </aside>
   );

@@ -8,7 +8,9 @@ import {
   signRequest,
   BrowseResultSchema,
   PreflightResultSchema,
+  ProducerSourceListSchema,
   SinkViewSchema,
+  SourceListAnswerSchema,
   TargetTestResultSchema,
   TargetViewSchema,
   type AdminCallName,
@@ -22,6 +24,7 @@ import {
   type BrowseResult,
   type PreflightRequest,
   type PreflightResult,
+  type SourceFile,
   type SinkView,
   type TargetBrowseRequest,
 } from '@ih/bridge-contract';
@@ -40,6 +43,9 @@ export const ReadConnectionSummary = ConnectionSummarySchema.extend({
 });
 /** A summary as a bridge may send it (what `ReadConnectionSummary` reads). */
 export type SentConnectionSummary = z.input<typeof ReadConnectionSummary>;
+
+/** What the bridge's `sources:list` takes: the watched location, the folder and the acting user. */
+export type ProducerSourceList = z.input<typeof ProducerSourceListSchema>;
 
 /** One administration call relayed to a sink (the producer API's `SinkAdminCall`). */
 export interface AdminCall<C extends AdminCallName = AdminCallName> {
@@ -82,6 +88,12 @@ export interface BridgeApi {
   preflight(req: PreflightRequest): Promise<PreflightResult>;
   /** One level of a sink's tree for a destination field (TargetBrowseRequest). */
   browse(req: TargetBrowseRequest): Promise<BrowseResult>;
+  /**
+   * The files of a watched folder of a target (`POST /v1/targets/:id/sources:list`), acting as
+   * `body.actingUser`. Throws `BridgeApiError` for a refusal (a missing connection, a folder
+   * that is gone).
+   */
+  sourceList(targetId: string, body: ProducerSourceList): Promise<SourceFile[]>;
   testTarget(id: string): Promise<TargetTestResult>;
   testSettings(s: {
     connectionId: string;
@@ -247,6 +259,15 @@ export class HttpBridgeApi implements BridgeApi {
       `the browse of ${req.sinkId}`,
     );
     return BrowseResultSchema.parse(await res.json());
+  }
+
+  async sourceList(targetId: string, body: ProducerSourceList): Promise<SourceFile[]> {
+    const res = await this.expect(
+      await this.call('POST', `/v1/targets/${encodeURIComponent(targetId)}/sources:list`, body),
+      [200],
+      `the listing of a watched folder of ${targetId}`,
+    );
+    return SourceListAnswerSchema.parse(await res.json()).files;
   }
 
   async listSinks(): Promise<SinkView[]> {

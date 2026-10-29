@@ -68,3 +68,34 @@ export const FAKE_ADMIN_SINK: SinkView = {
     },
   },
 };
+
+/** A document sink with watched folders (contract version 4), as the bridge's catalog lists it. */
+export const FAKE_WATCHED_SINK: SinkView = {
+  ...FAKE_DOCUMENT_SINK,
+  id: 'watched',
+  name: 'Watched sink',
+  contractVersion: 4,
+  capabilities: {
+    ...FAKE_DOCUMENT_SINK.capabilities,
+    watchedFolders: {
+      sourceFields: [
+        {
+          id: 'library',
+          label: 'Library',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: true,
+        },
+        {
+          id: 'folder',
+          label: 'Folder',
+          kind: 'fixed',
+          required: false,
+          overridable: false,
+          browse: true,
+        },
+      ],
+    },
+  },
+};

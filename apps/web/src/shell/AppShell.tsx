@@ -279,6 +279,7 @@ export function AppShell({
   me,
   route,
   jobs,
+  watchProblems,
   query,
   onQuery,
   install,
@@ -294,6 +295,8 @@ export function AppShell({
   me: Me;
   route: Route;
   jobs: readonly JobSummary[];
+  /** Watches with a problem (admins): the Watched folders badge. */
+  watchProblems: number;
   query: string;
   onQuery: (query: string) => void;
   /** The browser's offer to install the app: Install CT Studio shows while there is one. */
@@ -447,6 +450,29 @@ export function AppShell({
             current={section === 'conversion'}
             compact={compact}
           />
+          {me.role === 'admin' && (
+            <NavLink
+              href="#/watched-folders"
+              icon="eye"
+              label="Watched folders"
+              compactLabel={
+                watchProblems > 0
+                  ? `Watched folders, ${watchProblems} ${watchProblems === 1 ? 'has' : 'have'} a problem`
+                  : 'Watched folders'
+              }
+              current={section === 'watches'}
+              compact={compact}
+            >
+              {watchProblems > 0 && (
+                <span className="nav-badge">
+                  <span aria-hidden="true">{watchProblems}</span>
+                  <span className="visually-hidden">
+                    {watchProblems} {watchProblems === 1 ? 'has' : 'have'} a problem
+                  </span>
+                </span>
+              )}
+            </NavLink>
+          )}
           {designs && (
             <>
               <NavLink

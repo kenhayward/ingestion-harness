@@ -8,6 +8,7 @@ import {
 import {
   BatchSchema,
   BatchSummarySchema,
+  decompositionSourceKey,
   DecomposeParamsSchema,
   ItemSchema,
   type Item,
@@ -47,6 +48,14 @@ export interface ConversionFacts {
   dropEntry(entryId: string): Promise<void>;
   /** Moves an entry on, as a later run does (its state and batch, and its `updatedAt` to now). */
   moveEntry(entryId: string, to: { state: RegisterEntry['state']; batchId: string }): Promise<void>;
+  /** Makes the batch a watched folder's (the worker does this in production). */
+  watch(batchId: string, name: string): Promise<string>;
+  /** The pickup that led to an item, at `step` (the worker writes these). */
+  pickup(itemId: string, step: 'queued' | 'finished' | 'abandoned'): Promise<void>;
+  /** A pickup the worker stored a copy of (`stored` or `moved`) but has not admitted yet. */
+  heldCopy(watchId: string, objectKey: string, step: 'stored' | 'moved'): Promise<void>;
+  /** The batch the watch adds its next pickup to (null: it starts a new one). */
+  watchBatch(watchId: string): Promise<string | null>;
   /** Records when an item started and finished, as the worker and the settle do. */
   times(itemId: string, startedAt: string | null, finishedAt: string | null): Promise<void>;
 }
@@ -470,6 +479,80 @@ export function conversionsContract(
       expect(await repo.getItem(a.id)).toBeNull();
       expect((await repo.listBatches(10)).map((b) => b.id)).toEqual([again.batchId]);
       expect(await repo.getItem(second.item.id)).toMatchObject({ objectKey: a.objectKey });
+    });
+
+    it("deletes a watch's batch's finished documents, keeps the unfinished ones and the batch", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const [a, b, c] = ['a.docx', 'b.docx', 'c.docx'].map((k) => item(batch.id, k));
+      for (const i of [a!, b!, c!]) await repo.addItem(i);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      expect(await repo.getBatch(batch.id)).toMatchObject({
+        watch: { id: watchId, name: 'Inbox' },
+      });
+      await facts.settleItem(a!.id, 'created', null);
+      await facts.settleItem(b!.id, 'failed', null);
+      await facts.settleItem(c!.id, 'awaiting_review', null);
+
+      const done = await repo.deleteBatch(batch.id);
+      expect(done).toEqual({ ok: true, kept: [], remove: [a!.objectKey, b!.objectKey].sort() });
+      expect(await repo.getItem(a!.id)).toBeNull();
+      expect(await repo.getItem(b!.id)).toBeNull();
+      expect(await repo.getItem(c!.id)).toMatchObject({ outcome: 'awaiting_review' });
+      expect(await repo.getBatch(batch.id)).not.toBeNull();
+
+      // The next pickup starts a new batch; this one stays while a document is under way.
+      expect(await facts.watchBatch(watchId)).toBeNull();
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [], remove: [] });
+      await facts.settleItem(c!.id, 'failed', null);
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(batch.id)).toBeNull();
+    });
+
+    it("keeps a watch's document until the watch has filed its file, whatever its outcome", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const [a, b, c] = ['a.docx', 'b.docx', 'c.docx'].map((k) => item(batch.id, k));
+      for (const i of [a!, b!, c!]) await repo.addItem(i);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      for (const i of [a!, b!, c!]) await facts.settleItem(i.id, 'created', null);
+      await facts.pickup(a!.id, 'queued'); // settled, but its file is still in processing/
+      await facts.pickup(b!.id, 'finished');
+      await facts.pickup(c!.id, 'abandoned');
+
+      expect(await repo.deleteBatch(batch.id)).toEqual({
+        ok: true,
+        kept: [],
+        remove: [b!.objectKey, c!.objectKey].sort(),
+      });
+      expect(await repo.getItem(a!.id)).toMatchObject({ outcome: 'created' });
+      expect(await repo.getBatch(batch.id)).not.toBeNull();
+      expect(await facts.watchBatch(watchId)).toBeNull();
+
+      await facts.pickup(a!.id, 'finished');
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(batch.id)).toBeNull();
+    });
+
+    it("keeps the copies of a watch's files taken but not admitted yet", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const a = item(batch.id, 'a.docx');
+      await repo.addItem(a);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      await facts.settleItem(a.id, 'created', null);
+      await facts.pickup(a.id, 'finished');
+      const stored = decompositionSourceKey(batch.id, randomUUID(), 'docx');
+      const moved = decompositionSourceKey(batch.id, randomUUID(), 'pdf');
+      await facts.heldCopy(watchId, stored, 'stored');
+      await facts.heldCopy(watchId, moved, 'moved');
+
+      const done = await repo.deleteBatch(batch.id);
+      expect(done).toEqual({ ok: true, kept: [moved, stored].sort() });
+      expect(await repo.getBatch(batch.id)).toBeNull();
     });
 
     it('deletes no open, discarded or missing batch', async () => {
