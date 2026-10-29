@@ -517,4 +517,70 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     await userEvent.click(pager.getByRole('button', { name: 'Older batches' }));
     expect(batches.getAllByRole('row')).toHaveLength(2);
   });
+
+  const OLD = summary(
+    { id: '44444444-4444-4444-8444-444444444444', createdAt: '2026-10-20T09:00:00.000Z' },
+    { created: 3 },
+  );
+  const BUSY = summary(
+    { id: '55555555-5555-4555-8555-555555555555', createdAt: '2026-10-21T09:00:00.000Z' },
+    { created: 1, delivering: 1, awaiting_review: 1 },
+  );
+  const deleteOf = (row: HTMLElement) =>
+    within(row).getByRole('button', { name: /^Delete the batch of/ });
+
+  it('a batch with documents not finished cannot be deleted, and says why', async () => {
+    render(
+      <ConversionPage api={page({ listConversionBatches: vi.fn(async () => [OLD, BUSY]) })} />,
+    );
+    const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(2));
+    const [busy, old] = batches.getAllByRole('row');
+    expect(deleteOf(busy!)).toBeDisabled();
+    expect(deleteOf(busy!)).toHaveAttribute('title', '2 documents not finished yet');
+    expect(deleteOf(old!)).toBeEnabled();
+    expect(deleteOf(old!)).toHaveAttribute('title', 'Delete…');
+  });
+
+  it('deletes a batch once confirmed, and it leaves the list', async () => {
+    const deleteConversionBatch = vi.fn(async () => undefined);
+    render(
+      <ConversionPage
+        api={page({ listConversionBatches: vi.fn(async () => [OLD, BUSY]), deleteConversionBatch })}
+      />,
+    );
+    const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(2));
+    await userEvent.click(deleteOf(batches.getAllByRole('row')[1]!));
+    const dialog = within(screen.getByRole('dialog', { name: 'Delete this batch?' }));
+    expect(dialog.getByText(/3 documents, leaves this list/)).toBeVisible();
+    expect(dialog.getByText(/stay in the target/)).toBeVisible();
+    expect(deleteConversionBatch).not.toHaveBeenCalled();
+    await userEvent.click(dialog.getByRole('button', { name: 'Delete batch' }));
+    expect(deleteConversionBatch).toHaveBeenCalledWith(OLD.id);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(batches.getAllByRole('row')).toHaveLength(1);
+  });
+
+  it('Cancel deletes nothing, and a refusal stays shown in the dialog', async () => {
+    const deleteConversionBatch = vi.fn(async () => {
+      throw new ApiError('1 document is not finished yet', 409);
+    });
+    render(
+      <ConversionPage
+        api={page({ listConversionBatches: vi.fn(async () => [OLD]), deleteConversionBatch })}
+      />,
+    );
+    const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(1));
+    await userEvent.click(deleteOf(batches.getAllByRole('row')[0]!));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(deleteConversionBatch).not.toHaveBeenCalled();
+    await userEvent.click(deleteOf(batches.getAllByRole('row')[0]!));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete batch' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 document is not finished yet');
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(batches.getAllByRole('row')).toHaveLength(1);
+  });
 });

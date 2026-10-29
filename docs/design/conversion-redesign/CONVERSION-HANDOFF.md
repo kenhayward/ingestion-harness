@@ -91,6 +91,15 @@ Real app (Vite, `/api` mocked) at 1,600 × 1,000 unless named; sample data.
   *Never started*, *Discarded*), the date as the link (*Today, 11:00*, else *Fri, Oct 23*; the full
   time on hover), target · sink, a *Force-load* tag, *N docs*, a chip per outcome, who started it.
   The whole row opens the batch.
+  (2026-10-29, owner's ask) Each row ends with a trash button, **Delete…**, off while the batch has
+  documents not finished (queued, decomposing, delivering or held for review; its title says how
+  many). It confirms in a dialog (*Delete this batch?*, **Delete batch**), then
+  `DELETE /api/conversions/batches/{id}`, which discards an open batch as before and now deletes a
+  started one: its items, the batch, and its stored files under `decompositions/{batchId}/`, all
+  but a source file a later batch still uses (a force-load re-run shares the original's key). The
+  register is kept, so what the batch delivered still reads as already loaded; a document a deleted
+  re-run held can be re-run again from its first batch. 409 (`code: running`) while any item is
+  unfinished.
 - **`BatchView`:**
   - Header: *‹ Conversion*, `h1` *Batch · date*, target and sink tag, *started by* (avatar and
     name), *took* (start to the last finish, once all are final), *Force-load* tag; **New batch**,

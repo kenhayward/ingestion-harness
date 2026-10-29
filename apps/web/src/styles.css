@@ -8152,8 +8152,29 @@ button.evidence-chip[aria-expanded='true'] {
 .batch-list .by-col {
   width: 170px;
 }
+.batch-list .act-col {
+  width: 44px;
+}
 .batch-list .go-col {
   width: 34px;
+}
+/* A row's Delete…, as the ontology list's row actions. */
+.batch-list .act-cell {
+  padding: 0 4px;
+  text-align: right;
+}
+.batch-list .act-cell .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--ih-radius-sm);
+}
+.batch-list .act-cell .icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .batch-list .go-cell {
   padding: 0 12px 0 0;

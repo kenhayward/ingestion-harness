@@ -120,6 +120,11 @@ export function ontologyNormalizedKey(ontologyId: string, version: number): stri
   return `ontologies/${ontologyId}/v${version}/normalized.nt`;
 }
 
+/** Everything a conversion batch stores (runs bucket): its items' files, reports and held PDFs. */
+export function decompositionBatchPrefix(batchId: string): string {
+  return `decompositions/${batchId}/`;
+}
+
 /** A batch item's uploaded Word file (runs bucket; phase 3 conversion batches). */
 export function decompositionSourceKey(batchId: string, itemId: string, ext: string): string {
   return `decompositions/${batchId}/${itemId}.${ext}`;

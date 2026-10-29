@@ -193,6 +193,12 @@ export function ConversionHelp() {
         first, ten a page: how each stands, when it started, its target, how many documents, what
         became of them, and who started it. Click a line to open the batch.
       </p>
+      <p>
+        The bin at the end of a line deletes that batch, after you confirm: it leaves the list with
+        its uploaded files and reports. What it delivered stays in the target, and is still found
+        there when loaded again. A batch can be deleted only once all its documents have finished,
+        none still converting, delivering or waiting for review.
+      </p>
     </>
   );
 }
