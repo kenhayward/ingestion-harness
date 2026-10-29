@@ -15211,7 +15211,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "The decomposed document of a PDF held for review, as it would be delivered, with the\nnumber of pages, the pages each section and block came from (`pageMap`) and the held\nimages' types (`GET /api/conversions/items/{id}/images/{index}` serves each; the pages\ncome from `GET /api/conversions/items/{id}/pages/{n}`). Read from the held manifest the\nworker stored. Only while the item is `awaiting_review`.",
+        "description": "The decomposed document of a PDF held for review, as it would be delivered, with the\nnumber of pages, the pages each section and block came from (`pageMap`) and the held\nimages' types (`GET /api/conversions/items/{id}/images/{index}` serves each; the pages\ncome from `GET /api/conversions/items/{id}/pages/{n}`). `unproven` lists the words\nthe PDF's fidelity check could not prove, each with its page, for the reviewer to\ncompare: they are not in the document, and approval delivers it as it is. Read from the\nheld manifest the worker stored. Only while the item is `awaiting_review`.",
         "parameters": [
           {
             "schema": {
@@ -15535,6 +15535,33 @@
                           "contentType"
                         ]
                       }
+                    },
+                    "unproven": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "detail": {
+                            "type": "string"
+                          },
+                          "page": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "detail",
+                          "page",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -15542,7 +15569,8 @@
                     "document",
                     "pageCount",
                     "pageMap",
-                    "images"
+                    "images",
+                    "unproven"
                   ],
                   "additionalProperties": false,
                   "description": "The held document."

@@ -36,6 +36,7 @@ from ingest_worker.decompose.package import (
     NESTING_TOO_DEEP,
     DecompositionFailed,
     DecompositionRejected,
+    Unproven,
     open_package,
 )
 from ingest_worker.decompose.properties import properties_of
@@ -53,6 +54,7 @@ __all__ = [
     "DecompositionFailed",
     "DecompositionRejected",
     "SourceKind",
+    "Unproven",
     "decompose_docx",
     "decompose_source",
     "decomposer_version",
@@ -82,6 +84,9 @@ class Decomposition:
     #: A PDF's: the 1-based pages each section and block came from, by id (a Word file's is
     #: empty).
     page_map: dict[str, list[int]] = field(default_factory=dict)
+    #: A PDF's words its fidelity check could not prove: it is held for review with them, and
+    #: they are not delivered (spec 6, 14.2).
+    unproven: list[Unproven] = field(default_factory=list)
 
 
 def source_kind(data: bytes) -> SourceKind:

@@ -2,9 +2,9 @@
 
 `write_held` stores the decomposed document's images, a JPEG of every page and, last, the
 manifest (`decompositions/{batchId}/{itemId}.held/manifest.json`): the document, the images'
-keys and sha-256s, the page count and page map, and what approval delivers with (the source's
-sha-256, the decomposer version, who started the batch and the register entry the hold was
-decided against). The item records the manifest's sha-256, so `read_held` gives back exactly
+keys and sha-256s, the page count and page map, the words the check could not prove, and what
+approval delivers with (the source's sha-256, the decomposer version, who started the batch and
+the register entry the hold was decided against). The item records the manifest's sha-256, so `read_held` gives back exactly
 the bytes that were reviewed, or raises `HeldMismatch`. The API reads the manifest too (the
 review page), so its camelCase shape is a contract.
 """
@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from typing import Any, Literal
+
+from pydantic import Field
 
 from ingest_worker.bridge.models import ActingUser, Wire
 from ingest_worker.decompose import Decomposition
@@ -46,6 +48,14 @@ class HeldImage(Wire):
     content_type: str
 
 
+class HeldUnproven(Wire):
+    """A word the check could not prove (`Unproven`), for the review page."""
+
+    detail: str
+    page: int
+    at: str | None
+
+
 class HeldManifest(Wire):
     version: Literal[1] = 1
     source_sha256: str
@@ -58,6 +68,8 @@ class HeldManifest(Wire):
     page_count: int
     #: The 1-based pages each section and block came from, by id.
     page_map: dict[str, list[int]]
+    #: The words the check could not prove, in check order (spec 14.2); not in `document`.
+    unproven: list[HeldUnproven] = Field(default_factory=list)
 
 
 def _sha(body: bytes) -> str:
@@ -118,6 +130,7 @@ def write_held(
             images=images,
             page_count=pages,
             page_map=result.page_map,
+            unproven=[HeldUnproven(detail=u.detail, page=u.page, at=u.at) for u in result.unproven],
         )
         raw = manifest.model_dump_json(by_alias=True).encode("utf-8")
         put(decomposition_held_manifest_key(item.batch_id, item.id), raw, "application/json")

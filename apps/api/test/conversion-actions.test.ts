@@ -1685,7 +1685,19 @@ describe('reviewing a held PDF', () => {
       pageCount: 2,
       pageMap: { s1: [1, 2] },
       images: [{ id: 'img-1', contentType: 'image/png' }],
+      unproven: [], // a manifest from before the worker listed them
     });
+  });
+
+  it('review lists the words the check could not prove, with their pages', async () => {
+    const c = await setup();
+    const unproven = [{ detail: "page 2: '1' extra", page: 2, at: 's1#list-2' }];
+    const item = await heldItem(c, undefined, (m) => Object.assign(m, { unproven }));
+
+    const res = await get(c, item, 'review');
+
+    expect(res.statusCode).toBe(200);
+    expect(ConversionReviewSchema.parse(res.json()).unproven).toEqual(unproven);
   });
 
   it('review refuses a manifest with more pages than a page can be asked for', async () => {

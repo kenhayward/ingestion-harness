@@ -182,6 +182,10 @@
             <a href="#remember-target">The Conversion tab keeps your target</a>
             <span>— a new batch starts on the target you picked last</span>
           </li>
+          <li>
+            <a href="#unproven-words">PDFs with a few words not proven are reviewed, not failed</a>
+            <span>— each word listed with its page on the review</span>
+          </li>
         </ul>
         <h4>Fixes</h4>
         <ul>
@@ -192,6 +196,12 @@
           <li>
             <a href="#pdf-table-shapes">ICH S5(R3), S11, E2C(R2) and M9 delivered</a>
             <span>— underlines and broken borders in ruled tables, hidden text, a formula</span>
+          </li>
+          <li>
+            <a href="#pdf-protocol">A clinical study protocol read</a>
+            <span
+              >— subscripts beside a superscript, and a table's header row given as a heading</span
+            >
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -301,6 +311,34 @@
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
+      <h3 id="unproven-words">PDFs with a few words not proven are reviewed, not failed</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/367">#367</a>
+      </p>
+      <p>
+        Every word of a PDF is checked against the page it came from, and a PDF with even one word
+        that didn't match used to fail ("page 79: '1' extra"). Now a PDF with a few such words is
+        held for review instead, so you decide.
+      </p>
+      <ul>
+        <li>
+          Its line on the batch says how many words the check could not prove, and the first:
+          <em>The check could not prove 2 words: page 79: '1' extra (and 1 more)</em>. Its report
+          lists each one.
+        </li>
+        <li>
+          <strong>Review</strong> lists them above the document. Choose one to see its page and
+          compare it: approving delivers the document as it is shown.
+        </li>
+        <li>It is held for review even in a batch with <strong>Auto Approve</strong> on.</li>
+        <li>
+          More than 25 such words still fail the PDF: that many means a page was read badly. Any
+          other failure, and a Word document's check, still fail as before.
+        </li>
+        <li>The words are not sent to the target with the document.</li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
       <h2 id="fixes">Fixes</h2>
 
       <h3 id="pdf-printed-size">ICH S5(R3) and S11 read</h3>
@@ -373,6 +411,32 @@
           check. The check now reads them as one word.
         </li>
         <li>The decomposer version changes (1010).</li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="pdf-protocol">A clinical study protocol read</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/366">#366</a>
+      </p>
+      <p>
+        The first clinical study protocol loaded (NCT03254108) failed with
+        <em>page 79: '1' extra</em>. Once this is deployed, re-run it.
+      </p>
+      <ul>
+        <li>
+          Its list of pharmacokinetic parameters has, on one line, subscripts (C<sub>max</sub>,
+          AUC<sub>24h</sub>, t<sub>1/2,z</sub>) and raised table keys (<sup>#1</sup>). Together they
+          spread the line further than the reader allowed for one line, so the subscripts were read
+          as a line of their own after it. A line is now measured from its main text, and keeps
+          both.
+        </li>
+        <li>
+          Behind that, its list of abbreviations would have failed with
+          <em>'Abbreviation' moved out of table</em>. The layout analysis gave the table's header
+          row, "Abbreviation Definition", as a heading above the table. A line like that, just above
+          a table and lined up with its columns, now becomes the table's header row.
+        </li>
+        <li>The decomposer version changes (1011).</li>
       </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

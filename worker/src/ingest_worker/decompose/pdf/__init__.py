@@ -39,7 +39,7 @@ from ingest_worker.decompose.pdf.scanned import (
     normalise_levels,
     recognise_page,
 )
-from ingest_worker.decompose.pdf.tables import join_split_tables
+from ingest_worker.decompose.pdf.tables import headers_above_tables, join_split_tables
 from ingest_worker.decompose.pdf.textlayer import (
     PageText,
     TextLayer,
@@ -51,7 +51,7 @@ from ingest_worker.decompose.pdf.transcript import PageTranscriber, parse_transc
 __all__ = ["MAX_PAGES", "PDF_READER_VERSION", "decompose_pdf"]
 
 #: The PDF reader's version, part of the decomposer version for a PDF.
-PDF_READER_VERSION = 10
+PDF_READER_VERSION = 11
 
 #: A PDF with more pages fails (spec section 10).
 MAX_PAGES = 500
@@ -114,6 +114,7 @@ def decompose_pdf(
     pieces = _splice(pieces, recognised, ledger)
     pieces, dropped, header_fields = drop_furniture(pieces, text, ledger)
     dropped = _with_scanned(dropped, scanned_furniture)
+    pieces = headers_above_tables(pieces, ledger)
     pieces, flags = assign_headings(pieces, read_bookmarks(data), ledger)
     pieces = join_split_tables(pieces, text, ledger)
     own_cropper = None
@@ -142,11 +143,13 @@ def decompose_pdf(
         *in_document_order(doc.report, doc),
     ]
     doc = doc.model_copy(update={"report": report})
-    check_pdf(doc, ledger, text, provenance)
+    unproven = check_pdf(doc, ledger, text, provenance)
     page_map = {
         element: sorted(p + 1 for p in pages) for element, pages in provenance.pages.items()
     }
-    return Decomposition(document=doc, image_bytes=image_bytes, originals={}, page_map=page_map)
+    return Decomposition(
+        document=doc, image_bytes=image_bytes, originals={}, page_map=page_map, unproven=unproven
+    )
 
 
 def _render_px(page: PageText, longest_dim: int, rotation: int) -> tuple[int, int]:

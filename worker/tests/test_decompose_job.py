@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 import ingest_worker.decompose as decompose_module
+import ingest_worker.decompose.pdf as pdf_reader
 from ingest_worker.bridge.client import BridgeRefused
 from ingest_worker.bridge.models import (
     ActingUser,
@@ -25,7 +26,12 @@ from ingest_worker.bridge.models import (
     Receipt,
     decomposition_idempotency_key,
 )
-from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed, decomposer_version
+from ingest_worker.decompose import (
+    DECOMPOSER_VERSION,
+    DecompositionFailed,
+    Unproven,
+    decomposer_version,
+)
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
@@ -236,7 +242,7 @@ def test_pdf_that_would_create_is_held() -> None:
     assert world.bridge.requests == [] and world.register.entries() == []
     manifest = _manifest(world, job)
     assert manifest["pageCount"] == 2
-    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 10
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 11
     assert manifest["startedBy"] == USER.model_dump(by_alias=True)
     assert manifest["document"]["sections"]
     for page in (1, 2):
@@ -366,6 +372,52 @@ def test_an_auto_approved_pdf_is_delivered_not_held() -> None:
     assert "auto-approved" in world.messages(job)
 
 
+def test_a_pdf_with_words_not_proven_is_held_auto_approve_or_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Words the fidelity check could not prove are listed for the reviewer (the manifest, the
+    report, the item's detail) and kept out of the document approval delivers (spec 14.2)."""
+    unproven = [
+        Unproven("page 2: '1' extra", 2, "s-1-scope-of-the-plan#list-2"),
+        Unproven("page 2: 'max' missing", 2, "s-1-scope-of-the-plan#list-2"),
+    ]
+    monkeypatch.setattr(pdf_reader, "check_pdf", lambda *_: unproven)
+    world = World()
+    data, world.layout = two_pages()
+    job = world.upload(data, "reports/two-pages.pdf", auto_approve=True)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Complete(note="held for review")
+    item = world.item(job)
+    assert item.outcome == "awaiting_review"
+    assert item.detail == "The check could not prove 2 words: page 2: '1' extra (and 1 more)"
+    assert world.bridge.requests == []
+    manifest = _manifest(world, job)
+    assert manifest["unproven"] == [
+        {"detail": "page 2: '1' extra", "page": 2, "at": "s-1-scope-of-the-plan#list-2"},
+        {"detail": "page 2: 'max' missing", "page": 2, "at": "s-1-scope-of-the-plan#list-2"},
+    ]
+    assert all(f["code"] != "fidelity_unproven" for f in manifest["document"]["report"])
+    report = json.loads(world.store.get("runs", decomposition_report_key(BATCH_A, item.id)))
+    assert report["flags"][-2:] == [
+        {
+            "code": "fidelity_unproven",
+            "severity": "warning",
+            "at": "s-1-scope-of-the-plan#list-2",
+            "message": "page 2: '1' extra",
+        },
+        {
+            "code": "fidelity_unproven",
+            "severity": "warning",
+            "at": "s-1-scope-of-the-plan#list-2",
+            "message": "page 2: 'max' missing",
+        },
+    ]
+    assert "2 words not proven: held for review" in world.messages(job)
+    assert "auto-approved" not in world.messages(job)
+
+
 def test_word_is_never_held() -> None:
     world = World()
     data = report_docx()
@@ -423,7 +475,7 @@ def test_approved_hold_is_delivered_as_held(monkeypatch: pytest.MonkeyPatch) -> 
     package = request.package
     assert package.document is not None
     assert package.document.model_dump(mode="json", by_alias=True) == held_document
-    assert package.provenance.decomposer_version == 1010  # type: ignore[union-attr]
+    assert package.provenance.decomposer_version == 1011  # type: ignore[union-attr]
     [entry] = world.register.entries()
     item = world.item(job)
     assert (item.outcome, item.register_entry_id) == ("delivering", entry.id)

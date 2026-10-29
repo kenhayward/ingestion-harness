@@ -187,6 +187,14 @@ lowered under a sum and "n" raised over it, both 7-point beside 11-point text, w
 to the check and one to the document ("1n"), and ICH M9's f2 formula was refused ("'1'
 missing").
 
+(2026-10-29) **A line with both a superscript and a subscript.** How far below a line a char may
+be and stay in it is measured from the line's largest chars, not from its topmost char. Measured
+from the topmost, a line of 12-point text with 9-point superscripts raised five points ("#1",
+a table key) and 9-point subscripts lowered a point and a half ("Cmax", "AUC24h") spans six and
+a half points, more than half the line's size: its subscripts made a line of their own, read
+after it, and a clinical protocol's list of pharmacokinetic parameters was refused on page 79
+("'1' extra").
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
@@ -347,6 +355,15 @@ Docling's table grid and spans are the starting point, then:
   heights a hundredth of a point apart, were joined from the highest piece's start, and the
   line under S11 Table A1's first three header cells was lost, so "Cardiovascular" was read into
   the header cell above it and the sink refused a header cell spanning into the body.
+- (2026-10-29) **A header row given as text goes back in its table.** Docling can leave a
+  table's header row out of its grid and give it as a text or heading item of its own, its box
+  running into the table's. Such an item, right before the table on its page, is the table's
+  first row (a header row) when it is one line above the table's first row whose words each lie
+  in one column, in two columns or more, each column's words half an em or more from the next's. On a
+  clinical protocol's list of abbreviations, "Abbreviation  Definition" came as a heading over
+  the table, its words half inside the table's box, and the fidelity check found them moved out
+  of the table. A caption given the same way ("Table 4: Example of a testing approach", over a
+  table in ICH Q13) has word gaps only, and stays a caption.
 - (2026-10-29) **A char inside a table but in no cell goes to the cell nearest it**, measured to
   the cell's box (nought inside it), the nearer centre breaking a tie. It was measured to the
   cell's centre, so a bullet at the left edge of a wide cell went to the narrow cell beside it.
@@ -437,6 +454,16 @@ The decomposition spec's §7 checks apply, adapted to what a PDF can prove. **[c
   caught. **[call]** (2026-10-27)
 - **References** must resolve, as for Word.
 - **Scanned pages** have no independent text to compare with, so they are flagged, not checked.
+
+(2026-10-29, owner's call) **Words not proven are reviewed, not failed.** A PDF whose only
+problems are the first three checks' (a char not accounted for, read twice or not placed; an
+owner's word missing or extra; a word moved out of or into a table) is no longer failed. The
+check lists every problem, one per word, and the PDF is held for review (§14.2) with them. More
+than 25 problems still fail the document, naming the first: that many means a page was read
+badly, not a word. Unresolved references, a Word document's check, and anything else that
+fails a decomposition still fail it. The owner's first clinical protocol failed on one
+subscript ("page 79: '1' extra"); in a clinical document a digit can matter, so a person
+compares each word with its page before anything is delivered.
 
 The PDF checks are their own module beside the Word one. They share its normalisation and the
 contract's text and grid forms (decomposition spec §9). **[call]**
@@ -593,6 +620,16 @@ Rejecting needs a note, so the row says why. **[call]** Approving takes an optio
   `changed_in_target` or `unresolved`, that outcome is recorded at once, as for Word, and nothing
   is held. **[call]** The register decides again, for real, when the approved document is
   delivered, so a change in between (another delivery landing first) is still caught.
+- (2026-10-29, owner's call) A PDF with words the check could not prove (§6) is held, as
+  every PDF is, and also in an **Auto Approve** batch: those words need a person. Each one is
+  listed:
+  - in the held manifest's `unproven` (`at`, the block; `detail`, "page 79: '1' extra"),
+    which the review page lists above the document, its pages dotted;
+  - in the item's report as a `fidelity_unproven` warning;
+  - in the item's detail ("The check could not prove 1 word: page 79: '1' extra").
+
+  They are not put in the delivered document: its flag codes are the bridge contract's, and a
+  sink checks them. **[call]**
 - Every run that would deliver is held, forced runs and re-deliveries included. **[call]** A
   forced run exists to send the document again, and what is sent should have been looked at.
 - Except in a batch with **Auto Approve** on (2026-10-28, the owner's request; off by default):

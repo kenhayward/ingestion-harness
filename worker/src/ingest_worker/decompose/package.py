@@ -42,6 +42,19 @@ class DecompositionFailed(Exception):
 
 
 @dataclass(frozen=True)
+class Unproven:
+    """A word a PDF's fidelity check could not prove (`pdf.fidelity`): a person compares it with
+    its page before the document is delivered (spec 6, 14.2)."""
+
+    #: What is wrong, from its page: "page 79: '1' extra".
+    detail: str
+    #: The 1-based page.
+    page: int
+    #: The block or section it is in, when there is one.
+    at: str | None = None
+
+
+@dataclass(frozen=True)
 class Rel:
     """One relationship from a part's `.rels` file."""
 

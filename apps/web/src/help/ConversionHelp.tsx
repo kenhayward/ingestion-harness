@@ -38,7 +38,8 @@ export function ConversionHelp() {
           an update, even one that is already loaded or a copy of another file. Changes someone made
           in the target are still never overwritten. The <strong>Auto Approve</strong> switch, off
           to start with, delivers each PDF without holding it for review, as if it were approved;
-          re-running the batch&apos;s failed documents keeps it. The batch says it is on.
+          re-running the batch&apos;s failed documents keeps it. The batch says it is on. A PDF with
+          words the check could not prove is held for review even then.
         </li>
       </ul>
 
@@ -130,6 +131,14 @@ export function ConversionHelp() {
         <strong>Approve</strong> delivers it as shown (the note is optional);{' '}
         <strong>Reject</strong> needs a note saying why, and is final. If someone else decided it
         first, the page says so.
+      </p>
+      <p>
+        Each word of a PDF is checked against the page it came from. When a few words can&apos;t be
+        matched (a subscript read as a line of its own, say), the PDF is still held for review, not
+        failed, and its line says how many: <em>The check could not prove 2 words</em>. The review
+        lists them above the document, each with its page; choose one to see the page, and compare
+        it before approving, since approving delivers the document as it is shown. More than 25 such
+        words fail the PDF, as before.
       </p>
 
       <h3>Re-running failed documents</h3>
