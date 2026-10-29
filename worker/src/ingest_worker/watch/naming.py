@@ -4,10 +4,13 @@ source key (held equal to the TypeScript side by packages/shared/test/fixtures/w
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Mapping, Sequence
 
 #: The longest file name the bridge contract accepts (`MAX_SOURCE_NAME`).
 MAX_NAME = 255
+#: The longest source key a conversion item takes (TS `MAX_SOURCE_KEY`).
+MAX_SOURCE_KEY = 1024
 CANDIDATE_SUFFIXES = (".pdf", ".docx")
 
 
@@ -70,3 +73,25 @@ def watch_source_path(field_ids: Sequence[str], source: Mapping[str, str]) -> st
 
 def source_key(path: str, original: str) -> str:
     return f"{path}/{original}"
+
+
+def source_key_problem(key: str) -> str | None:
+    """Port of TS `sourceKeyProblem` (packages/shared/src/conversions.ts): why `key` is not a
+    source key a conversion item (and its `decompose` job's params) takes."""
+    nfc = unicodedata.normalize("NFC", key)
+    if not nfc:
+        return "the source key is empty"
+    if _units(nfc) > MAX_SOURCE_KEY:
+        return f"the source key is longer than {MAX_SOURCE_KEY} characters"
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in nfc):
+        return "the source key holds a control character"
+    if "\\" in nfc:
+        return "the source key holds a backslash: use / between folders"
+    if nfc.startswith("/") or nfc.endswith("/"):
+        return "the source key must not start or end with /"
+    for part in nfc.split("/"):
+        if not part:
+            return "the source key has an empty part (//)"
+        if part in (".", ".."):
+            return f"the source key has a `{part}` part"
+    return None

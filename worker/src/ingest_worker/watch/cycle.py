@@ -39,7 +39,13 @@ from ingest_worker.convert import DOCX_MIME
 from ingest_worker.decompose import items
 from ingest_worker.decompose.job import OUTCOME_LABELS
 from ingest_worker.storage import decomposition_source_key
-from ingest_worker.watch.naming import is_candidate, name_problem, source_key, working_name
+from ingest_worker.watch.naming import (
+    is_candidate,
+    name_problem,
+    source_key,
+    source_key_problem,
+    working_name,
+)
 from ingest_worker.watch.reason import ReasonFacts, advice_for, reason_markdown
 from ingest_worker.watch.sources import OVER_LIMIT, source_problem
 from ingest_worker.watch.store import (
@@ -405,7 +411,13 @@ class _Cycle:
             return None
         candidates = []
         for f in listed:
-            if is_candidate(f.name):
+            key_problem = source_key_problem(source_key(self.w.source_path, f.name))
+            if is_candidate(f.name) and key_problem is not None:
+                # Its conversion item would be refused: left where it is, said once.
+                if (self.w.id, f.name) not in self.deps.noted:
+                    self.deps.noted.add((self.w.id, f.name))
+                    self._event("warn", f"left in the folder: {key_problem}", name=f.name)
+            elif is_candidate(f.name):
                 candidates.append(f)
             elif (
                 name_problem(f.name) is not None

@@ -952,3 +952,15 @@ def test_a_move_the_sink_refuses_while_admitting_is_counted_and_the_next_is_admi
     assert set(w.files("processing")) == {"new.pdf"}
     (stored,) = [p for p in w.store.pickups(w.watch_id) if p.original_name == "old.pdf"]
     assert stored.step == "stored" and stored.move_failures == 1
+
+
+def test_a_file_whose_source_key_the_contract_refuses_is_left_in_the_root_once_noted() -> None:
+    w = World()
+    w.drop("bell\x07.pdf", pdf())
+    w.drop("good.pdf", pdf())
+    for n in range(3):
+        w.cycle(T0 + timedelta(seconds=10 * n))
+    assert set(w.files("")) == {"bell\x07.pdf"}
+    assert set(w.files("processing")) == {"good.pdf"}
+    warned = [e for e in w.store.events if "control character" in e["message"]]
+    assert len(warned) == 1

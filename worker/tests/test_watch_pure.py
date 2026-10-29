@@ -14,6 +14,7 @@ from ingest_worker.convert import DOCX_MAIN_TYPE, is_docx
 from ingest_worker.watch.naming import (
     is_candidate,
     source_key,
+    source_key_problem,
     watch_source_path,
     working_name,
 )
@@ -50,6 +51,13 @@ def test_working_name(case: dict[str, Any]) -> None:
 @pytest.mark.parametrize("case", FIXTURE["sourcePaths"], ids=lambda c: c["expected"] or "empty")
 def test_watch_source_path(case: dict[str, Any]) -> None:
     assert watch_source_path(case["fields"], case["source"]) == case["expected"]
+
+
+@pytest.mark.parametrize(
+    "case", FIXTURE["sourceKeys"], ids=lambda c: f"{c['key'][:12]!r}x{c.get('repeat', 1)}"
+)
+def test_source_key_problem(case: dict[str, Any]) -> None:
+    assert source_key_problem(case["key"] * case.get("repeat", 1)) == case["problem"]
 
 
 def test_source_key() -> None:

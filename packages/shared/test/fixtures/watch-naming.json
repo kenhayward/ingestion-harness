@@ -43,5 +43,22 @@
     { "name": "~$report.pdf", "expected": false },
     { "name": "a~$.pdf", "expected": true },
     { "name": "a.pdf", "expected": true }
+  ],
+  "sourceKeys": [
+    { "key": "Plant A/Intake/a.pdf", "problem": null },
+    { "key": "a.pdf", "problem": null },
+    { "key": "", "problem": "the source key is empty" },
+    { "key": "/a.pdf", "problem": "the source key must not start or end with /" },
+    { "key": "a//b/a.pdf", "problem": "the source key has an empty part (//)" },
+    { "key": "a/../a.pdf", "problem": "the source key has a `..` part" },
+    { "key": "a/./a.pdf", "problem": "the source key has a `.` part" },
+    { "key": "a/b\u0007.pdf", "problem": "the source key holds a control character" },
+    {
+      "key": "a\\b.pdf",
+      "problem": "the source key holds a backslash: use / between folders"
+    },
+    { "key": "x", "repeat": 1024, "problem": null },
+    { "key": "x", "repeat": 1025, "problem": "the source key is longer than 1024 characters" },
+    { "key": "e\u0301", "repeat": 600, "problem": null }
   ]
 }

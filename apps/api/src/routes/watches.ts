@@ -1,5 +1,6 @@
 import { BrowseResultSchema, type ActingUser, type SinkView } from '@ih/bridge-contract';
 import {
+  sourceKeyProblem,
   StopBodySchema,
   WatchBrowseBodySchema,
   WatchCreateBodySchema,
@@ -114,7 +115,13 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
     const stray = Object.keys(source).find((k) => !declared.has(k));
     if (stray) return `${stray} is not a source field of ${w.sink.name}`;
     const missing = w.fields.find((f) => f.required && !(source[f.id] ?? '').trim());
-    return missing ? `${missing.label} is required` : null;
+    if (missing) return `${missing.label} is required`;
+    // Each document's source key is the folder path and its file name (the worker's
+    // `source_key`): a path that cannot make one is refused here, not file by file.
+    const path = watchSourcePath(w.fields, source);
+    if (!path) return 'the source fields name no folder';
+    const keyProblem = sourceKeyProblem(`${path}/file.pdf`);
+    return keyProblem ? `the folder cannot be watched: ${keyProblem}` : null;
   };
 
   /** Lists the folder's root as `user`: what a watch would read. */

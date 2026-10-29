@@ -225,6 +225,22 @@ describe('watched folders: creating', () => {
     expect(stray.json()).toMatchObject({ code: 'bad_source' });
     const missing = await call(c, 'POST', '/watches', body({ source: { folder: 'x' } }));
     expect(missing.json()).toMatchObject({ code: 'bad_source', error: 'Library is required' });
+    // A folder path the documents' source keys could not be made from.
+    const doubled = await call(
+      c,
+      'POST',
+      '/watches',
+      body({ source: { ...SOURCE, folder: 'a//b' } }),
+    );
+    expect(doubled.json()).toMatchObject({
+      code: 'bad_source',
+      error: 'the folder cannot be watched: the source key has an empty part (//)',
+    });
+    const bell = await call(c, 'POST', '/watches', body({ source: { ...SOURCE, folder: 'a' } }));
+    expect(bell.json()).toMatchObject({
+      code: 'bad_source',
+      error: 'the folder cannot be watched: the source key holds a control character',
+    });
     expect((await call(c, 'POST', '/watches', { name: '' })).statusCode).toBe(400);
     await created(c);
     const again = await call(c, 'POST', '/watches', body({ name: 'MANUALS INBOX' }));
