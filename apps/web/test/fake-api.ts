@@ -3,6 +3,8 @@ import { pageOfJobs, type JobPageQuery } from '@ih/shared';
 import type { JobPageParams } from '../src/api/client.js';
 import type {
   Batch,
+  WatchView,
+  WatchSource,
   Item,
   GitHubLinkBody,
   MaintenanceBody,
@@ -842,6 +844,27 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getSegmentation: vi.fn(async () => {
       throw new Error('getSegmentation not stubbed');
     }),
+    listWatches: vi.fn(async () => []),
+    getWatch: vi.fn(async () => {
+      throw new Error('getWatch not stubbed');
+    }),
+    getWatchProblems: vi.fn(async () => ({ count: 0 })),
+    listWatchSources: vi.fn(async () => []),
+    browseWatchSource: vi.fn(async () => ({ nodes: [], nextCursor: null })),
+    testWatch: vi.fn(async () => ({ ok: true as const, files: 0 })),
+    createWatch: vi.fn(async () => {
+      throw new Error('createWatch not stubbed');
+    }),
+    updateWatch: vi.fn(async () => {
+      throw new Error('updateWatch not stubbed');
+    }),
+    stopWatch: vi.fn(async () => {
+      throw new Error('stopWatch not stubbed');
+    }),
+    startWatch: vi.fn(async () => {
+      throw new Error('startWatch not stubbed');
+    }),
+    removeWatch: vi.fn(async () => undefined),
     listConversionTargets: vi.fn(async () => []),
     listConversionBatches: vi.fn(async () => []),
     createConversionBatch: vi.fn(async () => {
@@ -1293,6 +1316,61 @@ export function termDetail(o: Partial<TermDetail> = {}): TermDetail {
     asRange: [],
     concepts: [],
     shapes: [],
+    ...o,
+  };
+}
+
+/** A watched folder as the ledger shows it (running, nothing waiting). */
+export function watchView(o: Partial<WatchView> = {}): WatchView {
+  return {
+    id: '9b3e5c10-6d1a-4e77-8f20-2a4c6e8b0d11',
+    name: 'Inbox',
+    targetId: 'documents',
+    source: { space: 'SPACE-1', folder: 'Inbox' },
+    force: false,
+    autoApprove: true,
+    reasonFiles: true,
+    sleepSeconds: 30,
+    admit: 10,
+    state: 'running',
+    health: 'running',
+    problem: null,
+    sourcePath: 'SPACE-1/Inbox',
+    runAs: { id: 'u1', name: 'Ken', email: 'ken@example.com' },
+    queue: { waiting: 0, inProgress: 0 },
+    throughput: { day: { delivered: 0, failed: 0 }, total: { delivered: 0, failed: 0 } },
+    lastPickupAt: null,
+    batchId: null,
+    createdAt: '2026-10-29T08:00:00.000Z',
+    ...o,
+  };
+}
+
+/** A target a watch may name: a sink with a space and a folder to pick. */
+export function watchSource(o: Partial<WatchSource> = {}): WatchSource {
+  return {
+    targetId: 'documents',
+    label: 'Controlled documents',
+    sinkId: 'docs',
+    instanceId: null,
+    sourceFields: [
+      {
+        id: 'space',
+        label: 'Space',
+        kind: 'fixed',
+        required: true,
+        overridable: false,
+        browse: true,
+      },
+      {
+        id: 'folder',
+        label: 'Folder',
+        kind: 'fixed',
+        required: true,
+        overridable: false,
+        browse: false,
+      },
+    ],
     ...o,
   };
 }

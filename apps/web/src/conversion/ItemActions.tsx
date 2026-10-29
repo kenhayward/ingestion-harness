@@ -71,6 +71,15 @@ export const canDetach = (item: Item) =>
     item.registerEntryId !== null &&
     !item.resolution);
 
+/**
+ * Whether the row's menu has actions of the item's own below its line: with `watched`, the
+ * batch's watch has force-load, redeliver and reload refused.
+ */
+export const hasItemActions = (item: Item, watched: boolean) =>
+  (!watched && (canForce(item) || canRedeliver(item) || canReload(item))) ||
+  canResolve(item) ||
+  canDetach(item);
+
 const APPLIES: Record<DialogKind, (item: Item) => boolean> = {
   redeliver: canRedeliver,
   detach: canDetach,
@@ -106,6 +115,7 @@ export function ItemActions({
   onOpen,
   onResult,
   menu = false,
+  watched = false,
 }: {
   api: Api;
   item: Item;
@@ -113,6 +123,8 @@ export function ItemActions({
   onResult: (result: ActionResult) => void;
   /** As items of a row's menu: named by their words alone, the first after a line. */
   menu?: boolean;
+  /** The item is in a watched folder's batch: only detach and accept apply (code `watched`). */
+  watched?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   /** Set from the first click until the request settles, before a render can disable it. */
@@ -136,7 +148,7 @@ export function ItemActions({
   const named = (name: string) => (menu ? { role: 'menuitem' as const } : { 'aria-label': name });
   return (
     <>
-      {canForce(item) && (
+      {!watched && canForce(item) && (
         <button
           type="button"
           disabled={busy}
@@ -146,7 +158,7 @@ export function ItemActions({
           Force-load
         </button>
       )}
-      {canRedeliver(item) && (
+      {!watched && canRedeliver(item) && (
         <button
           type="button"
           disabled={busy}
@@ -156,7 +168,7 @@ export function ItemActions({
           Redeliver
         </button>
       )}
-      {canReload(item) && (
+      {!watched && canReload(item) && (
         <button
           type="button"
           disabled={busy}

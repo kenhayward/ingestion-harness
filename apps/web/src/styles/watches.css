@@ -1,0 +1,130 @@
+/* Watched folders (admins): the ledger, the detail beside it and the watch dialog. */
+.watches-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.watches-layout.with-detail {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+@media (max-width: 1100px) {
+  .watches-layout.with-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.watches-ledger {
+  padding: 0;
+  overflow-x: auto;
+}
+.watch-list {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+.watch-list th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ih-border);
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.watch-list td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ih-border-soft);
+  vertical-align: top;
+  font-size: var(--ih-text-md);
+}
+.watch-list tr:last-child td {
+  border-bottom: 0;
+}
+.watch-list tr[aria-selected='true'] td {
+  background: var(--ih-sel-row);
+}
+.watch-list .act-cell {
+  padding: 4px;
+  text-align: right;
+}
+.watch-problem {
+  display: block;
+  margin-top: 2px;
+  color: var(--ih-danger-fg);
+}
+
+.watch-detail {
+  position: static;
+}
+.watch-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.watch-detail-head h2 {
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.watch-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.watch-events li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ih-border-soft);
+  font-size: var(--ih-text-sm);
+}
+.watch-event-message {
+  overflow-wrap: anywhere;
+}
+
+.watch-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.watch-form {
+  display: grid;
+  gap: 12px;
+}
+.watch-field-row {
+  display: flex;
+  gap: 8px;
+}
+.watch-field-row input {
+  flex: 1;
+  min-width: 0;
+}
+.watch-note {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.watch-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.watch-test-ok {
+  color: var(--ih-ok-fg);
+}
+.stop-modes {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.stop-modes label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.stop-modes label span {
+  display: grid;
+  gap: 2px;
+}

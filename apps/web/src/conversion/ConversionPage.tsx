@@ -177,6 +177,7 @@ function EarlierBatches({ api }: { api: Api }) {
                     {target ? `${target.label} · ${target.sinkName}` : b.targetId}
                     {b.force && <span className="force-tag">Force-load</span>}
                     {b.autoApprove && <span className="force-tag">Auto Approve</span>}
+                    {b.watch && <span className="force-tag">Watched: {b.watch.name}</span>}
                   </td>
                   <td className="docs-cell">{plural(b.itemCount, 'doc')}</td>
                   <td className="outcomes-cell">
