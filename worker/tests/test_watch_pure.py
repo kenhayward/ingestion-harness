@@ -171,7 +171,7 @@ def test_reason_markdown_without_a_link_or_detail() -> None:
 
 def test_reason_names_no_vendor() -> None:
     text = reason_markdown(FACTS).lower()
-    for word in ("s3", "aws", "seaweed", "sharepoint", "bridge", "gotenberg"):
+    for word in ("s3", "aws", "seaweed", "sink", "endpoint", "bridge", "gotenberg"):
         assert word not in text
 
 
