@@ -2329,6 +2329,11 @@
                                 },
                                 "label": {
                                   "type": "string"
+                                },
+                                "lanes": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 64
                                 }
                               },
                               "required": [
