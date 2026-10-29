@@ -281,11 +281,20 @@ or review step.
   its outcome, its link in the target and its report. Each row offers force-load, redeliver,
   detach or accept the target's state where they apply. Earlier batches are listed newest first.
   The view polls while anything is unfinished.
+- **Lanes.** A target's tenant (its sink and instance) takes only so many documents at once, as
+  the sink's catalog says (`publish_targets.lanes`, migration `202610291300_decomposition_lanes`; a
+  sink that says nothing gets one). A `decompose` job decomposes the file, then takes a lane
+  (`decompose/lanes.py`) before handing the package to the bridge, so the worker reads the next
+  document while the last is delivered. A document that finds none is `waiting_to_deliver`; the
+  dispatcher (`decompose/dispatch.py`, every 5 s and after each job) gives freed lanes to waiting
+  documents, batches taking turns, and queues each a `waited` run that delivers the stored copy.
+  An item holds its lane while `decomposing`, `waiting_to_deliver` or `delivering`.
 - **End to end.** `apps/api/test/integration/conversion-e2e-pg.test.ts` runs batches from the
   API's routes through the worker (`worker/tests/conversion_e2e_worker.py`, with a layout
   analyser answering the PDF fixtures with their saved Docling output) and the bridge to the fake
-  document sink. A batch of two PDFs and a Word file holds both PDFs and creates the Word
-  document; one PDF is then approved (created, decomposer version 1001, its held files gone) and
+  document sink, with one lane for the target: three Word files take turns (at most one holds a
+  lane, at least one waits, all are created). A batch of two PDFs and a Word file holds both PDFs and creates the Word
+  document; one PDF is then approved (created, decomposer version 1011, its held files gone) and
   the other rejected (its held files gone, nothing sent).
 
 ## Access
