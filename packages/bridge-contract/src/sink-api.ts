@@ -51,13 +51,27 @@ export function packageVersionFor(version: DescribeContractVersion): ContractVer
   return version === 1 ? 1 : 2;
 }
 
+/** The most deliveries one instance may take at once. */
+export const MAX_LANES = 64;
+
+/**
+ * One place a sink delivers to. `lanes` is how many deliveries it takes at once (default 1);
+ * it is independent of `contractVersion`.
+ */
+export const InstanceSchema = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  lanes: z.number().int().min(1).max(MAX_LANES).optional(),
+});
+export type Instance = z.infer<typeof InstanceSchema>;
+
 /** What a sink says about itself (`GET /describe`). */
 export const SinkDescribeSchema = z
   .strictObject({
     name: z.string(),
     contractVersion: DescribeContractVersion,
     connectionKind: z.enum(['shared', 'personal']),
-    instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+    instances: z.array(InstanceSchema),
     credentialFields: z.array(CredentialFieldSchema),
     destinationFields: z.array(DestinationFieldSchema),
     capabilities: CapabilitiesSchema,
@@ -214,3 +228,8 @@ export const SinkJobStatusSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('failed'), error: BridgeErrorSchema }),
 ]);
 export type SinkJobStatus = z.infer<typeof SinkJobStatusSchema>;
+
+/** How many deliveries an instance takes at once: its `lanes`, else 1 (also for an unknown one). */
+export function lanesOf(d: { instances: readonly Instance[] }, instanceId: string): number {
+  return d.instances.find((i) => i.id === instanceId)?.lanes ?? 1;
+}
