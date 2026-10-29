@@ -57,3 +57,24 @@ def test_layout_url_is_optional(value: str | None, expected: str | None) -> None
 def test_layout_fallback_url_is_optional(value: str | None, expected: str | None) -> None:
     env = dict(REQUIRED) if value is None else {**REQUIRED, "LAYOUT_FALLBACK_URL": value}
     assert Settings.from_env(env).layout_fallback_url == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("https://studio.example.com", "https://studio.example.com"),
+        ("https://studio.example.com/", "https://studio.example.com"),
+        ("https://studio.example.com//", "https://studio.example.com"),
+    ],
+)
+def test_app_public_url_is_optional_and_trimmed(value: str | None, expected: str | None) -> None:
+    env = dict(REQUIRED) if value is None else {**REQUIRED, "APP_PUBLIC_URL": value}
+    assert Settings.from_env(env).app_public_url == expected
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 50.0), ("8", 8.0)])
+def test_max_upload_mb_defaults_to_the_apis(value: str | None, expected: float) -> None:
+    env = dict(REQUIRED) if value is None else {**REQUIRED, "MAX_UPLOAD_MB": value}
+    assert Settings.from_env(env).max_upload_mb == expected

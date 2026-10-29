@@ -1,0 +1,42 @@
+{
+  "workingNames": [
+    { "original": "report.docx", "taken": [], "expected": "report.docx" },
+    { "original": "report.docx", "taken": ["report.docx"], "expected": "report_1.docx" },
+    {
+      "original": "report.docx",
+      "taken": ["report.docx", "report_1.docx"],
+      "expected": "report_2.docx"
+    },
+    {
+      "original": "archive.tar.pdf",
+      "taken": ["archive.tar.pdf"],
+      "expected": "archive.tar_1.pdf"
+    },
+    { "original": "Scan.PDF", "taken": ["Scan.PDF"], "expected": "Scan_1.PDF" }
+  ],
+  "sourcePaths": [
+    {
+      "fields": ["site", "area"],
+      "source": { "site": "/Plant A/", "area": "Intake" },
+      "expected": "Plant A/Intake"
+    },
+    { "fields": ["site", "area"], "source": { "site": "Plant A" }, "expected": "Plant A" },
+    { "fields": ["site"], "source": { "site": "  ", "other": "x" }, "expected": "" },
+    { "fields": [], "source": { "site": "x" }, "expected": "" },
+    { "fields": ["a", "b"], "source": { "b": "two", "a": "one" }, "expected": "one/two" }
+  ],
+  "candidates": [
+    { "name": "a.PDF", "expected": true },
+    { "name": "a.docx", "expected": true },
+    { "name": "a.DocX", "expected": true },
+    { "name": "a.doc", "expected": false },
+    { "name": "a.pdf.tmp", "expected": false },
+    { "name": ".hidden.pdf", "expected": false },
+    { "name": "", "expected": false },
+    { "name": "..", "expected": false },
+    { "name": "dir/a.pdf", "expected": false },
+    { "name": "dir\\a.pdf", "expected": false },
+    { "name": "a\u0000.pdf", "expected": false },
+    { "name": "a.pdf", "expected": true }
+  ]
+}
