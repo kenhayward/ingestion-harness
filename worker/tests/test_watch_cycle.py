@@ -788,3 +788,49 @@ def test_a_refusal_is_not_recorded_while_the_watch_is_not_running(state: str) ->
     # No item, no finish; the file stays in the folder root.
     assert w.store.items == {} and w.store.finishes == []
     assert set(w.files("")) == {"x.pdf"} and w.files("failed") == {}
+
+
+def _interrupted_before_admit() -> World:
+    """A file moved to processing/ whose admit never ran (the pickup is `moved`)."""
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.store.fail_next["admit"] = RuntimeError("the database is down")
+    with pytest.raises(RuntimeError):
+        w.cycle(T0 + timedelta(seconds=10))
+    assert w.store.pickups(w.watch_id)[0].step == "moved"
+    return w
+
+
+def test_a_draining_watch_still_admits_a_pickup_taken_before_the_drain() -> None:
+    w = _interrupted_before_admit()
+    w.store.set_state(w.watch_id, "draining")
+    assert w.cycle(T0 + timedelta(seconds=20)).admitted == 1
+    assert len(w.store.items) == 1 and len(w.store.jobs) == 1
+
+
+def test_a_stopped_watch_lets_a_pickup_taken_before_the_stop_go() -> None:
+    w = _interrupted_before_admit()
+    under_way = w.store.watch(w.watch_id)  # a cycle that began while running
+    assert under_way is not None
+    w.store.set_state(w.watch_id, "stopped")
+    assert run_cycle(under_way, w.deps, T0 + timedelta(seconds=20)).admitted == 0
+    assert w.store.items == {} and w.store.jobs == []
+    assert w.store.pickups(w.watch_id) == []
+    assert set(w.files("processing")) == {"a.pdf"}  # left where it is
+
+
+@pytest.mark.parametrize("state", ["stopped", "draining"])
+def test_refuse_answers_for_a_pickup_already_refusing_whatever_the_state(state: str) -> None:
+    w = World()
+    w.drop("x.pdf", b"not a document")
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    (pickup,) = w.store.pickups(w.watch_id)
+    assert pickup.step == "refusing" and pickup.item_id
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None
+    w.store.set_state(w.watch_id, state)  # type: ignore[arg-type]
+    again = w.store.refuse(watch, pickup, "x.pdf", "r", "sha", "k", T0)
+    assert again == pickup.item_id and len(w.store.items) == 1

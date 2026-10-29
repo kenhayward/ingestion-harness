@@ -150,10 +150,13 @@ class WatchStore(Protocol):
         content_sha256: str,
         source_key: str,
         now: datetime,
+        *,
+        fresh: bool = False,
     ) -> bool:
         """In one transaction: the watch's batch, the watched item, its `decompose` job, the
-        pickup `queued`. A pickup no longer `stored` or `moved` is left alone (False). Does
-        nothing unless the watch is `running` now (the pickup is abandoned: False)."""
+        pickup `queued`. A pickup no longer `stored` or `moved` is left alone (False). A stopped
+        watch admits nothing (the pickup is abandoned: False); a draining one admits a pickup
+        taken before the drain, not a `fresh` candidate."""
         ...
 
     def refuse(
@@ -325,13 +328,13 @@ class PgWatchStore:
                     "UPDATE decomposition_items SET filename = %s WHERE id = %s", (row[1], row[0])
                 )
 
-    def _running(self, watch: Watch) -> bool:
-        """Inside a transaction: lock the watch and say whether it is `running` now. The watch
-        a cycle holds may be older than a Stop that has committed since."""
+    def _state(self, watch: Watch) -> str | None:
+        """Inside a transaction: lock the watch and give its state now. The watch a cycle holds
+        may be older than a Stop that has committed since."""
         row = self._conn.execute(
             "SELECT state FROM watched_folders WHERE id = %s FOR UPDATE", (watch.id,)
         ).fetchone()
-        return row is not None and row[0] == "running"
+        return None if row is None else str(row[0])
 
     def _ensure_batch(self, watch: Watch) -> str:
         """Inside a transaction: lock the watch and return its batch, creating one if none."""
@@ -375,10 +378,15 @@ class PgWatchStore:
         content_sha256: str,
         source_key: str,
         now: datetime,
+        *,
+        fresh: bool = False,
     ) -> bool:
         with self._conn.transaction():
-            if not self._running(watch):
-                # Stopped or draining since the cycle began: nothing new is admitted, and the
+            state = self._state(watch)
+            # A pickup taken before a drain began runs to the end with the rest; a new
+            # candidate is admitted only while running.
+            if not (state == "running" or (state == "draining" and not fresh)):
+                # Stopped (or a new candidate while draining): nothing new is admitted, and the
                 # file is let go (a stop leaves files in `processing/`, never taken again).
                 self._conn.execute(
                     """UPDATE watch_pickups SET step = 'abandoned', updated_at = now()
@@ -449,15 +457,17 @@ class PgWatchStore:
     ) -> str:
         item_id = str(uuid.uuid4())
         with self._conn.transaction():
-            if not self._running(watch):
-                return ""  # the file stays in the root
-            batch_id = self._ensure_batch(watch)
+            state = self._state(watch)
             row = self._conn.execute(
                 "SELECT step, item_id::text FROM watch_pickups WHERE id = %s FOR UPDATE",
                 (pickup.id,),
             ).fetchone()
             if row is None or row[0] != "seen":
+                # Already refusing (or past it): its item, whatever the watch's state now.
                 return str(row[1]) if row and row[1] else ""
+            if state != "running":
+                return ""  # a new refusal only while running: the file stays in the root
+            batch_id = self._ensure_batch(watch)
             self._conn.execute(
                 """INSERT INTO decomposition_items
                      (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,

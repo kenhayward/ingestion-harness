@@ -362,7 +362,7 @@ class _Cycle:
             )
         self._file_refused(p)
 
-    def _queue(self, p: Pickup, sha: str) -> None:
+    def _queue(self, p: Pickup, sha: str, *, fresh: bool = False) -> None:
         assert p.item_id and p.object_key and p.working_name
         if self.store.admit(
             self.w,
@@ -373,6 +373,7 @@ class _Cycle:
             sha,
             source_key(self.w.source_path, p.original_name),
             self.now,
+            fresh=fresh,
         ):
             self.admitted += 1
             self._event("info", f"picked up {p.original_name} as {p.working_name}")
@@ -484,7 +485,7 @@ class _Cycle:
         p = self._from_root(p, PROCESSING)
         self.store.advance(p.id, "moved")
         p = replace(p, step="moved")
-        self._queue(p, sha256_of(data))  # the bytes in hand: no read back
+        self._queue(p, sha256_of(data), fresh=True)  # the bytes in hand: no read back
         return p
 
     def _refuse(self, p: Pickup, working: str, reason: str, sha: str) -> Pickup:

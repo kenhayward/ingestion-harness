@@ -1505,10 +1505,13 @@ class MemoryWatchStore:
         content_sha256: str,
         source_key: str,
         now: datetime,
+        *,
+        fresh: bool = False,
     ) -> str:
         self._fail("admit")
         current = self._pickups[pickup.id]
-        if self.watched[watch.id]["state"] != "running":
+        state = self.watched[watch.id]["state"]
+        if not (state == "running" or (state == "draining" and not fresh)):
             if current.step in ("stored", "moved"):
                 self._pickups[pickup.id] = replace(current, step="abandoned")
             return False
@@ -1553,10 +1556,10 @@ class MemoryWatchStore:
     ) -> str:
         self._fail("refuse")
         current = self._pickups[pickup.id]
-        if self.watched[watch.id]["state"] != "running":
-            return ""
         if current.step != "seen":
             return current.item_id or ""
+        if self.watched[watch.id]["state"] != "running":
+            return ""
         item_id = str(uuid.uuid4())
         batch_id = self.batch_of(watch)
         self._item(

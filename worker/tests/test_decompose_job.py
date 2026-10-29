@@ -1915,6 +1915,25 @@ def test_a_waited_run_whose_job_ended_undecided_is_failed_and_its_lane_freed() -
     assert world.queue.waited_items == [world.item(third).id]
 
 
+def test_a_converting_item_without_a_lane_whose_job_was_cancelled_is_failed_and_its_copy_deleted() -> (
+    None
+):
+    """Stop now cancels the job of an item a worker was converting: nobody is left to fail it,
+    so the sweep does, lane or not."""
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    item = world.item(job)
+    world.items.items[item.id] = replace(item, outcome="decomposing")
+    world.queue.ended_lanes = [EndedLane(item.id, item.batch_id, "cancelled", None)]
+
+    _dispatch(world)
+
+    ended = world.item(job)
+    assert ended.outcome == "failed"
+    assert ended.detail == "its conversion job ended (cancelled) before the document was delivered"
+    assert _held(world, job) == []
+
+
 def test_an_ended_lane_the_item_left_meanwhile_is_left_alone() -> None:
     world = World()
     job = world.upload(report_docx(), "r1.docx")

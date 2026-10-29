@@ -29,6 +29,10 @@ Level = Literal["debug", "info", "warn", "error"]
 #: (it queues the job right after) before another counts it an orphan, in seconds.
 ORPHAN_GRACE_S = 30
 
+#: How long a `decomposing` item without a lane is left after its job ended, in seconds: a worker
+#: past its last cancel check may still decide it.
+ENDED_JOB_GRACE_S = 30
+
 #: The job statuses after which a `decompose` run decides nothing more.
 ENDED_JOB_STATUSES = ("succeeded", "failed", "cancelled", "needs_review", "rejected")
 
@@ -224,8 +228,10 @@ class JobQueue(Protocol):
         ...
 
     def lanes_of_ended_jobs(self) -> list[EndedLane]:
-        """Items holding a lane that nothing will decide any more: `decomposing` while their job
-        has ended (or is gone), or `waiting_to_deliver` while their `waited` run has ended.
+        """Items that nothing will decide any more: holding a lane, `decomposing` while their job
+        has ended (or is gone), or `waiting_to_deliver` while their `waited` run has ended; or,
+        lane or not, `decomposing` while their job ended more than `ENDED_JOB_GRACE_S` ago (a
+        Stop now cancelled it).
         Never a `delivering` item: its job ends once the bridge has it, and the API settles it.
         The dispatcher fails them, freeing their lanes."""
         ...
@@ -645,13 +651,19 @@ class PgJobQueue:
             """SELECT i.id::text, i.batch_id::text, j.status::text, j.error
                  FROM decomposition_items i
                  LEFT JOIN jobs j ON j.id = i.job_id
-                WHERE i.lane_claimed_at IS NOT NULL
-                  AND ((i.outcome = 'decomposing'
-                        AND (j.id IS NULL OR j.status::text = ANY(%(ended)s)))
-                    OR (i.outcome = 'waiting_to_deliver'
-                        AND j.params->>'waited' = 'true' AND j.status::text = ANY(%(ended)s)))
-                ORDER BY i.lane_claimed_at, i.id""",
-            {"ended": list(ENDED_JOB_STATUSES)},
+                WHERE (i.lane_claimed_at IS NOT NULL
+                       AND ((i.outcome = 'decomposing'
+                             AND (j.id IS NULL OR j.status::text = ANY(%(ended)s)))
+                         OR (i.outcome = 'waiting_to_deliver'
+                             AND j.params->>'waited' = 'true'
+                             AND j.status::text = ANY(%(ended)s))))
+                   -- No lane, but the job ended (a Stop now cancelled it): nobody is left to
+                   -- fail the item. The grace spares a worker past its last cancel check.
+                   OR (i.lane_claimed_at IS NULL AND i.outcome = 'decomposing'
+                       AND j.status::text = ANY(%(ended)s)
+                       AND j.updated_at < now() - make_interval(secs => %(grace)s))
+                ORDER BY i.lane_claimed_at NULLS LAST, i.id""",
+            {"ended": list(ENDED_JOB_STATUSES), "grace": ENDED_JOB_GRACE_S},
         ).fetchall()
         return [EndedLane(str(r[0]), str(r[1]), r[2], r[3]) for r in rows]
 

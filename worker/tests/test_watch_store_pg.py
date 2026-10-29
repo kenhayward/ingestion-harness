@@ -402,3 +402,65 @@ def test_a_cycle_under_way_when_the_watch_stops_admits_and_refuses_nothing(
         ).fetchall()
     )
     assert folder(bridge, "failed") == set()
+
+
+def _moved_but_not_admitted(db: Db, bridge: FakeBridge, d: WatchDeps, watch_id: str) -> datetime:
+    """A file moved to processing/ whose admit failed once (the pickup is `moved`)."""
+    drop(bridge, db, "a.pdf", PDF)
+    t0 = datetime.now(UTC)
+    first = d.store.watch(watch_id)
+    assert first is not None
+    run_cycle(first, d, t0)
+    real = d.store.admit
+
+    def failing(*args: Any, **kwargs: Any) -> bool:
+        raise RuntimeError("the database is down")
+
+    d.store.admit = failing  # type: ignore[method-assign]
+    second = d.store.watch(watch_id)
+    assert second is not None
+    with pytest.raises(RuntimeError):
+        run_cycle(second, d, t0 + timedelta(seconds=10))
+    d.store.admit = real  # type: ignore[method-assign]
+    assert db.one("SELECT step FROM watch_pickups WHERE watch_id = %s", watch_id) == "moved"
+    return t0
+
+
+def test_a_draining_watch_admits_a_pickup_taken_before_the_drain(db: Db) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    t0 = _moved_but_not_admitted(db, bridge, d, watch_id)
+    db.conn.execute("UPDATE watched_folders SET state = 'draining' WHERE id = %s", (watch_id,))
+    w = d.store.watch(watch_id)
+    assert w is not None
+    assert run_cycle(w, d, t0 + timedelta(seconds=20)).admitted == 1
+    assert (
+        db.one(
+            "SELECT count(*) FROM decomposition_items i JOIN decomposition_batches b "
+            "ON b.id = i.batch_id WHERE b.watch_id = %s",
+            watch_id,
+        )
+        == 1
+    )
+
+
+def test_a_stopped_watch_lets_a_taken_pickup_go_and_leaves_its_file(db: Db) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    t0 = _moved_but_not_admitted(db, bridge, d, watch_id)
+    under_way = d.store.watch(watch_id)
+    assert under_way is not None
+    db.conn.execute("UPDATE watched_folders SET state = 'stopped' WHERE id = %s", (watch_id,))
+    assert run_cycle(under_way, d, t0 + timedelta(seconds=20)).admitted == 0
+    assert db.one("SELECT step FROM watch_pickups WHERE watch_id = %s", watch_id) == "abandoned"
+    assert folder(bridge, "processing") == {"a.pdf"}
+    assert (
+        db.one(
+            "SELECT count(*) FROM jobs j JOIN decomposition_items i ON i.job_id = j.id "
+            "JOIN decomposition_batches b ON b.id = i.batch_id WHERE b.watch_id = %s",
+            watch_id,
+        )
+        == 0
+    )

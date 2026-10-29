@@ -282,6 +282,19 @@ class PgWorld:
         )
         return item_id
 
+    def unclaimed(self, batch: str, job_status: str, *, age_s: float = 600) -> str:
+        """A `decomposing` item holding no lane, its job in `job_status` since `age_s` seconds."""
+        item_id = self.holding(batch, "decomposing", job_status)
+        self.conn.execute(
+            "UPDATE decomposition_items SET lane_claimed_at = NULL WHERE id = %s", (item_id,)
+        )
+        self.conn.execute(
+            """UPDATE jobs SET updated_at = now() - make_interval(secs => %s)
+                WHERE id = (SELECT job_id FROM decomposition_items WHERE id = %s)""",
+            (age_s, item_id),
+        )
+        return item_id
+
     def item(self, item_id: str) -> tuple[str, bool, str | None]:
         row = self.conn.execute(
             """SELECT outcome, lane_claimed_at IS NOT NULL, job_id::text
@@ -600,3 +613,39 @@ def test_a_failing_lane_round_never_stops_the_worker(tmp_path: Path) -> None:
         ),
     )
     assert lane_round(deps, FakeQueue()) == 0
+
+
+@pytest.mark.integration
+def test_pg_a_decomposing_item_without_a_lane_whose_job_ended_is_swept(pg: PgWorld) -> None:
+    """A stop now cancels the job of a converting item: with no worker left to fail it, the
+    sweep does, lane or not. A job that ended only now is left a grace: its worker may be past
+    its last cancel check and about to deliver."""
+    batch = pg.batch()
+    cancelled = pg.unclaimed(batch, "cancelled")
+    failed = pg.unclaimed(batch, "failed")
+    just_now = pg.unclaimed(batch, "cancelled", age_s=1)
+    pg.unclaimed(batch, "running")
+    pg.unclaimed(batch, "queued")
+    queue = PgJobQueue(pg.url)
+    try:
+        mine = {e.item_id: e for e in queue.lanes_of_ended_jobs() if e.batch_id == batch}
+        assert set(mine) == {cancelled, failed}
+        assert just_now not in mine
+        store = MemoryObjectStore()
+        dispatch_lanes(
+            PgLaneStore(pg.conn),
+            pg.targets(),
+            queue,
+            PgItemStore(pg.conn),
+            store=store,
+            runs_bucket="runs",
+        )
+        assert pg.item(cancelled)[0] == "failed" and pg.item(failed)[0] == "failed"
+        assert pg.item(just_now)[0] == "decomposing"
+        row = pg.conn.execute(
+            "SELECT detail FROM decomposition_items WHERE id = %s", (cancelled,)
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "its conversion job ended (cancelled) before the document was delivered"
+    finally:
+        queue.close()
