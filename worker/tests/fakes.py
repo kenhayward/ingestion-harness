@@ -1508,6 +1508,10 @@ class MemoryWatchStore:
     ) -> str:
         self._fail("admit")
         current = self._pickups[pickup.id]
+        if self.watched[watch.id]["state"] != "running":
+            if current.step in ("stored", "moved"):
+                self._pickups[pickup.id] = replace(current, step="abandoned")
+            return False
         if current.step not in ("stored", "moved"):
             return False
         batch_id = self.batch_of(watch)
@@ -1549,6 +1553,8 @@ class MemoryWatchStore:
     ) -> str:
         self._fail("refuse")
         current = self._pickups[pickup.id]
+        if self.watched[watch.id]["state"] != "running":
+            return ""
         if current.step != "seen":
             return current.item_id or ""
         item_id = str(uuid.uuid4())

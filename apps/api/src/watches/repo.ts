@@ -71,9 +71,12 @@ export interface WatchRepo {
    * Stops pickups. `drain`: only a running watch, which shows *Draining* until its last item
    * finishes. `now`: a running or draining watch becomes stopped at once, and the items that
    * have not reached the bridge (`queued`, `decomposing`, `waiting_to_deliver`,
-   * `awaiting_review`) are cancelled in the same transaction: their jobs `cancelled`, the items
-   * `failed` with `WATCH_CANCELLED_DETAIL` and counted as failed finishes, their pickups
-   * `abandoned`. Items `delivering` finish on their own and are not moved.
+   * `awaiting_review`) are cancelled in the same transaction. An item no worker holds is
+   * `failed` with `WATCH_CANCELLED_DETAIL`, counted as a failed finish, its pickup `abandoned`,
+   * and returned in `cancelled`. An item whose job is running only has the job cancelled: the
+   * worker fails it when it notices, or delivers it if it was past its last check, so a
+   * document the bridge accepted is never recorded as cancelled. Items `delivering` finish on
+   * their own and are not moved.
    */
   stop(id: string, mode: StopBody['mode']): Promise<StopResult>;
   /** How many watches name the target (it is locked while any does). */
@@ -243,7 +246,13 @@ export class MemoryWatchRepo implements WatchRepo {
     h.view = { ...h.view, state: 'stopped' };
     const cancelled: CancelledItem[] = [];
     for (const i of this.unfinished(h).filter((x) => NOT_AT_BRIDGE.includes(x.outcome))) {
-      if (i.jobStatus === 'queued' || i.jobStatus === 'running') i.jobStatus = 'cancelled';
+      if (i.jobStatus === 'running') {
+        // A worker holds it, and may be past its last cancel check: only the job is cancelled,
+        // and the worker decides the item (it fails it when it notices).
+        i.jobStatus = 'cancelled';
+        continue;
+      }
+      if (i.jobStatus === 'queued') i.jobStatus = 'cancelled';
       i.outcome = 'failed';
       i.detail = WATCH_CANCELLED_DETAIL;
       i.pickup = 'abandoned';
@@ -289,7 +298,7 @@ export class MemoryWatchRepo implements WatchRepo {
     const h = this.held.get(id)!;
     h.view = { ...h.view, queue: { ...h.view.queue, waiting } };
   }
-  addUnfinished(id: string, outcome: string): string {
+  addUnfinished(id: string, outcome: string, jobStatus?: string): string {
     const itemId = randomUUID();
     this.held.get(id)!.items.push({
       itemId,
@@ -297,8 +306,12 @@ export class MemoryWatchRepo implements WatchRepo {
       outcome,
       batchId: `batch-of-${id}`,
       detail: null,
-      jobStatus:
-        outcome === 'queued' ? 'queued' : outcome === 'decomposing' ? 'running' : 'succeeded',
+      jobStatus: (jobStatus ??
+        (outcome === 'queued'
+          ? 'queued'
+          : outcome === 'decomposing'
+            ? 'running'
+            : 'succeeded')) as HeldItem['jobStatus'],
       pickup: 'queued',
     });
     return itemId;

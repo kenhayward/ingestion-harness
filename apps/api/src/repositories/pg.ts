@@ -1536,12 +1536,21 @@ export class PgRepo implements IngestionRepo {
         outcome: ItemOutcome;
         object_key: string | null;
         report_key: string | null;
+        unfiled: boolean;
       }>(
-        `SELECT id, outcome, object_key, report_key FROM decomposition_items
+        // `unfiled`: a watched document whose file the watch has not filed away yet. Its next
+        // look files it (and counts it), so deleting the item first would strand the file.
+        `SELECT id, outcome, object_key, report_key,
+                EXISTS (SELECT 1 FROM watch_pickups k
+                         WHERE k.item_id = decomposition_items.id
+                           AND k.step NOT IN ('finished', 'abandoned')) AS unfiled
+           FROM decomposition_items
           WHERE batch_id = $1 ORDER BY id FOR UPDATE`,
         [id],
       );
-      const unfinished = items.rows.filter((r) => RUNNING_OUTCOMES.includes(r.outcome));
+      const isUnfinished = (r: { outcome: ItemOutcome; unfiled: boolean }) =>
+        RUNNING_OUTCOMES.includes(r.outcome) || r.unfiled;
+      const unfinished = items.rows.filter(isUnfinished);
       const watched = locked.rows[0].watch_id !== null;
       if (unfinished.length > 0 && !watched) {
         return { ok: false, reason: 'running', running: unfinished.length };
@@ -1549,7 +1558,7 @@ export class PgRepo implements IngestionRepo {
       if (watched && unfinished.length > 0) {
         // A watch's batch is long-lived: its finished documents go, the ones still under way
         // stay with their batch (the watch's counters are the watch's own).
-        const finished = items.rows.filter((r) => !RUNNING_OUTCOMES.includes(r.outcome));
+        const finished = items.rows.filter((r) => !isUnfinished(r));
         await client.query('DELETE FROM decomposition_items WHERE id = ANY($1::uuid[])', [
           finished.map((r) => r.id),
         ]);
@@ -1558,6 +1567,9 @@ export class PgRepo implements IngestionRepo {
           `SELECT object_key AS key FROM decomposition_items WHERE object_key = ANY($1::text[])`,
           [keys],
         );
+        // The next pickup starts a new batch; the kept documents stay found through the
+        // batch's own watch_id.
+        await client.query('UPDATE watched_folders SET batch_id = NULL WHERE batch_id = $1', [id]);
         const stillNamed = new Set(named.rows.map((r) => r.key));
         return {
           ok: true,

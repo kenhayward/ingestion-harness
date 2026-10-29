@@ -7,7 +7,7 @@ export interface WatchHooks {
   setProblem(id: string, problem: string | null): Promise<void>;
   setWaiting(id: string, waiting: number): Promise<void>;
   /** An item of the watch's batch at `outcome`, with its job and pickup as the worker leaves them; its id. */
-  addUnfinished(id: string, outcome: string): Promise<string>;
+  addUnfinished(id: string, outcome: string, jobStatus?: string): Promise<string>;
   /** What is stored of an item: its outcome and detail, its job's status and its pickup's step. */
   inspect(
     id: string,
@@ -262,43 +262,54 @@ export function watchContract(name: string, make: MakeWatches) {
       expect(await repo.stop(MISSING, 'now')).toEqual({ ok: false, reason: 'missing' });
     });
 
-    it('stop now cancels what has not reached the bridge and leaves what has', async () => {
+    it('stop now fails what no worker holds, cancels the job of what one runs, and leaves the rest', async () => {
       const { repo, hooks, targetId } = await make();
       const made = await repo.create(settings(targetId), user, 'incoming', user);
       if (!made.ok) throw new Error('create failed');
       const id = made.watch.id;
       await repo.start(id);
-      const cancellable = ['queued', 'decomposing', 'waiting_to_deliver', 'awaiting_review'];
-      const ids: Record<string, string> = {};
-      for (const outcome of [...cancellable, 'delivering', 'created']) {
-        ids[outcome] = await hooks.addUnfinished(id, outcome);
-      }
+      const ids: Record<string, string> = {
+        queued: await hooks.addUnfinished(id, 'queued'),
+        waiting: await hooks.addUnfinished(id, 'waiting_to_deliver'),
+        review: await hooks.addUnfinished(id, 'awaiting_review'),
+        // A worker holds these: it may be past its last cancel check, and is the one to decide.
+        decomposing: await hooks.addUnfinished(id, 'decomposing'),
+        waitingRunning: await hooks.addUnfinished(id, 'waiting_to_deliver', 'running'),
+        delivering: await hooks.addUnfinished(id, 'delivering'),
+        created: await hooks.addUnfinished(id, 'created'),
+      };
       const done = await repo.stop(id, 'now');
       if (!done.ok) throw new Error('stop failed');
       expect(done.cancelled.map((c) => c.itemId).sort()).toEqual(
-        cancellable.map((o) => ids[o]!).sort(),
+        [ids.queued!, ids.waiting!, ids.review!].sort(),
       );
-      for (const outcome of cancellable) {
-        expect(await hooks.inspect(id, ids[outcome]!)).toMatchObject({
+      for (const key of ['queued', 'waiting', 'review']) {
+        expect(await hooks.inspect(id, ids[key]!)).toMatchObject({
           outcome: 'failed',
           detail: 'Cancelled: the watch was stopped',
           pickup: 'abandoned',
         });
       }
-      // The jobs still to run are cancelled; one that had finished stays so.
       expect((await hooks.inspect(id, ids.queued!)).jobStatus).toBe('cancelled');
-      expect((await hooks.inspect(id, ids.decomposing!)).jobStatus).toBe('cancelled');
-      expect((await hooks.inspect(id, ids.waiting_to_deliver!)).jobStatus).toBe('succeeded');
+      expect((await hooks.inspect(id, ids.waiting!)).jobStatus).toBe('succeeded');
+      // A running job is cancelled and its item left to the worker, which fails it when it
+      // notices (or delivers it, if it was past the last check: nothing is written over that).
+      for (const key of ['decomposing', 'waitingRunning']) {
+        const seen = await hooks.inspect(id, ids[key]!);
+        expect(seen).toMatchObject({ detail: null, jobStatus: 'cancelled', pickup: 'queued' });
+      }
+      expect((await hooks.inspect(id, ids.decomposing!)).outcome).toBe('decomposing');
+      expect((await hooks.inspect(id, ids.waitingRunning!)).outcome).toBe('waiting_to_deliver');
       expect(await hooks.inspect(id, ids.delivering!)).toMatchObject({
         outcome: 'delivering',
         pickup: 'queued',
       });
       expect(await hooks.inspect(id, ids.created!)).toMatchObject({ outcome: 'created' });
-      // Each cancelled document counts as failed; the one delivering is still under way.
+      // Only the documents failed here count as failed now; the others count when they settle.
       const w = (await repo.get(id))!;
-      expect(w.throughput.total).toEqual({ delivered: 0, failed: 4 });
-      expect(w.throughput.day.failed).toBe(4);
-      expect(w.queue.inProgress).toBe(1);
+      expect(w.throughput.total).toEqual({ delivered: 0, failed: 3 });
+      expect(w.throughput.day.failed).toBe(3);
+      expect(w.queue.inProgress).toBe(3);
     });
 
     it('counts the watches that name a target', async () => {

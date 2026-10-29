@@ -35,7 +35,7 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
     await p.query("DELETE FROM jobs WHERE task = 'decompose'");
     const batches = new Map<string, string>();
     let n = 0;
-    const item = async (id: string, outcome: string): Promise<string> => {
+    const item = async (id: string, outcome: string, jobStatus?: string): Promise<string> => {
       let batch = batches.get(id);
       if (!batch) {
         const { rows } = await p.query<{ id: string }>(
@@ -48,7 +48,8 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
       }
       // The job as the worker leaves it for that outcome, and the pickup that led to the item.
       const status =
-        outcome === 'queued' ? 'queued' : outcome === 'decomposing' ? 'running' : 'succeeded';
+        jobStatus ??
+        (outcome === 'queued' ? 'queued' : outcome === 'decomposing' ? 'running' : 'succeeded');
       const job = await p.query<{ id: string }>(
         `INSERT INTO jobs (task, status, params) VALUES ('decompose', $1::job_status, '{}')
          RETURNING id`,
@@ -81,7 +82,7 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
             waiting,
           ]);
         },
-        addUnfinished: (id, outcome) => item(id, outcome),
+        addUnfinished: (id, outcome, jobStatus) => item(id, outcome, jobStatus),
         inspect: async (_id, itemId) => {
           const { rows } = await p.query<{
             outcome: string;

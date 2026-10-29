@@ -19,13 +19,17 @@ import { z } from 'zod';
 import { BridgeApiError } from '../bridge/client.js';
 import { deleteHeld } from '../conversions/held.js';
 import { ErrorBody, error, md, noContent, res } from '../openapi/zod.js';
+import { SinkCatalog } from '../bridge/sinks.js';
 import type { TargetRecord } from '../publish-targets/repo.js';
 
 const TAG = 'Watched folders';
 const ADMINS_ONLY = error('`admins only`.');
-const NOT_FOUND = error('`no such watch`.');
+const NO_SUCH_WATCH = 'no such watch';
+const NOT_FOUND = error(`\`${NO_SUCH_WATCH}\`.`);
 const STOP_FIRST = 'stop the watch first';
 const BRIDGE_DOWN = 'the delivery bridge could not be reached';
+/** Without access control everyone is the admin; the bridge still needs an acting user. */
+const LOCAL_ADMIN: ActingUser = { id: 'local', name: 'Local admin', email: null };
 const IdParams = z.object({ id: z.string().describe('The watch id.') });
 const UUID = z.string().uuid();
 
@@ -68,19 +72,21 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
   });
 
   const { watches, targets, bridge, store, buckets } = app.deps;
-  const sinks = app.deps.sinks!;
+  const sinks = app.deps.sinks ?? new SinkCatalog();
 
-  /** The signed-in admin as the bridge and a watch know them (a stand-in without access control). */
-  const adminOf = (req: FastifyRequest): ActingUser => {
-    const auth = req.auth ?? { userId: 'unit-test-admin', label: 'admin', email: null };
-    return { id: auth.userId, name: auth.label, email: auth.email };
-  };
-  const runAsOf = (req: FastifyRequest): WatchRunAs => {
-    const user = adminOf(req);
-    return req.auth
-      ? { id: user.id, name: user.name, email: user.email }
+  /** The signed-in admin as the bridge knows them (without access control: the local admin). */
+  const adminOf = (req: FastifyRequest): ActingUser =>
+    req.auth ? { id: req.auth.userId, name: req.auth.label, email: req.auth.email } : LOCAL_ADMIN;
+  /** Who a watch delivers as (null parts without access control). */
+  const runAsOf = (req: FastifyRequest): WatchRunAs =>
+    req.auth
+      ? { id: req.auth.userId, name: req.auth.label, email: req.auth.email }
       : { id: null, name: null, email: null };
-  };
+  /** Whether another watch (not `except`) has this name, whatever the case. */
+  const nameTaken = async (name: string, except?: string) =>
+    (await watches.list()).some(
+      (w) => w.id !== except && w.name.toLowerCase() === name.trim().toLowerCase(),
+    );
 
   /** The target and its sink's source fields, or the reason it cannot be watched. */
   const watchable = async (
@@ -125,8 +131,9 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
       });
       return { ok: true, files: files.length };
     } catch (err) {
-      if (err instanceof BridgeApiError) {
-        return { ok: false, problem: err.error?.message ?? err.message };
+      // A refusal a person can act on is the answer; an outage or an unauthorised call is not.
+      if (err instanceof BridgeApiError && err.needsUser && err.error) {
+        return { ok: false, problem: err.error.message };
       }
       throw err;
     }
@@ -242,6 +249,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
             'unknown_target',
             'target_not_watchable',
             'unknown_field',
+            'bridge_refused',
           ),
           502: error(`\`${BRIDGE_DOWN}\`.`),
         },
@@ -271,7 +279,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof BridgeApiError && err.needsUser && err.error) {
-          return reply.code(422).send({ error: err.error.message });
+          return reply.code(422).send({ error: err.error.message, code: 'bridge_refused' });
         }
         return reply.code(502).send({ error: BRIDGE_DOWN });
       }
@@ -357,6 +365,11 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = WatchCreateBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (await nameTaken(body.data.name)) {
+        return reply
+          .code(409)
+          .send({ error: `a watch named ${body.data.name} exists`, code: 'name_taken' });
+      }
       const w = await watchable(body.data.targetId);
       if (!w.ok) return refuse(reply, w);
       const problem = sourceProblem(w, body.data.source);
@@ -409,7 +422,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const watch = await known(req.params.id);
-      if (!watch) return reply.code(404).send({ error: 'not found' });
+      if (!watch) return reply.code(404).send({ error: NO_SUCH_WATCH });
       return { watch, events: await watches.events(watch.id, 100) };
     },
   );
@@ -458,10 +471,13 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const watch = await known(req.params.id);
-      if (!watch) return reply.code(404).send({ error: 'not found' });
+      if (!watch) return reply.code(404).send({ error: NO_SUCH_WATCH });
       const body = WatchPatchRequestSchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
       const { runAsMe, ...settings } = body.data;
+      if (settings.name !== undefined && (await nameTaken(settings.name, watch.id))) {
+        return reply.code(409).send({ error: 'a watch has this name', code: 'name_taken' });
+      }
       const moves = settings.targetId !== undefined || settings.source !== undefined;
       if ((moves || runAsMe) && watch.state !== 'stopped') {
         return reply.code(409).send({ error: STOP_FIRST, code: 'running' });
@@ -492,7 +508,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
       if (done.ok) return done.watch;
       switch (done.reason) {
         case 'missing':
-          return reply.code(404).send({ error: 'not found' });
+          return reply.code(404).send({ error: NO_SUCH_WATCH });
         case 'name_taken':
           return reply.code(409).send({ error: 'a watch has this name', code: 'name_taken' });
         case 'unknown_target':
@@ -516,7 +532,12 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
             or awaiting review) are cancelled: their jobs are cancelled, the documents fail with
             _Cancelled: the watch was stopped_ and count as failed, their held copies are
             deleted. Documents already being delivered finish on their own. Files stay wherever
-            they are in the folder. \`mode: drain\` (a running watch): nothing new is admitted,
+            they are in the folder. A document whose job is already running only has the job
+            cancelled: the worker fails it when it notices, or delivers it if it was past its
+            last check, so a document the bridge accepted is never recorded as cancelled. Each
+            document failed here is counted as failed in the watch's figures and its file is left
+            in \`processing\`, never taken again; the others count when they finish.
+            \`mode: drain\` (a running watch): nothing new is admitted,
             the admitted documents run to the end, and the watch shows _Draining_ until the last
             one finishes, then _Stopped_.
           `,
@@ -534,12 +555,12 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const watch = await known(req.params.id);
-      if (!watch) return reply.code(404).send({ error: 'not found' });
+      if (!watch) return reply.code(404).send({ error: NO_SUCH_WATCH });
       const body = StopBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
       const done = await watches.stop(watch.id, body.data.mode);
       if (!done.ok) {
-        if (done.reason === 'missing') return reply.code(404).send({ error: 'not found' });
+        if (done.reason === 'missing') return reply.code(404).send({ error: NO_SUCH_WATCH });
         return reply.code(409).send({
           error:
             body.data.mode === 'drain' && watch.state === 'draining'
@@ -587,7 +608,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
       const watch = UUID.safeParse(req.params.id).success
         ? await watches.start(req.params.id)
         : null;
-      return watch ?? reply.code(404).send({ error: 'not found' });
+      return watch ?? reply.code(404).send({ error: NO_SUCH_WATCH });
     },
   );
 
@@ -617,7 +638,7 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
       const result = UUID.safeParse(req.params.id).success
         ? await watches.remove(req.params.id)
         : 'missing';
-      if (result === 'missing') return reply.code(404).send({ error: 'not found' });
+      if (result === 'missing') return reply.code(404).send({ error: NO_SUCH_WATCH });
       if (result === 'not_stopped') return reply.code(409).send({ error: STOP_FIRST });
       return reply.code(204).send();
     },

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { decompositionHeldManifestKey, decompositionHeldPageKey } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
+import { BridgeApiError } from '../src/bridge/client.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 import { FAKE_DOCUMENT_SINK, FAKE_SINK, FAKE_WATCHED_SINK } from './fake-sink.js';
 import { accessApp, signInNewUser, testApp } from './helpers.js';
@@ -338,9 +339,9 @@ describe('watched folders: stopping, starting and removing', () => {
     const ids: Record<string, string> = {};
     for (const outcome of [
       'queued',
-      'decomposing',
       'waiting_to_deliver',
       'awaiting_review',
+      'decomposing',
       'delivering',
     ]) {
       ids[outcome] = c.watches.addUnfinished(made.id, outcome);
@@ -373,8 +374,8 @@ describe('watched folders: stopping, starting and removing', () => {
 
     const res = await call(c, 'POST', `/watches/${made.id}/stop`, { mode: 'now' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ state: 'stopped', queue: { inProgress: 1 } });
-    for (const outcome of ['queued', 'decomposing', 'waiting_to_deliver', 'awaiting_review']) {
+    expect(res.json()).toMatchObject({ state: 'stopped', queue: { inProgress: 2 } });
+    for (const outcome of ['queued', 'waiting_to_deliver', 'awaiting_review']) {
       expect(c.watches.item(made.id, ids[outcome]!)).toMatchObject({
         outcome: 'failed',
         detail: 'Cancelled: the watch was stopped',
@@ -382,7 +383,12 @@ describe('watched folders: stopping, starting and removing', () => {
       });
     }
     expect(c.watches.item(made.id, ids.queued!).jobStatus).toBe('cancelled');
-    expect(c.watches.item(made.id, ids.decomposing!).jobStatus).toBe('cancelled');
+    // A worker runs this one: its job is cancelled and the worker decides the item.
+    expect(c.watches.item(made.id, ids.decomposing!)).toMatchObject({
+      outcome: 'decomposing',
+      jobStatus: 'cancelled',
+      detail: null,
+    });
     expect(c.watches.item(made.id, ids.delivering!)).toMatchObject({
       outcome: 'delivering',
       pickup: 'queued',
@@ -506,16 +512,22 @@ describe("a watch's batch on the Conversion page", () => {
   it('deleting it removes the finished documents and their files and keeps the unfinished rows', async () => {
     const c = await setup();
     const { batch, failed, running } = await watchBatch(c);
+    const owner = await created(c, { name: 'Counted' });
+    c.watches.recordFinish(owner.id, true);
+    c.watches.recordFinish(owner.id, false);
+    c.repo.markWatchBatch(batch.id, { id: owner.id, name: 'Counted' });
     const gone = await call(c, 'DELETE', `/conversions/batches/${batch.id}`);
     expect(gone.statusCode).toBe(204);
     const left = await call(c, 'GET', `/conversions/batches/${batch.id}`);
     expect(left.json().items.map((i: { id: string }) => i.id)).toEqual([running.id]);
     expect(await c.store.get('runs', failed.objectKey)).toBeNull();
     expect(await c.store.get('runs', running.objectKey)).not.toBeNull();
+    expect((await c.watches.get(owner.id))!.throughput.total).toEqual({ delivered: 1, failed: 1 });
     // Once it has finished too, the batch goes with it.
     c.repo.conversionItems.get(running.id)!.outcome = 'failed';
     expect((await call(c, 'DELETE', `/conversions/batches/${batch.id}`)).statusCode).toBe(204);
     expect((await call(c, 'GET', `/conversions/batches/${batch.id}`)).statusCode).toBe(404);
+    expect((await c.watches.get(owner.id))!.throughput.total).toEqual({ delivered: 1, failed: 1 });
   });
 
   it('serves no original for a file that was refused unread', async () => {
@@ -525,5 +537,49 @@ describe("a watch's batch on the Conversion page", () => {
     c.repo.conversionItems.get(failed.id)!.objectKey = null;
     const res = await call(c, 'GET', `/conversions/items/${failed.id}/source`);
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('watched folders: bridge failures and ordering', () => {
+  it('answers 502, not 422, when the bridge is down or does not authorise the listing', async () => {
+    const c = await setup();
+    c.bridge.sourceFiles = new BridgeApiError(503, null, 'the bridge is down');
+    const test = await call(c, 'POST', '/watches/test', { targetId: 'manuals', source: SOURCE });
+    expect(test.statusCode).toBe(502);
+    expect((await call(c, 'POST', '/watches', body())).statusCode).toBe(502);
+    c.bridge.sourceFiles = new BridgeApiError(401, null, 'not signed');
+    expect((await call(c, 'POST', '/watches', body())).statusCode).toBe(502);
+    expect(await c.watches.list()).toEqual([]);
+    c.bridge.sourceFiles = [];
+    const made = await created(c);
+    await call(c, 'POST', `/watches/${made.id}/stop`, { mode: 'now' });
+    c.bridge.sourceFiles = new BridgeApiError(500, null, 'down');
+    const moved = await call(c, 'PATCH', `/watches/${made.id}`, { source: { library: 'Other' } });
+    expect(moved.statusCode).toBe(502);
+  });
+
+  it('gives a bridge refusal on browse the code the docs promise', async () => {
+    const c = await setup();
+    c.bridge.browseError = FakeBridgeApi.refusal('no connection for Manuals', 'connection_missing');
+    const res = await call(c, 'POST', '/watches/browse', {
+      targetId: 'manuals',
+      field: 'library',
+      parentId: null,
+      cursor: null,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({ error: 'no connection for Manuals', code: 'bridge_refused' });
+  });
+
+  it('checks the name before it asks the bridge, and says no such watch', async () => {
+    const c = await setup();
+    const made = await created(c);
+    c.bridge.listed.length = 0;
+    const again = await call(c, 'POST', '/watches', body({ name: 'manuals INBOX' }));
+    expect(again.statusCode).toBe(409);
+    expect(c.bridge.listed).toEqual([]);
+    const missing = await call(c, 'GET', `/watches/${randomUUID()}`);
+    expect(missing.json()).toEqual({ error: 'no such watch' });
+    expect((await call(c, 'GET', `/watches/${made.id}`)).statusCode).toBe(200);
   });
 });

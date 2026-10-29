@@ -166,10 +166,13 @@ export class FakeBridgeApi implements BridgeApi {
   /** What browse answers, and every browse asked for. */
   browseResult: BrowseResult = { nodes: [], nextCursor: null };
   readonly browsed: TargetBrowseRequest[] = [];
+  /** Thrown by browse (a refusal of the sink), instead of the result. */
+  browseError: Error | null = null;
 
   async browse(req: TargetBrowseRequest): Promise<BrowseResult> {
     this.fail();
     this.browsed.push(structuredClone(req));
+    if (this.browseError) throw this.browseError;
     return structuredClone(this.browseResult);
   }
 

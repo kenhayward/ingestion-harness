@@ -41,6 +41,10 @@ conversionsContract('memory', async () => {
         repo.markWatchBatch(batchId, { id, name });
         return id;
       },
+      pickup: async (itemId, step) => {
+        repo.watchPickups.set(itemId, step);
+      },
+      watchBatch: async (watchId) => repo.watchBatchOf(watchId),
       entry: async (seed) => {
         const { state, lastReceipt, lastError, ...rest } = seed;
         const put = repo.putRegisterEntry({

@@ -270,7 +270,8 @@ export class PgWatchRepo implements WatchRepo {
       );
       const cancelled: CancelledItem[] = [];
       if (mode === 'now') {
-        // The items first, locked: the worker's own writes to them wait, then find them failed.
+        // The items first, locked: the worker's own writes to them wait. Then their jobs,
+        // locked too (a claim cannot slip in), to see which a worker holds.
         const items = await client.query<{ id: string; batch_id: string; job_id: string | null }>(
           `SELECT i.id, i.batch_id, i.job_id FROM decomposition_items i
              JOIN decomposition_batches b ON b.id = i.batch_id
@@ -278,23 +279,32 @@ export class PgWatchRepo implements WatchRepo {
             ORDER BY i.id FOR UPDATE OF i`,
           [id, NOT_AT_BRIDGE],
         );
-        const ids = items.rows.map((r) => r.id);
+        const jobIds = items.rows.flatMap((r) => (r.job_id ? [r.job_id] : []));
+        const jobs = await client.query<{ id: string; status: string }>(
+          `SELECT id, status FROM jobs WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+          [jobIds],
+        );
+        const running = new Set(jobs.rows.filter((j) => j.status === 'running').map((j) => j.id));
+        await client.query(
+          `WITH cancelled AS (
+             UPDATE jobs SET status = 'cancelled', locked_by = NULL, locked_at = NULL,
+                             updated_at = now()
+              WHERE id = ANY($1::uuid[]) AND status IN ('queued', 'running')
+              RETURNING id)
+           INSERT INTO job_events (job_id, level, message)
+           SELECT id, 'warn', 'cancelled' FROM cancelled`,
+          [jobIds],
+        );
+        // A running job's item is the worker's to decide: it fails it on noticing the cancel,
+        // or, if it was past its last check, goes on to deliver it. Nothing is written over it.
+        const direct = items.rows.filter((r) => !(r.job_id && running.has(r.job_id)));
+        const ids = direct.map((r) => r.id);
         if (ids.length) {
-          await client.query(
-            `WITH cancelled AS (
-               UPDATE jobs SET status = 'cancelled', locked_by = NULL, locked_at = NULL,
-                               updated_at = now()
-                WHERE id = ANY($1::uuid[]) AND status IN ('queued', 'running')
-                RETURNING id)
-             INSERT INTO job_events (job_id, level, message)
-             SELECT id, 'warn', 'cancelled' FROM cancelled`,
-            [items.rows.flatMap((r) => (r.job_id ? [r.job_id] : []))],
-          );
           await client.query(
             `UPDATE decomposition_items
                 SET outcome = 'failed', detail = $2, finished_at = now()
-              WHERE id = ANY($1::uuid[])`,
-            [ids, WATCH_CANCELLED_DETAIL],
+              WHERE id = ANY($1::uuid[]) AND outcome = ANY($3::text[])`,
+            [ids, WATCH_CANCELLED_DETAIL, NOT_AT_BRIDGE],
           );
           await client.query(
             `UPDATE watch_pickups SET step = 'abandoned', updated_at = now()
@@ -312,7 +322,7 @@ export class PgWatchRepo implements WatchRepo {
             [id, ids.length],
           );
         }
-        cancelled.push(...items.rows.map((r) => ({ itemId: r.id, batchId: r.batch_id })));
+        cancelled.push(...direct.map((r) => ({ itemId: r.id, batchId: r.batch_id })));
       }
       const watch = (await this.one(client, id))!;
       await client.query('COMMIT');

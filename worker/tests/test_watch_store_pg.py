@@ -373,3 +373,32 @@ def test_move_failures_count_and_a_new_working_name_renames_the_item(db: Db) -> 
     (again,) = store.pickups(watch_id)
     assert again.move_failures == 2 and again.working_name == "a_7.pdf"
     assert db.one("SELECT filename FROM decomposition_items WHERE id = %s", p.item_id) == "a_7.pdf"
+
+
+@pytest.mark.parametrize("state", ["stopped", "draining"])
+def test_a_cycle_under_way_when_the_watch_stops_admits_and_refuses_nothing(
+    db: Db, state: str
+) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    drop(bridge, db, "a.pdf", PDF)
+    drop(bridge, db, "bad.pdf", b"random bytes, not a document")
+    t0 = datetime.now(UTC)
+    first = d.store.watch(watch_id)
+    assert first is not None
+    run_cycle(first, d, t0)  # both files are seen
+    under_way = d.store.watch(watch_id)  # the cycle that is running when Stop commits
+    assert under_way is not None and under_way.state == "running"
+    db.conn.execute("UPDATE watched_folders SET state = %s WHERE id = %s", (state, watch_id))
+    done = run_cycle(under_way, d, t0 + timedelta(seconds=10))
+    assert done.admitted == 0 and done.finished == 0
+    assert (
+        db.one("SELECT count(*) FROM decomposition_items") == 0
+        or not db.conn.execute(
+            "SELECT 1 FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id "
+            "WHERE b.watch_id = %s",
+            (watch_id,),
+        ).fetchall()
+    )
+    assert folder(bridge, "failed") == set()

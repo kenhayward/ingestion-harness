@@ -103,7 +103,28 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             batchId,
             rows[0]!.id,
           ]);
+          await p.query('UPDATE watched_folders SET batch_id = $2 WHERE id = $1', [
+            rows[0]!.id,
+            batchId,
+          ]);
           return rows[0]!.id;
+        },
+        pickup: async (itemId: string, step: string) => {
+          await p.query('DELETE FROM watch_pickups WHERE item_id = $1', [itemId]);
+          await p.query(
+            `INSERT INTO watch_pickups (watch_id, original_name, size, modified_at, step, item_id)
+             SELECT b.watch_id, i.filename, 1, now(), $2, i.id
+               FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
+              WHERE i.id = $1`,
+            [itemId, step],
+          );
+        },
+        watchBatch: async (watchId: string) => {
+          const { rows } = await p.query<{ batch_id: string | null }>(
+            'SELECT batch_id FROM watched_folders WHERE id = $1',
+            [watchId],
+          );
+          return rows[0]!.batch_id;
         },
         entry: async (seed: EntrySeed) => {
           const { rows } = await p.query<{ id: string }>(

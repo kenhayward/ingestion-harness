@@ -758,3 +758,33 @@ def test_a_draining_watch_shows_its_stuck_pickups() -> None:
     w.cycle(T0 + timedelta(minutes=10))
     watch = w.store.watch(w.watch_id)
     assert watch is not None and watch.problem is not None and "processing/" in watch.problem
+
+
+@pytest.mark.parametrize("state", ["stopped", "draining"])
+def test_a_cycle_running_while_the_watch_stops_admits_nothing(state: str) -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)  # the file is seen
+    running = w.store.watch(w.watch_id)  # the cycle that is already under way
+    assert running is not None and running.state == "running"
+    w.store.set_state(w.watch_id, state)  # type: ignore[arg-type]
+    done = run_cycle(running, w.deps, T0 + timedelta(seconds=10))
+    assert done.admitted == 0
+    assert w.store.items == {} and w.store.jobs == []
+    # Nothing waits for a Start that will not take it: the pickup is let go.
+    assert w.store.pickups(w.watch_id) == []
+
+
+@pytest.mark.parametrize("state", ["stopped", "draining"])
+def test_a_refusal_is_not_recorded_while_the_watch_is_not_running(state: str) -> None:
+    w = World()
+    w.drop("x.pdf", b"random bytes, not a document")
+    w.cycle(T0)
+    running = w.store.watch(w.watch_id)
+    assert running is not None
+    w.store.set_state(w.watch_id, state)  # type: ignore[arg-type]
+    done = run_cycle(running, w.deps, T0 + timedelta(seconds=10))
+    assert done.finished == 0
+    # No item, no finish; the file stays in the folder root.
+    assert w.store.items == {} and w.store.finishes == []
+    assert set(w.files("")) == {"x.pdf"} and w.files("failed") == {}

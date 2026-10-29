@@ -1394,6 +1394,13 @@ export class MemoryRepo implements IngestionRepo {
   /** Test hook: the watched folder that owns a batch (the worker makes such a batch in production). */
   markWatchBatch(batchId: string, watch: NonNullable<Batch['watch']>): void {
     this.conversionBatches.get(batchId)!.watch = { ...watch };
+    this.watchBatches.set(watch.id, batchId);
+  }
+  /** Test hooks: the step of the pickup behind a watched item, and each watch's current batch. */
+  readonly watchPickups = new Map<string, string>();
+  private readonly watchBatches = new Map<string, string | null>();
+  watchBatchOf(watchId: string): string | null {
+    return this.watchBatches.get(watchId) ?? null;
   }
 
   async getBatch(id: string): Promise<Batch | null> {
@@ -1500,10 +1507,18 @@ export class MemoryRepo implements IngestionRepo {
     if (!batch) return { ok: false, reason: 'missing' };
     if (batch.state !== 'started') return { ok: false, reason: 'not_started' };
     const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
-    const running = items.filter((i) => RUNNING_OUTCOMES.includes(i.outcome)).length;
+    // A watched document is not finished while the watch has not filed its file (its pickup).
+    const unfinished = (i: StoredItem) =>
+      RUNNING_OUTCOMES.includes(i.outcome) ||
+      (batch.watch !== null &&
+        this.watchPickups.has(i.id) &&
+        !['finished', 'abandoned'].includes(this.watchPickups.get(i.id)!));
+    const running = items.filter(unfinished).length;
     if (running > 0 && !batch.watch) return { ok: false, reason: 'running', running };
     if (running > 0) {
-      const finished = items.filter((i) => !RUNNING_OUTCOMES.includes(i.outcome));
+      const finished = items.filter((i) => !unfinished(i));
+      // The next pickup starts a new batch.
+      this.watchBatches.set(batch.watch!.id, null);
       for (const i of finished) this.conversionItems.delete(i.id);
       const named = new Set(
         [...this.conversionItems.values()].map((i) => i.objectKey).filter((k) => k !== null),

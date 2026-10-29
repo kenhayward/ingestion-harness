@@ -49,6 +49,10 @@ export interface ConversionFacts {
   moveEntry(entryId: string, to: { state: RegisterEntry['state']; batchId: string }): Promise<void>;
   /** Makes the batch a watched folder's (the worker does this in production). */
   watch(batchId: string, name: string): Promise<string>;
+  /** The pickup that led to an item, at `step` (the worker writes these). */
+  pickup(itemId: string, step: 'queued' | 'finished' | 'abandoned'): Promise<void>;
+  /** The batch the watch adds its next pickup to (null: it starts a new one). */
+  watchBatch(watchId: string): Promise<string | null>;
   /** Records when an item started and finished, as the worker and the settle do. */
   times(itemId: string, startedAt: string | null, finishedAt: string | null): Promise<void>;
 }
@@ -495,9 +499,36 @@ export function conversionsContract(
       expect(await repo.getItem(c!.id)).toMatchObject({ outcome: 'awaiting_review' });
       expect(await repo.getBatch(batch.id)).not.toBeNull();
 
-      // Nothing finished is left to delete: the batch stays while a document is under way.
+      // The next pickup starts a new batch; this one stays while a document is under way.
+      expect(await facts.watchBatch(watchId)).toBeNull();
       expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [], remove: [] });
       await facts.settleItem(c!.id, 'failed', null);
+      expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(batch.id)).toBeNull();
+    });
+
+    it("keeps a watch's document until the watch has filed its file, whatever its outcome", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const [a, b, c] = ['a.docx', 'b.docx', 'c.docx'].map((k) => item(batch.id, k));
+      for (const i of [a!, b!, c!]) await repo.addItem(i);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      for (const i of [a!, b!, c!]) await facts.settleItem(i.id, 'created', null);
+      await facts.pickup(a!.id, 'queued'); // settled, but its file is still in processing/
+      await facts.pickup(b!.id, 'finished');
+      await facts.pickup(c!.id, 'abandoned');
+
+      expect(await repo.deleteBatch(batch.id)).toEqual({
+        ok: true,
+        kept: [],
+        remove: [b!.objectKey, c!.objectKey].sort(),
+      });
+      expect(await repo.getItem(a!.id)).toMatchObject({ outcome: 'created' });
+      expect(await repo.getBatch(batch.id)).not.toBeNull();
+      expect(await facts.watchBatch(watchId)).toBeNull();
+
+      await facts.pickup(a!.id, 'finished');
       expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
       expect(await repo.getBatch(batch.id)).toBeNull();
     });

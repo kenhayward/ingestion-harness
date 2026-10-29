@@ -22176,7 +22176,8 @@
                       "enum": [
                         "unknown_target",
                         "target_not_watchable",
-                        "unknown_field"
+                        "unknown_field",
+                        "bridge_refused"
                       ]
                     }
                   },
@@ -23903,7 +23904,7 @@
         "tags": [
           "Watched folders"
         ],
-        "description": "**Admins only.** Pickups end at once. `mode: now`: the watch is stopped, and its\ndocuments that have not reached the bridge (queued, converting, waiting for a lane\nor awaiting review) are cancelled: their jobs are cancelled, the documents fail with\n_Cancelled: the watch was stopped_ and count as failed, their held copies are\ndeleted. Documents already being delivered finish on their own. Files stay wherever\nthey are in the folder. `mode: drain` (a running watch): nothing new is admitted,\nthe admitted documents run to the end, and the watch shows _Draining_ until the last\none finishes, then _Stopped_.",
+        "description": "**Admins only.** Pickups end at once. `mode: now`: the watch is stopped, and its\ndocuments that have not reached the bridge (queued, converting, waiting for a lane\nor awaiting review) are cancelled: their jobs are cancelled, the documents fail with\n_Cancelled: the watch was stopped_ and count as failed, their held copies are\ndeleted. Documents already being delivered finish on their own. Files stay wherever\nthey are in the folder. A document whose job is already running only has the job\ncancelled: the worker fails it when it notices, or delivers it if it was past its\nlast check, so a document the bridge accepted is never recorded as cancelled. Each\ndocument failed here is counted as failed in the watch's figures and its file is left\nin `processing`, never taken again; the others count when they finish.\n`mode: drain` (a running watch): nothing new is admitted,\nthe admitted documents run to the end, and the watch shows _Draining_ until the last\none finishes, then _Stopped_.",
         "requestBody": {
           "required": true,
           "content": {
