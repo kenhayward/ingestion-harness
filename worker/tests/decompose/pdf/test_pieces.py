@@ -84,12 +84,28 @@ def test_a_small_char_lowered_half_a_point_is_a_subscript() -> None:
 def test_a_subscript_then_a_superscript_stay_in_their_word() -> None:
     # "Sum" with "t=1" lowered after it and "n" raised over it, as a formula draws a sum's limits:
     # the two small runs are further apart than half their own size, not than half the word's.
-    runs = [
-        Run("Sum", 72, 100),
-        Run("t=1", 94.6, 100, size=7, rise=-1),
-        Run("n", 104.5, 100, size=7, rise=4),
-    ]
-    page = read_text_layer(make_pdf([Page(runs=runs)])).pages[0]
+    # Built as chars, with no word gap from pdfium: where it sees one depends on the font it has.
+    def char(n: int, ch: str, size: float, baseline: float) -> Char:
+        x = 72 + 6 * n
+        return Char(
+            n,
+            ch,
+            "Helvetica",
+            size,
+            False,
+            False,
+            x,
+            baseline - size,
+            x + 6,
+            baseline,
+            baseline,
+            True,
+        )
+
+    chars = [char(n, ch, 11, 100) for n, ch in enumerate("Sum")]
+    chars += [char(3 + n, ch, 7, 101) for n, ch in enumerate("t=1")]
+    chars += [char(6, "n", 7, 96)]
+    page = PageText(0, 595, HEIGHT, tuple(chars), 0.0)
     assert ["".join(c.text for c in w) for w in words_of(page)] == ["Sumt=1n"]
 
 
