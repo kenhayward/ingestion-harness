@@ -119,6 +119,7 @@ const REVIEW: ConversionReview = {
     { id: 'img-logo', contentType: 'image/png' },
     { id: 'img-chart', contentType: 'image/png' },
   ],
+  unproven: [],
 };
 
 function reviewApi(overrides: Parameters<typeof fakeApi>[0] = {}) {
@@ -178,6 +179,26 @@ describe('ConversionReviewPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /table_notes_unrecognised/ }));
     expect(shownPage()).toHaveAccessibleName('Page 2 of 3');
     expect(shownPage()).toHaveAttribute('src', `/api/conversions/items/${ITEM.id}/pages/2`);
+  });
+
+  it('lists the words the check could not prove, each showing its page', async () => {
+    const unproven = [
+      { detail: "page 3: 'max' missing", page: 3, at: 'f1' },
+      { detail: "page 3: word 'stray' not accounted for", page: 3, at: null },
+    ];
+    await view(reviewApi({ conversionReview: vi.fn(async () => ({ ...REVIEW, unproven })) }));
+    const note = within(screen.getByRole('note', { name: 'Words not proven' }));
+    expect(note.getByText('The check could not prove 2 words')).toBeVisible();
+    const pages = within(screen.getByRole('navigation', { name: 'Pages' }));
+    expect(pages.getByRole('button', { name: 'Page 3 (flagged values)' })).toBeInTheDocument();
+
+    fireEvent.click(note.getByRole('button', { name: "page 3: 'max' missing" }));
+    expect(shownPage()).toHaveAccessibleName('Page 3 of 3');
+  });
+
+  it('has no list of words not proven when the check proved them all', async () => {
+    await view();
+    expect(screen.queryByRole('note', { name: 'Words not proven' })).toBeNull();
   });
 
   it("puts a note's flags beside the note, and they show its page", async () => {

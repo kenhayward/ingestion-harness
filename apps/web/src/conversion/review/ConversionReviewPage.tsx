@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 // Types only: the API checked the document against the contract (defaults filled) before
 // sending it, and the contract's runtime (node:crypto signing) has no place in the browser.
 import type { DecomposedDocument, Section } from '@ih/bridge-contract';
-import type { ConversionReview } from '@ih/shared';
+import type { ConversionReview, UnprovenWord } from '@ih/shared';
 import { ApiError, type Api } from '../../api/client.js';
 import { PageViewer } from '../../review/PageViewer.js';
 import { Icon } from '../../ui/Icon.js';
@@ -94,7 +94,10 @@ export function ConversionReviewPage({ api, itemId }: { api: Api; itemId: string
   const imageAlt = new Map(document.images.map((image) => [image.id, image.alt]));
   const equations = new Map(document.equations.map((e) => [e.id, e]));
   const noteNumbers = new Map(document.notes.map((note, i) => [note.id, i + 1]));
-  const flaggedPages = new Set(document.report.flatMap((flag) => pages.pagesOf(flag.at)));
+  const flaggedPages = new Set([
+    ...document.report.flatMap((flag) => pages.pagesOf(flag.at)),
+    ...review.unproven.map((word) => word.page),
+  ]);
   const looseFlags = flags.get(null) ?? [];
 
   const show = (id: string) => {
@@ -208,6 +211,15 @@ export function ConversionReviewPage({ api, itemId }: { api: Api; itemId: string
             </div>
             <div className="data-view">
               <div className="dd-document">
+                {review.unproven.length > 0 && (
+                  <UnprovenWords
+                    words={review.unproven}
+                    onShow={(word) => {
+                      if (word.at) show(word.at);
+                      setPage(Math.min(word.page, Math.max(1, pageCount)));
+                    }}
+                  />
+                )}
                 {looseFlags.length > 0 && <Flags flags={looseFlags} />}
                 {document.blocks.map((block) => (
                   <BlockView key={block.id} block={block} view={view} />
@@ -243,5 +255,40 @@ export function ConversionReviewPage({ api, itemId }: { api: Api; itemId: string
         onReject={(note) => void decide(() => api.rejectConversionItem(item.id, note))}
       />
     </div>
+  );
+}
+
+/**
+ * The words the fidelity check could not prove (spec 14.2), each a button to its page: the
+ * reviewer compares them with the page, since approving delivers the document as it is.
+ */
+function UnprovenWords({
+  words,
+  onShow,
+}: {
+  words: readonly UnprovenWord[];
+  onShow: (word: UnprovenWord) => void;
+}) {
+  const n = words.length;
+  return (
+    <section role="note" className="callout tone-warn unproven" aria-label="Words not proven">
+      <Icon name="flag" />
+      <span>
+        <strong>
+          The check could not prove {n} {n === 1 ? 'word' : 'words'}
+        </strong>
+        Compare {n === 1 ? 'it' : 'each'} with the page before approving: approving delivers the
+        document as it is shown here.
+        <ul>
+          {words.map((word, i) => (
+            <li key={i}>
+              <button type="button" className="link" onClick={() => onShow(word)}>
+                {word.detail}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </span>
+    </section>
   );
 }

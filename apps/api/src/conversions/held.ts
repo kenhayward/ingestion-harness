@@ -1,5 +1,10 @@
 import { DecomposedDocumentSchema } from '@ih/bridge-contract';
-import { decompositionHeldManifestKey, decompositionHeldPageKey, type Item } from '@ih/shared';
+import {
+  UnprovenWordSchema,
+  decompositionHeldManifestKey,
+  decompositionHeldPageKey,
+  type Item,
+} from '@ih/shared';
 import { z } from 'zod';
 import type { ObjectStore } from '../storage/object-store.js';
 
@@ -20,6 +25,8 @@ const HeldManifestSchema = z.object({
   images: z.array(z.object({ id: z.string(), key: z.string(), contentType: z.string() })),
   pageCount: z.number().int().nonnegative().max(MAX_HELD_PAGES),
   pageMap: z.record(z.string(), z.array(z.number().int().positive())),
+  /** Absent from a manifest written before the worker listed them. */
+  unproven: z.array(UnprovenWordSchema).default([]),
 });
 export type HeldManifest = z.infer<typeof HeldManifestSchema>;
 

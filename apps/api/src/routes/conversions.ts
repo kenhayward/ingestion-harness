@@ -717,8 +717,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           The decomposed document of a PDF held for review, as it would be delivered, with the
           number of pages, the pages each section and block came from (\`pageMap\`) and the held
           images' types (\`GET /api/conversions/items/{id}/images/{index}\` serves each; the pages
-          come from \`GET /api/conversions/items/{id}/pages/{n}\`). Read from the held manifest the
-          worker stored. Only while the item is \`awaiting_review\`.
+          come from \`GET /api/conversions/items/{id}/pages/{n}\`). \`unproven\` lists the words
+          the PDF's fidelity check could not prove, each with its page, for the reviewer to
+          compare: they are not in the document, and approval delivers it as it is. Read from the
+          held manifest the worker stored. Only while the item is \`awaiting_review\`.
         `,
         params: ItemParams,
         response: {
@@ -744,13 +746,14 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         req.log.warn({ item: item.id }, 'a held manifest is not a valid manifest');
         return reply.code(502).send({ error: 'the held document is not readable' });
       }
-      const { document, pageCount, pageMap, images } = held.manifest;
+      const { document, pageCount, pageMap, images, unproven } = held.manifest;
       return {
         item,
         document,
         pageCount,
         pageMap,
         images: images.map(({ id, contentType }) => ({ id, contentType })),
+        unproven,
       };
     },
   );

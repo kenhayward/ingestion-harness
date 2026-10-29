@@ -36,6 +36,7 @@ from ingest_worker.decompose import (
     Decomposition,
     DecompositionFailed,
     DecompositionRejected,
+    Unproven,
     decomposer_version,
     source_kind,
 )
@@ -287,6 +288,15 @@ def _convert(
     )
     check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
     if source_kind(data) == "pdf":
+        if result.unproven:
+            # Words the check could not prove need a person, Auto Approve or not (spec 14.2).
+            deps.queue.event(
+                job.id,
+                "warn",
+                f"{_words(len(result.unproven))} not proven: held for review",
+                {"unproven": [u.detail for u in result.unproven]},
+            )
+            return _hold(job, deps, params, item, data, result)
         if not params.auto_approve:
             return _hold(job, deps, params, item, data, result)
         deps.queue.event(job.id, "info", "auto-approved", {"itemId": item.id})
@@ -388,7 +398,7 @@ def _hold(
         entry=entry,
         render_preview=deps.render_preview,
     )
-    if not deps.items.hold(item.id, held_sha256, entry):
+    if not deps.items.hold(item.id, held_sha256, entry, _unproven_detail(result.unproven)):
         delete_held(deps.store, deps.runs_bucket, item)
         deps.queue.event(
             job.id,
@@ -490,10 +500,31 @@ def _hold_is_current(
     return (entry.id, entry.content_sha256) == (held.id, held.content_sha256)
 
 
+#: The report's code for a word the PDF check could not prove (spec 14.2); not a contract flag.
+UNPROVEN_FLAG = "fidelity_unproven"
+
+
+def _words(n: int) -> str:
+    return f"{n} word" if n == 1 else f"{n} words"
+
+
+def _unproven_detail(unproven: list[Unproven]) -> str | None:
+    """A held item's detail: how many words were not proven, and the first."""
+    if not unproven:
+        return None
+    more = f" (and {len(unproven) - 1} more)" if len(unproven) > 1 else ""
+    return f"The check could not prove {_words(len(unproven))}: {unproven[0].detail}{more}"
+
+
 def _write_report(deps: DecomposeDeps, item: ConversionItem, result: Decomposition) -> str:
     """The report's flags as JSON beside the source (R4); the item records the key."""
     key = decomposition_report_key(item.batch_id, item.id)
     flags = [flag.model_dump(mode="json", by_alias=True) for flag in result.document.report]
+    # Kept out of the document, whose flag codes are the bridge contract's (spec 14.2).
+    flags += [
+        {"code": UNPROVEN_FLAG, "severity": "warning", "at": u.at, "message": u.detail}
+        for u in result.unproven
+    ]
     body = json.dumps({"flags": flags}, ensure_ascii=False).encode("utf-8")
     deps.store.put(deps.runs_bucket, key, body, "application/json")
     deps.items.set_report(item.id, key, len(flags))

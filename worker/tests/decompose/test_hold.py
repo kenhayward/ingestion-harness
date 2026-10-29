@@ -95,7 +95,9 @@ def test_the_manifest_is_camel_case_as_the_api_reads_it() -> None:
         "images",
         "pageCount",
         "pageMap",
+        "unproven",
     }
+    assert manifest["unproven"] == []
     assert manifest["version"] == 1
     assert manifest["entry"] == ENTRY
     assert manifest["startedBy"] == {"id": "u1", "name": "Operator", "email": None}
