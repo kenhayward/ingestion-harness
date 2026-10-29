@@ -387,6 +387,10 @@ describe('watched folders: stopping, starting and removing', () => {
       'application/json',
     );
     await c.store.put('runs', pageKey, Buffer.from('jpeg'), 'image/jpeg');
+    // A file the worker took and stored, but had not queued: let go, its copy deleted.
+    const taken = 'decompositions/b/taken.pdf';
+    await c.store.put('runs', taken, Buffer.from('%PDF-'), 'application/pdf');
+    c.watches.addPickup(made.id, 'moved', 0, taken);
 
     const res = await call(c, 'POST', `/watches/${made.id}/stop`, { mode: 'now' });
     expect(res.statusCode).toBe(200);
@@ -411,6 +415,7 @@ describe('watched folders: stopping, starting and removing', () => {
     });
     expect(await c.store.get('runs', manifestKey)).toBeNull();
     expect(await c.store.get('runs', pageKey)).toBeNull();
+    expect(await c.store.get('runs', taken)).toBeNull();
   });
 
   it('drain only changes the state, and each stop is refused in a state it does not apply to', async () => {

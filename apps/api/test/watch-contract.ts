@@ -17,6 +17,10 @@ export interface WatchHooks {
   addPickup(id: string, step: string, moveFailures: number): Promise<void>;
   /** The pickups' refused-move counts, by step. */
   moveFailures(id: string): Promise<Record<string, number>>;
+  /** A pickup the worker took from the root (`stored`, `moved`) with its copy at `objectKey`. */
+  addTaken(id: string, step: 'stored' | 'moved', objectKey: string): Promise<void>;
+  /** The steps of the watch's pickups, sorted. */
+  steps(id: string): Promise<string[]>;
   /** A final outcome `hoursAgo` hours ago. */
   recordFinish(id: string, delivered: boolean, hoursAgo: number): Promise<void>;
   addEvent(id: string, level: 'info' | 'warn' | 'error', message: string): Promise<void>;
@@ -310,6 +314,29 @@ export function watchContract(name: string, make: MakeWatches) {
       expect(w.throughput.total).toEqual({ delivered: 0, failed: 3 });
       expect(w.throughput.day.failed).toBe(3);
       expect(w.queue.inProgress).toBe(3);
+    });
+
+    it('stop now lets go of files taken but not queued, and hands back their copies', async () => {
+      const { repo, hooks, targetId } = await make();
+      const made = await repo.create(settings(targetId), user, 'incoming', user);
+      if (!made.ok) throw new Error('create failed');
+      const id = made.watch.id;
+      await repo.start(id);
+      await hooks.addTaken(id, 'stored', 'decompositions/b/1.pdf');
+      await hooks.addTaken(id, 'moved', 'decompositions/b/2.docx');
+      await hooks.addUnfinished(id, 'queued');
+      const drained = await repo.stop(id, 'drain');
+      expect(drained).toMatchObject({ ok: true, dropped: [] });
+      expect(await hooks.steps(id)).toEqual(['moved', 'queued', 'stored']);
+      const done = await repo.stop(id, 'now');
+      if (!done.ok) throw new Error('stop failed');
+      expect([...done.dropped].sort()).toEqual([
+        'decompositions/b/1.pdf',
+        'decompositions/b/2.docx',
+      ]);
+      expect(await hooks.steps(id)).toEqual(['abandoned', 'abandoned', 'abandoned']);
+      // Nothing failed by letting go: the files were never converted.
+      expect((await repo.get(id))!.throughput.total).toEqual({ delivered: 0, failed: 1 });
     });
 
     it('counts the watches that name a target', async () => {

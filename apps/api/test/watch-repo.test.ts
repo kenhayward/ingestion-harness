@@ -16,6 +16,8 @@ watchContract('memory', async () => {
       inspect: async (id, itemId) => repo.item(id, itemId),
       addPickup: async (id, step, n) => repo.addPickup(id, step, n),
       moveFailures: async (id) => repo.moveFailures(id),
+      addTaken: async (id, step, key) => repo.addPickup(id, step, 0, key),
+      steps: async (id) => repo.pickupSteps(id),
       recordFinish: async (id, d, h) =>
         repo.recordFinish(id, d, new Date(clock.now.getTime() - h * 3_600_000)),
       addEvent: async (id, l, m) => repo.addEvent(id, l, m),

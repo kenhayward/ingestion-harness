@@ -29,7 +29,10 @@ export type UpdateWatchResult =
 
 export type RemoveWatchResult = 'removed' | 'missing' | 'not_stopped';
 
-/** An item Stop now cancelled: the caller deletes its held files. */
+/** An item Stop now cancelled: the caller deletes its held files. Stop now also lets go of the
+ * files the worker took but had not queued (`dropped`: their stored copies, for the caller to
+ * delete): a file moved to `processing` stays there, never taken again; one still in the root is
+ * picked up afresh after Start. */
 export interface CancelledItem {
   itemId: string;
   batchId: string;
@@ -37,7 +40,7 @@ export interface CancelledItem {
 
 /** `state`: the watch is not in a state the stop applies to (drain: running; now: running or draining). */
 export type StopResult =
-  | { ok: true; watch: WatchView; cancelled: CancelledItem[] }
+  | { ok: true; watch: WatchView; cancelled: CancelledItem[]; dropped: string[] }
   | { ok: false; reason: 'missing' | 'state' };
 
 /** A patch to a watch: the settings, with the run-as user and folder path that go with a folder. */
@@ -105,7 +108,7 @@ interface Held {
   view: WatchView;
   items: HeldItem[];
   finishes: { at: Date; delivered: boolean }[];
-  pickups: { step: string; moveFailures: number }[];
+  pickups: { step: string; moveFailures: number; objectKey?: string }[];
   events: WatchEvent[];
 }
 
@@ -241,9 +244,15 @@ export class MemoryWatchRepo implements WatchRepo {
     }
     if (mode === 'drain') {
       h.view = { ...h.view, state: 'draining' };
-      return { ok: true, watch: this.view(h), cancelled: [] };
+      return { ok: true, watch: this.view(h), cancelled: [], dropped: [] };
     }
     h.view = { ...h.view, state: 'stopped' };
+    const dropped: string[] = [];
+    for (const p of h.pickups) {
+      if (p.step !== 'stored' && p.step !== 'moved') continue;
+      p.step = 'abandoned';
+      if (p.objectKey) dropped.push(p.objectKey);
+    }
     const cancelled: CancelledItem[] = [];
     for (const i of this.unfinished(h).filter((x) => NOT_AT_BRIDGE.includes(x.outcome))) {
       if (i.jobStatus === 'running') {
@@ -259,7 +268,7 @@ export class MemoryWatchRepo implements WatchRepo {
       this.recordFinish(id, false);
       cancelled.push({ itemId: i.itemId, batchId: i.batchId });
     }
-    return { ok: true, watch: this.view(h), cancelled };
+    return { ok: true, watch: this.view(h), cancelled, dropped };
   }
 
   async countForTarget(targetId: string) {
@@ -331,8 +340,13 @@ export class MemoryWatchRepo implements WatchRepo {
     };
   }
   /** A pickup the sink refused to move `moveFailures` times (the worker writes these). */
-  addPickup(id: string, step: string, moveFailures: number): void {
-    this.held.get(id)!.pickups.push({ step, moveFailures });
+  addPickup(id: string, step: string, moveFailures: number, objectKey?: string): void {
+    this.held.get(id)!.pickups.push({ step, moveFailures, objectKey });
+  }
+  /** The steps of the watch's pickups (with those of its items), sorted. */
+  pickupSteps(id: string): string[] {
+    const h = this.held.get(id)!;
+    return [...h.pickups.map((p) => p.step), ...h.items.map((i) => i.pickup)].sort();
   }
   /** The pickups' refused-move counts, by step. */
   moveFailures(id: string): Record<string, number> {

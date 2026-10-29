@@ -77,7 +77,9 @@ export function WatchedFoldersHelp() {
           <strong>Start</strong> picks up from the root again and clears the watch's problem. It
           also retries moves the target refused earlier, so after clearing the folder, stop and
           start the watch to retry stuck moves. Files a Stop now left in the processing folder are
-          not taken again.
+          not taken again. A document that was being delivered, or still converting, when you
+          stopped the watch is filed in delivered or failed, and counted, once the watch starts
+          again: a stopped watch does not look at its folder.
         </li>
         <li>
           <strong>Remove…</strong> is for a stopped watch. Its counters and events go; its batch

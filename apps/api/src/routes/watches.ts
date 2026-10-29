@@ -543,7 +543,12 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
             cancelled: the worker fails it when it notices, or delivers it if it was past its
             last check, so a document the bridge accepted is never recorded as cancelled. Each
             document failed here is counted as failed in the watch's figures and its file is left
-            in \`processing\`, never taken again; the others count when they finish.
+            in \`processing\`, never taken again. A file taken from the folder but not queued yet
+            is let go and its stored copy deleted: one already in \`processing\` stays there,
+            never taken again; one still in the root is picked up afresh after _Start_. The
+            documents left to finish on their own (being delivered, or a running job's) are filed
+            and counted when they finish, once the watch is started again: a stopped watch never
+            looks at its folder.
             \`mode: drain\` (a running watch): nothing new is admitted,
             the admitted documents run to the end, and the watch shows _Draining_ until the last
             one finishes, then _Stopped_.
@@ -585,6 +590,13 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
           req.log.warn({ err, item: c.itemId }, 'a cancelled watched document kept its held files');
         }
       }
+      for (const key of done.dropped) {
+        try {
+          await store.delete(buckets.runs, key);
+        } catch (err) {
+          req.log.warn({ err, key }, 'a let-go watched file kept its stored copy');
+        }
+      }
       return done.watch;
     },
   );
@@ -599,8 +611,10 @@ export async function watchRoutes(app: FastifyInstance): Promise<void> {
           md`
             **Admins only.** The watch runs again: its problem is cleared and it looks at the
             folder at once. Moves the sink refused (a pickup the worker gave up on after five)
-            are tried again, so an admin who cleared the folder stops and starts the watch. Files left in the folder's \`processing\` subfolder by a Stop now are
-            not taken again; the root is.
+            are tried again, so an admin who cleared the folder stops and starts the watch. Files
+            a Stop now left in the folder's \`processing\` subfolder are not taken again; the
+            root is. Documents that finished while the watch was stopped (being delivered, or
+            converting, at the stop) are filed and counted now.
           `,
         ),
         params: IdParams,

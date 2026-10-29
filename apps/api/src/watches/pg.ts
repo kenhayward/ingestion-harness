@@ -269,7 +269,17 @@ export class PgWatchRepo implements WatchRepo {
         [id, mode === 'drain' ? 'draining' : 'stopped'],
       );
       const cancelled: CancelledItem[] = [];
+      const dropped: string[] = [];
       if (mode === 'now') {
+        // Files taken but not queued are let go (the worker's admit would abandon them on a
+        // stopped watch too): their copies go back to the caller to delete.
+        const letGo = await client.query<{ object_key: string | null }>(
+          `UPDATE watch_pickups SET step = 'abandoned', updated_at = now()
+            WHERE watch_id = $1 AND step IN ('stored', 'moved')
+           RETURNING object_key`,
+          [id],
+        );
+        dropped.push(...letGo.rows.flatMap((r) => (r.object_key ? [r.object_key] : [])));
         // The items first, locked: the worker's own writes to them wait. Then their jobs,
         // locked too (a claim cannot slip in), to see which a worker holds.
         const items = await client.query<{ id: string; batch_id: string; job_id: string | null }>(
@@ -326,7 +336,7 @@ export class PgWatchRepo implements WatchRepo {
       }
       const watch = (await this.one(client, id))!;
       await client.query('COMMIT');
-      return { ok: true, watch, cancelled };
+      return { ok: true, watch, cancelled, dropped };
     } catch (e) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw e;

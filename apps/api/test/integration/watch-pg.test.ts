@@ -119,6 +119,21 @@ describe.skipIf(!url)('PgWatchRepo', { timeout: 60_000 }, () => {
           );
           return Object.fromEntries(rows.map((r) => [r.step, r.move_failures]));
         },
+        addTaken: async (id, step, objectKey) => {
+          await p.query(
+            `INSERT INTO watch_pickups
+               (watch_id, original_name, size, modified_at, step, working_name, item_id, object_key)
+             VALUES ($1, $2, 1, now(), $3, $2, gen_random_uuid(), $4)`,
+            [id, `t-${++n}.docx`, step, objectKey],
+          );
+        },
+        steps: async (id) => {
+          const { rows } = await p.query<{ step: string }>(
+            'SELECT step FROM watch_pickups WHERE watch_id = $1 ORDER BY step',
+            [id],
+          );
+          return rows.map((r) => r.step);
+        },
         recordFinish: async (id, delivered, hoursAgo) => {
           await p.query(
             `INSERT INTO watch_finishes (watch_id, finished_at, delivered)
