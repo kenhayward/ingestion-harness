@@ -142,11 +142,13 @@ def decompose_pdf(
         *in_document_order(doc.report, doc),
     ]
     doc = doc.model_copy(update={"report": report})
-    check_pdf(doc, ledger, text, provenance)
+    unproven = check_pdf(doc, ledger, text, provenance)
     page_map = {
         element: sorted(p + 1 for p in pages) for element, pages in provenance.pages.items()
     }
-    return Decomposition(document=doc, image_bytes=image_bytes, originals={}, page_map=page_map)
+    return Decomposition(
+        document=doc, image_bytes=image_bytes, originals={}, page_map=page_map, unproven=unproven
+    )
 
 
 def _render_px(page: PageText, longest_dim: int, rotation: int) -> tuple[int, int]:

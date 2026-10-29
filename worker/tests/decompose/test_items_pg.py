@@ -86,6 +86,18 @@ def _held(conn: psycopg.Connection[tuple[object, ...]], item_id: str) -> tuple[o
     return row
 
 
+def test_a_held_item_records_the_words_not_proven(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    store.start(item_id)
+    assert store.hold(item_id, "f" * 64, None, "The check could not prove 1 word: page 2: 'x'")
+    assert _outcome(conn, item_id)[:2] == (
+        "awaiting_review",
+        "The check could not prove 1 word: page 2: 'x'",
+    )
+
+
 def test_a_decomposing_item_is_held_for_review(
     item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
 ) -> None:

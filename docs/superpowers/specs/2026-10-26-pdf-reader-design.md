@@ -438,6 +438,16 @@ The decomposition spec's §7 checks apply, adapted to what a PDF can prove. **[c
 - **References** must resolve, as for Word.
 - **Scanned pages** have no independent text to compare with, so they are flagged, not checked.
 
+(2026-10-29, owner's call) **Words not proven are reviewed, not failed.** A PDF whose only
+problems are the first three checks' (a char not accounted for, read twice or not placed; an
+owner's word missing or extra; a word moved out of or into a table) is no longer failed. The
+check lists every problem, one per word, and the PDF is held for review (§14.2) with them. More
+than 25 problems still fail the document, naming the first: that many means a page was read
+badly, not a word. Unresolved references, a Word document's check, and anything else that
+fails a decomposition still fail it. The owner's first clinical protocol failed on one
+subscript ("page 79: '1' extra"); in a clinical document a digit can matter, so a person
+compares each word with its page before anything is delivered.
+
 The PDF checks are their own module beside the Word one. They share its normalisation and the
 contract's text and grid forms (decomposition spec §9). **[call]**
 
@@ -593,6 +603,16 @@ Rejecting needs a note, so the row says why. **[call]** Approving takes an optio
   `changed_in_target` or `unresolved`, that outcome is recorded at once, as for Word, and nothing
   is held. **[call]** The register decides again, for real, when the approved document is
   delivered, so a change in between (another delivery landing first) is still caught.
+- (2026-10-29, owner's call) A PDF with words the check could not prove (§6) is held, as
+  every PDF is, and also in an **Auto Approve** batch: those words need a person. Each one is
+  listed:
+  - in the held manifest's `unproven` (`at`, the block; `detail`, "page 79: '1' extra"),
+    which the review page lists above the document, its pages dotted;
+  - in the item's report as a `fidelity_unproven` warning;
+  - in the item's detail ("The check could not prove 1 word: page 79: '1' extra").
+
+  They are not put in the delivered document: its flag codes are the bridge contract's, and a
+  sink checks them. **[call]**
 - Every run that would deliver is held, forced runs and re-deliveries included. **[call]** A
   forced run exists to send the document again, and what is sent should have been looked at.
 - Except in a batch with **Auto Approve** on (2026-10-28, the owner's request; off by default):

@@ -181,6 +181,10 @@
             <a href="#remember-target">The Conversion tab keeps your target</a>
             <span>— a new batch starts on the target you picked last</span>
           </li>
+          <li>
+            <a href="#unproven-words">PDFs with a few words not proven are reviewed, not failed</a>
+            <span>— each word listed with its page on the review</span>
+          </li>
         </ul>
         <h4>Fixes</h4>
         <ul>
@@ -267,6 +271,34 @@
         is now remembered in this browser, and a new batch starts on it for as long as it is still
         listed.
       </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="unproven-words">PDFs with a few words not proven are reviewed, not failed</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/367">#367</a>
+      </p>
+      <p>
+        Every word of a PDF is checked against the page it came from, and a PDF with even one word
+        that didn't match used to fail ("page 79: '1' extra"). Now a PDF with a few such words is
+        held for review instead, so you decide.
+      </p>
+      <ul>
+        <li>
+          Its line on the batch says how many words the check could not prove, and the first:
+          <em>The check could not prove 2 words: page 79: '1' extra (and 1 more)</em>. Its report
+          lists each one.
+        </li>
+        <li>
+          <strong>Review</strong> lists them above the document. Choose one to see its page and
+          compare it: approving delivers the document as it is shown.
+        </li>
+        <li>It is held for review even in a batch with <strong>Auto Approve</strong> on.</li>
+        <li>
+          More than 25 such words still fail the PDF: that many means a page was read badly. Any
+          other failure, and a Word document's check, still fail as before.
+        </li>
+        <li>The words are not sent to the target with the document.</li>
+      </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h2 id="fixes">Fixes</h2>

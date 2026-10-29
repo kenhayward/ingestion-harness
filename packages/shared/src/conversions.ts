@@ -236,10 +236,20 @@ export const RejectDecisionSchema = z.object({ note: z.string().trim().min(1) })
 export type RejectDecision = z.infer<typeof RejectDecisionSchema>;
 
 /**
+ * A word the PDF's fidelity check could not prove (worker `Unproven`): what is wrong, from its
+ * 1-based page ("page 79: '1' extra"), and the section or block it is in when there is one.
+ */
+export const UnprovenWordSchema = z
+  .object({ detail: z.string(), page: z.number().int().positive(), at: z.string().nullable() })
+  .strict();
+export type UnprovenWord = z.infer<typeof UnprovenWordSchema>;
+
+/**
  * What the review page reads for a held item (`GET /api/conversions/items/:id/review`), from the
  * worker's held manifest: the decomposed document as it would be delivered (a `DecomposedDocument`
  * of `@ih/bridge-contract`, which the API validates and this package does not depend on), the
- * pages it came from, and the held images by position (`/images/:index` serves each).
+ * pages it came from, the held images by position (`/images/:index` serves each), and the words
+ * the check could not prove, for the reviewer to compare with their pages (empty for most).
  */
 export const ConversionReviewSchema = z
   .object({
@@ -249,6 +259,7 @@ export const ConversionReviewSchema = z
     /** The 1-based pages each section and block came from, by id. */
     pageMap: z.record(z.string(), z.array(z.number().int().positive())),
     images: z.array(z.object({ id: z.string(), contentType: z.string() })),
+    unproven: z.array(UnprovenWordSchema),
   })
   .strict();
 export type ConversionReview = z.infer<typeof ConversionReviewSchema>;

@@ -100,10 +100,17 @@ class ItemStore(Protocol):
         """Record where the item's report was written, and how many flags it holds."""
         ...
 
-    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+    def hold(
+        self,
+        item_id: str,
+        held_sha256: str,
+        held_entry: dict[str, Any] | None,
+        detail: str | None = None,
+    ) -> bool:
         """Hold the item for review: `awaiting_review`, recording the held files' sha-256 and the
-        register entry approval would write. Only while the item is still `queued` or
-        `decomposing`; False when it had moved on. A held item is not finished."""
+        register entry approval would write, and `detail` (the words the check could not prove).
+        Only while the item is still `queued` or `decomposing`; False when it had moved on. A
+        held item is not finished."""
         ...
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
@@ -140,13 +147,23 @@ class MemoryItemStore:
             if item is not None:  # as on Postgres: a missing item is no error
                 self.items[item_id] = replace(item, report_key=report_key, flag_count=flag_count)
 
-    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+    def hold(
+        self,
+        item_id: str,
+        held_sha256: str,
+        held_entry: dict[str, Any] | None,
+        detail: str | None = None,
+    ) -> bool:
         with self._lock:
             item = self.items.get(item_id)
             if item is None or item.outcome not in UNDECIDED:
                 return False
             self.items[item_id] = replace(
-                item, outcome="awaiting_review", held_sha256=held_sha256, held_entry=held_entry
+                item,
+                outcome="awaiting_review",
+                held_sha256=held_sha256,
+                held_entry=held_entry,
+                detail=detail,
             )
             return True
 
@@ -203,14 +220,21 @@ class PgItemStore:
             (report_key, flag_count, item_id),
         )
 
-    def hold(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+    def hold(
+        self,
+        item_id: str,
+        held_sha256: str,
+        held_entry: dict[str, Any] | None,
+        detail: str | None = None,
+    ) -> bool:
         if not _is_uuid(item_id):
             return False
         cur = self._conn.execute(
             """UPDATE decomposition_items
-                  SET outcome = 'awaiting_review', held_sha256 = %s, held_entry = %s
+                  SET outcome = 'awaiting_review', held_sha256 = %s, held_entry = %s,
+                      detail = %s
                 WHERE id = %s AND outcome IN ('queued', 'decomposing')""",
-            (held_sha256, Jsonb(held_entry) if held_entry is not None else None, item_id),
+            (held_sha256, Jsonb(held_entry) if held_entry is not None else None, detail, item_id),
         )
         return cur.rowcount > 0
 

@@ -2938,6 +2938,17 @@ input.danger-border {
 .dd-heading .dd-page {
   margin-top: 18px;
 }
+/* The words the fidelity check could not prove, above the document (spec 14.2). */
+.callout.unproven {
+  margin-bottom: 12px;
+}
+.callout.unproven ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.callout.unproven button.link {
+  text-align: left;
+}
 .dd-flags {
   grid-column: 1 / -1;
   margin: 0 0 6px;

@@ -4,7 +4,8 @@ Content must never be silently changed, lost or moved. A PDF has no source tree 
 so the check is built on the ledger: who owns each visible char of a born-digital page. Owners
 are the top-level blocks (paragraph, list, table, figure, image, equation), the sections (for
 their titles) and the notes; a char can also be dropped on purpose (`dropped:<reason>`).
-`check_pdf` refuses the document, naming the page and the word, on the first of:
+`check_pdf` lists each word that fails one of the first three, naming its page, and refuses
+the document when there are more than `MAX_UNPROVEN` of them, or a reference fails:
 
 1. **Every char accounted for.** A visible char with no ledger entry, with two, or with an owner
    that is not in the document fails.
@@ -56,7 +57,7 @@ from ingest_worker.decompose.model import (
     Table,
     XRef,
 )
-from ingest_worker.decompose.package import DecompositionFailed
+from ingest_worker.decompose.package import DecompositionFailed, Unproven
 from ingest_worker.decompose.pdf.build import Provenance
 from ingest_worker.decompose.pdf.layout import BBox
 from ingest_worker.decompose.pdf.pieces import DROPPED_PREFIX, DropReason, Ledger, words_of
@@ -69,6 +70,8 @@ _READ_AS = {cp: unicodedata.normalize("NFKC", chr(cp)) for cp in range(0xFB00, 0
     0x2011: "-"
 }
 _DROPPED = frozenset(DROPPED_PREFIX + reason for reason in get_args(DropReason))
+#: More words not proven than this fail the document: a page was read badly, not a word (spec 6).
+MAX_UNPROVEN = 25
 
 
 def words(text: str) -> list[str]:
@@ -217,12 +220,22 @@ class _Check:
         self.recognised = {p.index for p in text.pages if p.kind == "scanned"}
         self.entries = {p.index: ledger.entries(p.index) for p in self.pages}
         self.segments = {p.index: _segments(p, self.entries[p.index]) for p in self.pages}
+        self.unproven: list[Unproven] = []
 
-    def run(self) -> None:
+    def run(self) -> list[Unproven]:
         self.accounted()
         self.owned_words()
         self.table_regions()
         check_references(self.doc)
+        if len(self.unproven) > MAX_UNPROVEN:
+            first = self.unproven[0]
+            raise DecompositionFailed(
+                f"{first.detail}, and {len(self.unproven) - 1} more words not proven", first.at
+            )
+        return self.unproven
+
+    def _unproven(self, page: int, problem: str, at: str | None) -> None:
+        self.unproven.append(Unproven(f"page {page + 1}: {problem}", page + 1, at))
 
     # -- 1. every char accounted for --
 
@@ -230,7 +243,8 @@ class _Check:
         owners = set(self.expected.words)
         for page in self.pages:
             entries = self.entries[page.index]
-            word_of = {c.index: s.text for s in self.segments[page.index] for c in s.chars}
+            segment_of = {c.index: s for s in self.segments[page.index] for c in s.chars}
+            seen: set[int] = set()  # one problem per word, not per char
             for c in page.chars:
                 if not c.visible:
                     continue
@@ -242,9 +256,12 @@ class _Check:
                     problem = "read twice"
                 elif found[0] not in owners and found[0] not in _DROPPED:
                     problem = "not placed"
-                if problem is not None:
-                    word = _shown(word_of.get(c.index, c.text))
-                    raise DecompositionFailed(f"word '{word}' {problem}", f"page {page.index + 1}")
+                segment = segment_of.get(c.index)
+                if problem is not None and id(segment) not in seen:
+                    seen.add(id(segment))
+                    word = _shown(segment.text if segment is not None else c.text)
+                    owner = found[0] if len(found) == 1 and found[0] in owners else None
+                    self._unproven(page.index, f"word '{word}' {problem}", owner)
 
     # -- 2. each owner's words --
 
@@ -264,16 +281,14 @@ class _Check:
             by_page = got.get(owner, {})
             total: Counter[str] = sum(by_page.values(), Counter())
             differing = sorted(w for w in set(total) | set(expected) if total[w] != expected[w])
-            if not differing:
-                continue
-            word = differing[0]
-            if total[word] > expected[word]:
-                at = min(p for p, counts in by_page.items() if counts[word] > 0)
-                problem = "missing"
-            else:
-                at = min(set(by_page) or self.prov.pages.get(owner) or {0})
-                problem = "extra"
-            raise DecompositionFailed(f"page {at + 1}: '{word}' {problem}", owner)
+            for word in differing:
+                if total[word] > expected[word]:
+                    at = min(p for p, counts in by_page.items() if counts[word] > 0)
+                    problem = "missing"
+                else:
+                    at = min(set(by_page) or self.prov.pages.get(owner) or {0})
+                    problem = "extra"
+                self._unproven(at, f"'{word}' {problem}", owner)
 
     # -- 3. each table's region --
 
@@ -291,22 +306,23 @@ class _Check:
                         if share >= 1 / 2:
                             inside.update(words(segment.text))
                     elif segment.owner is not None and share > 1 / 2:
-                        raise DecompositionFailed(
-                            f"page {number + 1}: '{_shown(segment.text)}' moved out of table "
-                            f"{table.id}",
+                        self._unproven(
+                            number,
+                            f"'{_shown(segment.text)}' moved out of table {table.id}",
                             table.id,
                         )
             cells = self.forms.counts(self.forms.cell_texts(table))
             moved_in = sorted(cells - inside)
-            if moved_in:
-                page = regions[0][0] if regions else min(self.prov.pages.get(table.id) or {0})
-                raise DecompositionFailed(
-                    f"page {page + 1}: '{moved_in[0]}' moved into table {table.id}", table.id
-                )
+            page = regions[0][0] if regions else min(self.prov.pages.get(table.id) or {0})
+            for word in moved_in:
+                self._unproven(page, f"'{word}' moved into table {table.id}", table.id)
 
 
-def check_pdf(doc: DecomposedDocument, ledger: Ledger, text: TextLayer, prov: Provenance) -> None:
-    """Refuse `doc` if a char of a born-digital page is not accounted for exactly once, an
-    owner's words differ from its chars', a cell's text moved across its table's edge, or a
-    reference doesn't resolve; the error names the page and the word."""
-    _Check(doc, ledger, text, prov).run()
+def check_pdf(
+    doc: DecomposedDocument, ledger: Ledger, text: TextLayer, prov: Provenance
+) -> list[Unproven]:
+    """The words of `doc` not proven, in check order, page and word named: a char of a
+    born-digital page not accounted for exactly once, an owner's word missing or extra, a cell's
+    word moved across its table's edge. Refuses `doc` when there are more than `MAX_UNPROVEN`,
+    or a reference doesn't resolve."""
+    return _Check(doc, ledger, text, prov).run()

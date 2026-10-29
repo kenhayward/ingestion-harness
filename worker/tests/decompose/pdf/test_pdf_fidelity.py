@@ -25,7 +25,7 @@ from ingest_worker.decompose.model import (
 )
 from ingest_worker.decompose.package import DecompositionFailed
 from ingest_worker.decompose.pdf.build import Provenance
-from ingest_worker.decompose.pdf.fidelity import check_pdf
+from ingest_worker.decompose.pdf.fidelity import MAX_UNPROVEN, check_pdf
 from ingest_worker.decompose.pdf.pieces import Ledger
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 
@@ -132,9 +132,9 @@ def prov(**pages: set[int]) -> Provenance:
 
 
 def fails(doc_: DecomposedDocument, text: TextLayer, ledger: Ledger, p: Provenance) -> str:
-    with pytest.raises(DecompositionFailed) as info:
-        check_pdf(doc_, ledger, text, p)
-    return str(info.value)
+    """The first word not proven, with the block it is in."""
+    [first, *_] = check_pdf(doc_, ledger, text, p)
+    return f"{first.detail} (at {first.at})" if first.at else first.detail
 
 
 # --- Every char accounted for -----------------------------------------------------------------
@@ -142,32 +142,32 @@ def fails(doc_: DecomposedDocument, text: TextLayer, ledger: Ledger, p: Provenan
 
 def test_correct_document_passes() -> None:
     text, ledger = layer(R("Hello world.", ["p-1"]))
-    check_pdf(doc(para("p-1", "Hello world.")), ledger, text, prov(p_1={0}))
+    assert check_pdf(doc(para("p-1", "Hello world.")), ledger, text, prov(p_1={0})) == []
 
 
 def test_unowned_char_fails_with_page_and_word() -> None:
     text, ledger = layer(R("Hello world", ["p-1"]), R("stray", [], y=130))
     message = fails(doc(para("p-1", "Hello world")), text, ledger, prov(p_1={0}))
-    assert message == "word 'stray' not accounted for (at page 1)"
+    assert message == "page 1: word 'stray' not accounted for"
 
 
 def test_char_read_twice_fails() -> None:
     text, ledger = layer(R("Hello", ["p-1"]), R("twice", ["p-1", "p-2"], y=130))
     d = doc(para("p-1", "Hello twice"), para("p-2", "twice"))
     message = fails(d, text, ledger, prov(p_1={0}, p_2={0}))
-    assert message == "word 'twice' read twice (at page 1)"
+    assert message == "page 1: word 'twice' read twice"
 
 
 def test_char_with_an_owner_not_in_the_document_fails() -> None:
     text, ledger = layer(R("Hello", ["p-1"]), R("lost", ["#/texts/4"], y=130))
     message = fails(doc(para("p-1", "Hello")), text, ledger, prov(p_1={0}))
-    assert message == "word 'lost' not placed (at page 1)"
+    assert message == "page 1: word 'lost' not placed"
 
 
 def test_unknown_drop_reason_is_not_accounted() -> None:
     text, ledger = layer(R("Hello", ["p-1"]), R("gone", ["dropped:whim"], y=130))
     message = fails(doc(para("p-1", "Hello")), text, ledger, prov(p_1={0}))
-    assert message == "word 'gone' not placed (at page 1)"
+    assert message == "page 1: word 'gone' not placed"
 
 
 # --- Each block's words -------------------------------------------------------------------------
@@ -192,18 +192,40 @@ def test_word_in_the_wrong_block_fails() -> None:
     assert message == "page 1: 'two' missing (at p-1)"
 
 
+def test_every_word_not_proven_is_listed() -> None:
+    text, ledger = layer(R("Hello brave world", ["p-1"]), R("stray", [], y=130))
+    problems = check_pdf(doc(para("p-1", "Hello big world")), ledger, text, prov(p_1={0}))
+    assert [(u.detail, u.page, u.at) for u in problems] == [
+        ("page 1: word 'stray' not accounted for", 1, None),
+        ("page 1: 'big' extra", 1, "p-1"),
+        ("page 1: 'brave' missing", 1, "p-1"),
+    ]
+
+
+def test_a_word_is_listed_once_not_per_char() -> None:
+    text, ledger = layer(R("Hello", ["p-1"]), R("stray", [], y=130))
+    problems = check_pdf(doc(para("p-1", "Hello")), ledger, text, prov(p_1={0}))
+    assert [u.detail for u in problems] == ["page 1: word 'stray' not accounted for"]
+
+
+def test_more_words_not_proven_than_the_cap_fail_the_document() -> None:
+    words = " ".join(f"w{n}" for n in range(MAX_UNPROVEN))
+    text, ledger = layer(R(words, ["p-1"]))
+    assert len(check_pdf(doc(para("p-1", "")), ledger, text, prov(p_1={0}))) == MAX_UNPROVEN
+    text, ledger = layer(R(f"{words} more", ["p-1"]))
+    with pytest.raises(DecompositionFailed) as info:
+        check_pdf(doc(para("p-1", "")), ledger, text, prov(p_1={0}))
+    assert str(info.value) == "page 1: 'more' missing, and 25 more words not proven (at p-1)"
+
+
 def test_words_compare_as_counts_not_order() -> None:
     text, ledger = layer(R("world", ["p-1"]), R("Hello", ["p-1"], y=130))
-    check_pdf(doc(para("p-1", "Hello world")), ledger, text, prov(p_1={0}))
+    assert check_pdf(doc(para("p-1", "Hello world")), ledger, text, prov(p_1={0})) == []
 
 
 def passes(text: TextLayer, ledger: Ledger, said: str) -> bool:
     """Whether a paragraph `p-1` saying `said` passes against the chars."""
-    try:
-        check_pdf(doc(para("p-1", said)), ledger, text, prov(p_1={0}))
-    except DecompositionFailed:
-        return False
-    return True
+    return check_pdf(doc(para("p-1", said)), ledger, text, prov(p_1={0})) == []
 
 
 def test_a_word_gap_pdfium_saw_cuts_a_word() -> None:
@@ -239,10 +261,9 @@ def test_a_superscript_stays_in_its_word() -> None:
 def test_ligature_and_nb_hyphen_normalise() -> None:
     as_drawn = "\N{LATIN SMALL LIGATURE FI}ne non\N{NON-BREAKING HYPHEN}stop"
     text, ledger = layer(R(as_drawn, ["p-1"]))
-    check_pdf(doc(para("p-1", "fine non-stop")), ledger, text, prov(p_1={0}))
-    check_pdf(doc(para("p-1", as_drawn)), ledger, text, prov(p_1={0}))
-    with pytest.raises(DecompositionFailed):
-        check_pdf(doc(para("p-1", "fine nonstop")), ledger, text, prov(p_1={0}))
+    assert check_pdf(doc(para("p-1", "fine non-stop")), ledger, text, prov(p_1={0})) == []
+    assert check_pdf(doc(para("p-1", as_drawn)), ledger, text, prov(p_1={0})) == []
+    assert check_pdf(doc(para("p-1", "fine nonstop")), ledger, text, prov(p_1={0}))
 
 
 def test_dropped_chars_and_note_tokens_are_accounted() -> None:
@@ -267,7 +288,7 @@ def test_dropped_chars_and_note_tokens_are_accounted() -> None:
         ],
         notes=[Note(id="fn-1", blocks=[para("fn-1#p-1", "Once daily.")])],
     )
-    check_pdf(d, ledger, text, prov(s_1_2_scope={0}))
+    assert check_pdf(d, ledger, text, prov(s_1_2_scope={0})) == []
 
 
 def test_a_marker_inside_a_word_splits_it_on_both_sides() -> None:
@@ -277,7 +298,7 @@ def test_a_marker_inside_a_word_splits_it_on_both_sides() -> None:
         R("bar", ["p-1"], x=96, gap=False),
     )
     d = doc(para("p-1", "foo", NoteRef(note_id="fn-1"), "bar"), notes=[Note(id="fn-1", blocks=[])])
-    check_pdf(d, ledger, text, prov(p_1={0}))
+    assert check_pdf(d, ledger, text, prov(p_1={0})) == []
 
 
 def test_image_only_equation_chars_are_not_words() -> None:
@@ -288,7 +309,7 @@ def test_image_only_equation_chars_are_not_words() -> None:
         images=[image("img")],
         equations=[Equation(id="equation-1/eq-1", image_id="img")],
     )
-    check_pdf(d, ledger, text, prov(p_1={0}, equation_1={0}))
+    assert check_pdf(d, ledger, text, prov(p_1={0}, equation_1={0})) == []
 
 
 def test_alt_text_is_compared() -> None:
@@ -312,7 +333,7 @@ def table_prov(**pages: set[int]) -> Provenance:
 def test_table_words_inside_its_region_pass() -> None:
     text, ledger = layer(R("Doses", ["t-1"], y=70), R("A", ["t-1"]), R("B", ["t-1"], x=120))
     d = doc(table("t-1", "A", "B", caption="Doses"))
-    check_pdf(d, ledger, text, table_prov(t_1={0}))
+    assert check_pdf(d, ledger, text, table_prov(t_1={0})) == []
 
 
 def test_char_of_another_block_inside_a_table_fails() -> None:
@@ -332,10 +353,10 @@ def test_word_moved_into_a_table_fails() -> None:
 def test_a_word_is_inside_a_region_by_most_of_its_chars() -> None:
     # the region ends at x=200: "abc" at x=188 has two chars of three centred inside it
     text, ledger = layer(R("A", ["t-1"]), R("abc", ["t-1"], x=188))
-    check_pdf(doc(table("t-1", "A", "abc")), ledger, text, table_prov(t_1={0}))
+    assert check_pdf(doc(table("t-1", "A", "abc")), ledger, text, table_prov(t_1={0})) == []
     text, ledger = layer(R("A", ["t-1"]), R("abc", ["p-1"], x=188))
     message = fails(doc(table("t-1", "A"), para("p-1", "abc")), text, ledger, table_prov())
     assert message == "page 1: 'abc' moved out of table t-1 (at t-1)"
     # one char of three inside is not the table's
     text, ledger = layer(R("A", ["t-1"]), R("abc", ["p-1"], x=194))
-    check_pdf(doc(table("t-1", "A"), para("p-1", "abc")), ledger, text, table_prov())
+    assert check_pdf(doc(table("t-1", "A"), para("p-1", "abc")), ledger, text, table_prov()) == []
