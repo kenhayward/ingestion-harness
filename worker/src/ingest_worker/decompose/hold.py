@@ -183,7 +183,12 @@ def read_held(
 def delete_held(store: ObjectStore, bucket: str, item: ConversionItem) -> None:
     """Delete the item's held files: what the manifest names, then the manifest. Missing ones
     (no manifest at all, even) are no error."""
-    manifest_key = decomposition_held_manifest_key(item.batch_id, item.id)
+    delete_stored(store, bucket, item.batch_id, item.id)
+
+
+def delete_stored(store: ObjectStore, bucket: str, batch_id: str, item_id: str) -> None:
+    """`delete_held` by the item's batch and id."""
+    manifest_key = decomposition_held_manifest_key(batch_id, item_id)
     raw = store.get_optional(bucket, manifest_key)
     if raw is None:
         return
@@ -191,5 +196,5 @@ def delete_held(store: ObjectStore, bucket: str, item: ConversionItem) -> None:
     for image in manifest.images:
         store.delete(bucket, image.key)
     for page in range(1, manifest.page_count + 1):
-        store.delete(bucket, decomposition_held_page_key(item.batch_id, item.id, page))
+        store.delete(bucket, decomposition_held_page_key(batch_id, item_id, page))
     store.delete(bucket, manifest_key)

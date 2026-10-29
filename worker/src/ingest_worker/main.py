@@ -151,7 +151,14 @@ def lane_round(deps: PipelineDeps, queue: JobQueue) -> int:
     if stores is None or targets is None:
         return 0
     try:
-        queued = dispatch_lanes(stores.lanes, targets, queue, stores.items)
+        queued = dispatch_lanes(
+            stores.lanes,
+            targets,
+            queue,
+            stores.items,
+            store=deps.store,
+            runs_bucket=deps.buckets.runs,
+        )
     except Exception:
         log.warning("lane dispatch failed", exc_info=True)
         return 0

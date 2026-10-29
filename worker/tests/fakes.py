@@ -47,7 +47,7 @@ from ingest_worker.publish_targets import (
     TargetMissing,
     TargetRow,
 )
-from ingest_worker.queue import ClaimedJob
+from ingest_worker.queue import ORPHAN_GRACE_S, ClaimedJob, EndedLane
 from ingest_worker.storage import MemoryObjectStore
 
 
@@ -219,8 +219,11 @@ class FakeQueue:
     suggest_error: Exception | None = None
     #: The items given a `waited` decompose job (queue_decompose_waited), in order.
     waited_items: list[str] = field(default_factory=list)
-    #: Items holding a lane with no `waited` job (lanes_without_job), as a test sets them.
-    lane_orphans: list[str] = field(default_factory=list)
+    #: Items holding a lane with no `waited` job (lanes_without_job), as a test sets them: each
+    #: with the seconds since its lane was claimed.
+    lane_orphans: dict[str, float] = field(default_factory=dict)
+    #: Lane holders whose job ended undecided (lanes_of_ended_jobs), as a test sets them.
+    ended_lanes: list[EndedLane] = field(default_factory=list)
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
@@ -355,7 +358,14 @@ class FakeQueue:
         return f"decompose-waited-{len(self.waited_items)}"
 
     def lanes_without_job(self) -> list[str]:
-        return [i for i in self.lane_orphans if i not in self.waited_items]
+        return [
+            i
+            for i, age in self.lane_orphans.items()
+            if age > ORPHAN_GRACE_S and i not in self.waited_items
+        ]
+
+    def lanes_of_ended_jobs(self) -> list[EndedLane]:
+        return list(self.ended_lanes)
 
     def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
         if self.suggest_error is not None:
@@ -1209,7 +1219,7 @@ class MemoryLaneStore:
     def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
         item = self.items.get(item_id)
         if item is None:
-            return False
+            raise LookupError(f"no conversion item {item_id}")
         check_tenant(item_id, self.batches[item.batch_id].tenant, tenant)
         if item.claimed is not None and item.outcome in HOLDING:
             return True
@@ -1247,6 +1257,9 @@ class MemoryLaneStore:
         }
         return sorted(tenants, key=lambda t: (t[0], t[1] is not None, t[1] or ""))
 
-    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str, str]]:
         waiting = sorted(self._waiting(tenant), key=lambda entry: entry[1].created)
-        return [(item_id, self.batches[item.batch_id].target_id) for item_id, item in waiting]
+        return [
+            (item_id, self.batches[item.batch_id].target_id, item.batch_id)
+            for item_id, item in waiting
+        ]

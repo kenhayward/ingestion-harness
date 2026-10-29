@@ -259,6 +259,13 @@ def test_an_item_of_another_tenant_is_refused(world: World) -> None:
     assert world.store.in_flight(OTHER) == 0
 
 
+def test_an_unknown_item_is_an_error_not_a_wait(world: World) -> None:
+    # Refused, the caller would make it wait, and no dispatcher would ever find it.
+    for unknown in (str(uuid.uuid4()), "not-a-uuid"):
+        with pytest.raises(LookupError, match="no conversion item"):
+            world.store.try_claim(unknown, DOCS, 1)
+
+
 def test_a_new_batch_is_served_before_batches_that_had_lanes(world: World) -> None:
     """NULLS FIRST: a batch that never had a lane goes before every batch that had one, however
     long ago, and however late it arrived."""

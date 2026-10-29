@@ -25,6 +25,26 @@ if TYPE_CHECKING:
 Level = Literal["debug", "info", "warn", "error"]
 
 
+#: How long a lane claimed without a `waited` job is left to the dispatcher that claimed it
+#: (it queues the job right after) before another counts it an orphan, in seconds.
+ORPHAN_GRACE_S = 30
+
+#: The job statuses after which a `decompose` run decides nothing more.
+ENDED_JOB_STATUSES = ("succeeded", "failed", "cancelled", "needs_review", "rejected")
+
+
+@dataclass(frozen=True)
+class EndedLane:
+    """A conversion item holding a lane, undecided (`decomposing`, or `waiting_to_deliver`
+    under its `waited` run), whose job ended: it was given up or cancelled without deciding."""
+
+    item_id: str
+    batch_id: str
+    #: The job's status, or None when the job is gone.
+    status: str | None
+    error: str | None
+
+
 @dataclass(frozen=True)
 class ClaimedJob:
     id: str
@@ -198,8 +218,16 @@ class JobQueue(Protocol):
         ...
 
     def lanes_without_job(self) -> list[str]:
-        """Items waiting with a lane whose job is not a `waited` run: a worker stopped between
-        the lane's claim and the job's insert. The dispatcher queues them again."""
+        """Items waiting with a lane, claimed more than `ORPHAN_GRACE_S` ago, whose job is not a
+        `waited` run: a worker stopped between the lane's claim and the job's insert. The
+        dispatcher queues them again."""
+        ...
+
+    def lanes_of_ended_jobs(self) -> list[EndedLane]:
+        """Items holding a lane that nothing will decide any more: `decomposing` while their job
+        has ended (or is gone), or `waiting_to_deliver` while their `waited` run has ended.
+        Never a `delivering` item: its job ends once the bridge has it, and the API settles it.
+        The dispatcher fails them, freeing their lanes."""
         ...
 
 
@@ -605,10 +633,27 @@ class PgJobQueue:
             """SELECT i.id::text FROM decomposition_items i
                  LEFT JOIN jobs j ON j.id = i.job_id
                 WHERE i.outcome = 'waiting_to_deliver' AND i.lane_claimed_at IS NOT NULL
+                  AND i.lane_claimed_at < now() - make_interval(secs => %s)
                   AND (j.id IS NULL OR j.params->>'waited' IS DISTINCT FROM 'true')
-                ORDER BY i.lane_claimed_at, i.id"""
+                ORDER BY i.lane_claimed_at, i.id""",
+            (ORPHAN_GRACE_S,),
         ).fetchall()
         return [str(r[0]) for r in rows]
+
+    def lanes_of_ended_jobs(self) -> list[EndedLane]:
+        rows = self._conn.execute(
+            """SELECT i.id::text, i.batch_id::text, j.status::text, j.error
+                 FROM decomposition_items i
+                 LEFT JOIN jobs j ON j.id = i.job_id
+                WHERE i.lane_claimed_at IS NOT NULL
+                  AND ((i.outcome = 'decomposing'
+                        AND (j.id IS NULL OR j.status::text = ANY(%(ended)s)))
+                    OR (i.outcome = 'waiting_to_deliver'
+                        AND j.params->>'waited' = 'true' AND j.status::text = ANY(%(ended)s)))
+                ORDER BY i.lane_claimed_at, i.id""",
+            {"ended": list(ENDED_JOB_STATUSES)},
+        ).fetchall()
+        return [EndedLane(str(r[0]), str(r[1]), r[2], r[3]) for r in rows]
 
     def reap_stale(self, older_than_s: float) -> int:
         """Re-queue jobs whose worker died mid-run: no heartbeat (heartbeat.py) for

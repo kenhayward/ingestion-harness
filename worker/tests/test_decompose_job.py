@@ -33,6 +33,7 @@ from ingest_worker.decompose import (
     decomposer_version,
 )
 from ingest_worker.decompose.deliver import DeliverDeps
+from ingest_worker.decompose.dispatch import dispatch_lanes
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
 from ingest_worker.decompose.lanes import Tenant
@@ -46,7 +47,7 @@ from ingest_worker.ocr import OcrSettings, render_preview_jpeg
 from ingest_worker.outcomes import Complete, Delivering
 from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetNotSynced
-from ingest_worker.queue import ClaimedJob
+from ingest_worker.queue import ClaimedJob, EndedLane
 from ingest_worker.storage import (
     MemoryObjectStore,
     decomposition_held_manifest_key,
@@ -1761,6 +1762,37 @@ def test_a_waited_run_delivers_the_stored_copy(monkeypatch: pytest.MonkeyPatch) 
     assert world.lanes.in_flight(TENANT) == 1
 
 
+def test_a_waited_run_settled_by_its_event_before_it_records_delivering_keeps_the_outcome() -> None:
+    """The bridge's final event lands while the waited run's item still reads
+    `waiting_to_deliver` (the API settles that too): the run's late `delivering` write moves
+    nothing, the job ends, and the lane is free."""
+
+    class SettledWhileWaiting(LanedItems):
+        def decide(
+            self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None
+        ) -> bool:
+            if outcome == "delivering" and self.items[item_id].outcome == "waiting_to_deliver":
+                # The API's settle, from `waiting_to_deliver` (SETTLEABLE_ITEM).
+                self.items[item_id] = replace(self.items[item_id], outcome="created")
+                self.lanes.set_outcome(item_id, "created")
+            return super().decide(item_id, outcome, detail, entry_id)
+
+    world = World()
+    world.items = SettledWhileWaiting(world.lanes, clock=lambda: AT)
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    _settle(world, first)
+
+    outcome = run_decompose(_waited(world, second), world.deps())
+
+    assert outcome == Complete(note="r2.docx: settled before it was recorded delivering")
+    assert world.item(second).outcome == "created"
+    assert world.lanes.in_flight(TENANT) == 0
+    assert _held(world, second) == []
+
+
 def test_a_waited_run_re_decides_through_the_register() -> None:
     world = World()
     first = world.upload(report_docx("First"), "r1.docx")
@@ -1833,6 +1865,81 @@ def test_a_cancelled_waited_run_fails_the_item_and_deletes_the_stored_copy() -> 
     assert _held(world, second) == []
     assert len(world.bridge.requests) == 1
     assert world.lanes.in_flight(TENANT) == 0
+
+
+def _dispatch(world: World, targets: dict[str, Target] | None = None) -> int:
+    from tests.fakes import FakeTargets
+
+    lane_target = Target(
+        "target", "", layout="sink", sink_id=TENANT[0], instance_id=TENANT[1], lanes=1
+    )
+    return dispatch_lanes(
+        world.lanes,
+        FakeTargets({"target": lane_target} if targets is None else targets),
+        world.queue,
+        world.items,
+        store=world.store,
+        runs_bucket="runs",
+    )
+
+
+def test_a_waited_run_whose_job_ended_undecided_is_failed_and_its_lane_freed() -> None:
+    """The worker gave the waited run up (its target never synced, say) without deciding: the
+    next dispatch round fails the item, deletes its stored copy, and frees the lane."""
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    third = world.upload(report_docx("Third"), "r3.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    run_decompose(third, world.deps())
+    _settle(world, first)
+    _waited(world, second)  # its job ends without deciding
+    assert world.lanes.in_flight(TENANT) == 1
+    item = world.item(second)
+    world.queue.ended_lanes = [
+        EndedLane(item.id, item.batch_id, "failed", "publishing target target has not synced")
+    ]
+
+    queued = _dispatch(world)
+
+    ended = world.item(second)
+    assert ended.outcome == "failed"
+    assert ended.detail == (
+        "its conversion job ended (failed) before the document was delivered: "
+        "publishing target target has not synced"
+    )
+    assert _held(world, second) == []
+    # The freed lane went to the next waiting document.
+    assert queued == 1
+    assert world.queue.waited_items == [world.item(third).id]
+
+
+def test_an_ended_lane_the_item_left_meanwhile_is_left_alone() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    run_decompose(job, world.deps())
+    _settle(world, job)
+    item = world.item(job)
+    world.queue.ended_lanes = [EndedLane(item.id, item.batch_id, "succeeded", None)]
+
+    _dispatch(world)
+
+    assert world.item(job).outcome == "created"
+
+
+def test_a_missing_target_deletes_its_waiting_items_stored_copies() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    assert _held(world, second) != []
+
+    _dispatch(world, targets={})
+
+    assert world.item(second).outcome == "failed"
+    assert _held(world, second) == []
 
 
 def test_a_run_of_a_waiting_item_leaves_it_to_the_dispatcher() -> None:

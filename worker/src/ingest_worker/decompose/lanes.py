@@ -55,7 +55,11 @@ class LaneStore(Protocol):
         True as well when the item already holds a lane (a retry of its job): that is not a fresh
         claim, nothing is written. A caller refused writes `waiting_to_deliver` afterwards; a lane
         freed in between is picked up by the periodic dispatcher (`dispatch`), the backstop.
-        Raises ValueError when the item's own tenant (its batch's target) is not `tenant`."""
+        Raises ValueError when the item's own tenant (its batch's target) is not `tenant`, and
+        LookupError when there is no such item (or its target has no cached row): refused, the
+        caller would make it wait where no dispatcher finds it. Its caller (job.py) started the
+        item already, so this is a bug or a vanished row, and the job's error handling fails
+        the item on its last attempt."""
         ...
 
     def in_flight(self, tenant: Tenant) -> int:
@@ -70,9 +74,10 @@ class LaneStore(Protocol):
         """The tenants with an item waiting without a lane, sorted."""
         ...
 
-    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str, str]]:
         """The tenant's items waiting without a lane, oldest first, each with its batch's target
-        id (the dispatcher reads each target's lanes, and fails the items of one that is gone)."""
+        id (the dispatcher reads each target's lanes, and fails the items of one that is gone)
+        and its batch id (where its stored copy lives)."""
         ...
 
 
@@ -119,7 +124,7 @@ class PgLaneStore:
 
     def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
         if not is_uuid(item_id):  # names no item
-            return False
+            raise LookupError(f"no conversion item {item_id}")
         with self._conn.transaction():
             self._lock(tenant)
             row = self._conn.execute(
@@ -133,7 +138,7 @@ class PgLaneStore:
                 (list(HOLDING), item_id),
             ).fetchone()
             if row is None:
-                return False
+                raise LookupError(f"no conversion item {item_id} with a cached publishing target")
             batch_id, holding = str(row[0]), bool(row[1])
             check_tenant(item_id, (str(row[2]), None if row[3] is None else str(row[3])), tenant)
             if holding:
@@ -189,11 +194,11 @@ class PgLaneStore:
         ).fetchall()
         return [(str(sink), None if instance is None else str(instance)) for sink, instance in rows]
 
-    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str]]:
+    def waiting_items(self, tenant: Tenant) -> list[tuple[str, str, str]]:
         rows = self._conn.execute(
-            f"""SELECT i.id::text, b.target_id {self._TENANT_ITEMS}
+            f"""SELECT i.id::text, b.target_id, b.id::text {self._TENANT_ITEMS}
                   AND i.outcome = 'waiting_to_deliver' AND i.lane_claimed_at IS NULL
                 ORDER BY i.created_at, i.id""",
             {"sink": tenant[0], "instance": tenant[1]},
         ).fetchall()
-        return [(str(item), str(target)) for item, target in rows]
+        return [(str(item), str(target), str(batch)) for item, target, batch in rows]

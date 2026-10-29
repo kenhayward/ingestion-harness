@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from ingest_worker.decompose.dispatch import dispatch_lanes
 from ingest_worker.decompose.items import (
@@ -27,12 +28,16 @@ from ingest_worker.decompose.register import MemoryRegisterStore
 from ingest_worker.main import lane_round, run_once
 from ingest_worker.publish_targets import Target, TargetNotSynced
 from ingest_worker.queue import PgJobQueue
+from ingest_worker.storage import MemoryObjectStore
 
 from .fakes import FakeQueue, FakeTargets, MemoryLaneStore
 
 DB = os.environ.get("IH_TEST_DATABASE_URL")
 
 DOCS: Tenant = ("docs-sink", "acme")
+
+#: The runs bucket's stand-in: these items have no stored copy.
+STORE = MemoryObjectStore()
 
 
 def target(target_id: str = "docs", lanes: int | None = 1) -> Target:
@@ -76,7 +81,14 @@ class MemoryWorld:
 def test_a_free_lane_goes_to_the_waiting_item() -> None:
     world = MemoryWorld()
     item = world.waiting(world.batch())
-    queued = dispatch_lanes(world.lanes, FakeTargets({"docs": target()}), world.queue, world.items)
+    queued = dispatch_lanes(
+        world.lanes,
+        FakeTargets({"docs": target()}),
+        world.queue,
+        world.items,
+        store=STORE,
+        runs_bucket="runs",
+    )
     assert queued == 1
     assert world.queue.waited_items == [item]
     assert world.lanes.items[item].claimed is not None
@@ -90,7 +102,14 @@ def test_no_free_lane_queues_nothing() -> None:
     world.lanes.add_item(busy, batch, "delivering")
     world.lanes.mark_claimed(busy)
     item = world.waiting(batch)
-    queued = dispatch_lanes(world.lanes, FakeTargets({"docs": target()}), world.queue, world.items)
+    queued = dispatch_lanes(
+        world.lanes,
+        FakeTargets({"docs": target()}),
+        world.queue,
+        world.items,
+        store=STORE,
+        runs_bucket="runs",
+    )
     assert queued == 0
     assert world.queue.waited_items == []
     assert world.lanes.items[item].claimed is None
@@ -101,7 +120,12 @@ def test_every_free_lane_is_given() -> None:
     batch = world.batch()
     items = [world.waiting(batch) for _ in range(3)]
     targets = FakeTargets({"docs": target(lanes=2)})
-    assert dispatch_lanes(world.lanes, targets, world.queue, world.items) == 2
+    assert (
+        dispatch_lanes(
+            world.lanes, targets, world.queue, world.items, store=STORE, runs_bucket="runs"
+        )
+        == 2
+    )
     assert world.queue.waited_items == items[:2]
 
 
@@ -109,7 +133,14 @@ def test_a_missing_target_fails_its_waiting_items() -> None:
     world = MemoryWorld()
     gone = [world.waiting(world.batch("gone")) for _ in range(2)]
     kept = world.waiting(world.batch())
-    queued = dispatch_lanes(world.lanes, FakeTargets({"docs": target()}), world.queue, world.items)
+    queued = dispatch_lanes(
+        world.lanes,
+        FakeTargets({"docs": target()}),
+        world.queue,
+        world.items,
+        store=STORE,
+        runs_bucket="runs",
+    )
     for item_id in gone:
         assert world.items.items[item_id].outcome == "failed"
         assert world.items.items[item_id].detail == "no publishing target gone"
@@ -126,7 +157,9 @@ class UnsyncedTargets(FakeTargets):
 def test_a_target_not_synced_is_skipped_this_round() -> None:
     world = MemoryWorld()
     item = world.waiting(world.batch())
-    queued = dispatch_lanes(world.lanes, UnsyncedTargets({}), world.queue, world.items)
+    queued = dispatch_lanes(
+        world.lanes, UnsyncedTargets({}), world.queue, world.items, store=STORE, runs_bucket="runs"
+    )
     assert queued == 0
     assert world.items.items[item].outcome == "waiting_to_deliver"
     assert world.lanes.items[item].claimed is None
@@ -135,9 +168,27 @@ def test_a_target_not_synced_is_skipped_this_round() -> None:
 def test_an_item_with_a_lane_but_no_job_is_queued_again() -> None:
     # The worker stopped between the lane's claim and the job's insert: the next round queues it.
     world = MemoryWorld()
-    world.queue.lane_orphans = ["orphan"]
-    assert dispatch_lanes(world.lanes, FakeTargets({}), world.queue, world.items) == 1
+    world.queue.lane_orphans = {"orphan": 60.0}
+    assert (
+        dispatch_lanes(
+            world.lanes, FakeTargets({}), world.queue, world.items, store=STORE, runs_bucket="runs"
+        )
+        == 1
+    )
     assert world.queue.waited_items == ["orphan"]
+
+
+def test_a_lane_claimed_moments_ago_is_no_orphan() -> None:
+    # Another dispatcher claimed it and is about to queue its job.
+    world = MemoryWorld()
+    world.queue.lane_orphans = {"young": 5.0}
+    assert (
+        dispatch_lanes(
+            world.lanes, FakeTargets({}), world.queue, world.items, store=STORE, runs_bucket="runs"
+        )
+        == 0
+    )
+    assert world.queue.waited_items == []
 
 
 def test_an_item_is_queued_once() -> None:
@@ -197,6 +248,40 @@ class PgWorld:
         )
         return item_id
 
+    def holding(
+        self,
+        batch: str,
+        outcome: str,
+        job_status: str,
+        *,
+        waited: bool = False,
+        error: str | None = None,
+    ) -> str:
+        """An item holding a lane in `outcome`, its job (a `waited` run or not) in `job_status`."""
+        item_id = self.waiting(batch)
+        params = self.conn.execute(
+            "SELECT params FROM jobs WHERE id = (SELECT job_id FROM decomposition_items"
+            " WHERE id = %s)",
+            (item_id,),
+        ).fetchone()
+        assert params is not None
+        self.conn.execute(
+            """UPDATE jobs SET status = %s, error = %s, params = %s
+                WHERE id = (SELECT job_id FROM decomposition_items WHERE id = %s)""",
+            (
+                job_status,
+                error,
+                Jsonb({**params[0], **({"waited": True} if waited else {})}),
+                item_id,
+            ),
+        )
+        self.conn.execute(
+            """UPDATE decomposition_items SET outcome = %s, lane_claimed_at = now()
+                WHERE id = %s""",
+            (outcome, item_id),
+        )
+        return item_id
+
     def item(self, item_id: str) -> tuple[str, bool, str | None]:
         row = self.conn.execute(
             """SELECT outcome, lane_claimed_at IS NOT NULL, job_id::text
@@ -246,7 +331,14 @@ def test_pg_dispatch_queues_a_waited_job_as_the_batch_started_it(pg: PgWorld) ->
     item = pg.waiting(batch, created_by="Ada")
     queue = PgJobQueue(pg.url)
     try:
-        queued = dispatch_lanes(PgLaneStore(pg.conn), pg.targets(), queue, PgItemStore(pg.conn))
+        queued = dispatch_lanes(
+            PgLaneStore(pg.conn),
+            pg.targets(),
+            queue,
+            PgItemStore(pg.conn),
+            store=STORE,
+            runs_bucket="runs",
+        )
         assert queued == 1
         outcome, claimed, job_id = pg.item(item)
         assert (outcome, claimed) == ("waiting_to_deliver", True)
@@ -275,7 +367,14 @@ def test_pg_params_leave_auto_approve_out_unless_the_batch_has_it(pg: PgWorld) -
     item = pg.waiting(pg.batch())
     queue = PgJobQueue(pg.url)
     try:
-        dispatch_lanes(PgLaneStore(pg.conn), pg.targets(), queue, PgItemStore(pg.conn))
+        dispatch_lanes(
+            PgLaneStore(pg.conn),
+            pg.targets(),
+            queue,
+            PgItemStore(pg.conn),
+            store=STORE,
+            runs_bucket="runs",
+        )
         job_id = pg.item(item)[2]
         assert job_id is not None
         params = pg.job(job_id)[3]
@@ -292,8 +391,20 @@ def test_pg_a_lane_claimed_without_a_job_is_queued_by_the_next_round(pg: PgWorld
     assert lanes.dispatch(DOCS, 1) == [item]  # ...and the worker stopped here
     queue = PgJobQueue(pg.url)
     try:
+        # A lane claimed moments ago may be another dispatcher's, about to queue its job.
+        assert queue.lanes_without_job() == []
+        pg.conn.execute(
+            """UPDATE decomposition_items SET lane_claimed_at = now() - interval '31 seconds'
+                WHERE id = %s""",
+            (item,),
+        )
         assert queue.lanes_without_job() == [item]
-        assert dispatch_lanes(lanes, pg.targets(), queue, PgItemStore(pg.conn)) == 1
+        assert (
+            dispatch_lanes(
+                lanes, pg.targets(), queue, PgItemStore(pg.conn), store=STORE, runs_bucket="runs"
+            )
+            == 1
+        )
         job_id = pg.item(item)[2]
         assert job_id is not None
         assert pg.job(job_id)[3]["waited"] is True
@@ -303,11 +414,86 @@ def test_pg_a_lane_claimed_without_a_job_is_queued_by_the_next_round(pg: PgWorld
 
 
 @pytest.mark.integration
+def test_pg_lanes_of_ended_jobs_are_the_undecided_lane_holders(pg: PgWorld) -> None:
+    batch = pg.batch()
+    gave_up = pg.holding(batch, "decomposing", "failed", error="target never synced")
+    review = pg.holding(batch, "decomposing", "needs_review")
+    waited = pg.holding(batch, "waiting_to_deliver", "cancelled", waited=True)
+    pg.holding(batch, "decomposing", "running")  # still at work
+    pg.holding(batch, "decomposing", "queued")  # a retry
+    pg.holding(batch, "waiting_to_deliver", "running", waited=True)
+    pg.holding(batch, "waiting_to_deliver", "succeeded")  # its first run: no waited job yet
+    pg.holding(batch, "delivering", "succeeded", waited=True)  # the bridge settles it
+    pg.holding(batch, "delivering", "delivering")
+    queue = PgJobQueue(pg.url)
+    try:
+        ended = queue.lanes_of_ended_jobs()
+        mine = {e.item_id: e for e in ended if e.batch_id == batch}
+        assert set(mine) == {gave_up, review, waited}
+        assert (mine[gave_up].status, mine[gave_up].error) == ("failed", "target never synced")
+        assert mine[waited].status == "cancelled"
+    finally:
+        queue.close()
+
+
+@pytest.mark.integration
+def test_pg_dispatch_fails_an_ended_lane_and_gives_it_to_a_waiting_item(pg: PgWorld) -> None:
+    batch = pg.batch()
+    stuck = pg.holding(batch, "waiting_to_deliver", "failed", waited=True, error="gone")
+    waiting = pg.waiting(batch)
+    queue = PgJobQueue(pg.url)
+    try:
+        queued = dispatch_lanes(
+            PgLaneStore(pg.conn),
+            pg.targets(),
+            queue,
+            PgItemStore(pg.conn),
+            store=MemoryObjectStore(),
+            runs_bucket="runs",
+        )
+        assert pg.item(stuck)[:2] == ("failed", True)
+        detail = pg.conn.execute(
+            "SELECT detail FROM decomposition_items WHERE id = %s", (stuck,)
+        ).fetchone()
+        assert detail is not None
+        assert detail[0] == (
+            "its conversion job ended (failed) before the document was delivered: gone"
+        )
+        assert queued == 1
+        assert pg.item(waiting)[:2] == ("waiting_to_deliver", True)
+        assert PgLaneStore(pg.conn).in_flight(DOCS) == 1
+    finally:
+        queue.close()
+
+
+@pytest.mark.integration
+def test_pg_a_waited_item_the_api_settled_keeps_its_outcome_and_frees_its_lane(
+    pg: PgWorld,
+) -> None:
+    item = pg.waiting(pg.batch())
+    lanes = PgLaneStore(pg.conn)
+    assert lanes.dispatch(DOCS, 1) == [item]
+    assert lanes.in_flight(DOCS) == 1
+    # The bridge's final event settles the item while the waited run still has it waiting.
+    pg.conn.execute("UPDATE decomposition_items SET outcome = 'created' WHERE id = %s", (item,))
+    assert not PgItemStore(pg.conn).decide(item, "delivering", "a new source", None)
+    assert pg.item(item)[0] == "created"
+    assert lanes.in_flight(DOCS) == 0
+
+
+@pytest.mark.integration
 def test_pg_a_missing_target_fails_its_items(pg: PgWorld) -> None:
     item = pg.waiting(pg.batch())
     queue = PgJobQueue(pg.url)
     try:
-        queued = dispatch_lanes(PgLaneStore(pg.conn), FakeTargets({}), queue, PgItemStore(pg.conn))
+        queued = dispatch_lanes(
+            PgLaneStore(pg.conn),
+            FakeTargets({}),
+            queue,
+            PgItemStore(pg.conn),
+            store=STORE,
+            runs_bucket="runs",
+        )
         assert queued == 0
         outcome, claimed, _ = pg.item(item)
         assert (outcome, claimed) == ("failed", False)
@@ -329,7 +515,12 @@ def test_pg_two_dispatchers_never_over_claim(pg: PgWorld) -> None:
     def run(n: int) -> None:
         start.wait()
         results[n] = dispatch_lanes(
-            PgLaneStore(conns[n]), pg.targets(), queues[n], PgItemStore(conns[n])
+            PgLaneStore(conns[n]),
+            pg.targets(),
+            queues[n],
+            PgItemStore(conns[n]),
+            store=STORE,
+            runs_bucket="runs",
         )
 
     try:
