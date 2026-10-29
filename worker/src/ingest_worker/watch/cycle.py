@@ -134,7 +134,15 @@ class _Cycle:
         self.deps.bridge.move_source(self.w.target_id, self.w.source, src, dst, self.w.run_as)
 
     def _taken(self) -> set[str]:
-        return {f.name for folder in SUBFOLDERS for f in self._list(folder)}
+        """Names in use: every file in the three subfolders, and the working names of the open
+        pickups, which may not be there yet (stored, refusing) or any more."""
+        listed = {f.name for folder in SUBFOLDERS for f in self._list(folder)}
+        reserved = {
+            p.working_name
+            for p in self.store.pickups(self.w.id)
+            if p.step in IN_PROGRESS and p.working_name is not None
+        }
+        return listed | reserved
 
     def _event(self, level: EventLevel, message: str, **details: object) -> None:
         self.store.event(self.w.id, level, message, dict(details) or None)
@@ -246,6 +254,13 @@ class _Cycle:
 
     # --- 2. resume ---
 
+    def show_stuck(self) -> None:
+        """The watch's problem while pickups are stuck (running or draining)."""
+        stuck = sum(1 for p in self.store.pickups(self.w.id) if p.move_failures >= MAX_MOVE_TRIES)
+        problem = stuck_problem(stuck) if stuck else None
+        if problem != self.w.problem and (problem is not None or self.w.state == "draining"):
+            self.store.set_health(self.w.id, problem, None, self.now)
+
     def resume(self) -> None:
         pending = [
             p
@@ -289,15 +304,19 @@ class _Cycle:
             for f in root
         )
 
-    def _in_folder(self, folder: str, name: str, size: int) -> bool:
-        return any(f.name == name and f.size == size for f in self._list(folder))
+    def _in_folder(self, folder: str, p: Pickup, name: str) -> bool:
+        """`folder` holds the pickup's own file under `name`: same size and modified time."""
+        return any(
+            f.name == name and f.size == p.size and modified_of(f) == p.modified_at
+            for f in self._list(folder)
+        )
 
     def _resume_stored(self, p: Pickup, root: list[SourceFile]) -> None:
         working = p.working_name
         assert working is not None
         if self._in_root(p, root):
             p = self._from_root(p, PROCESSING)
-        elif not self._in_folder(PROCESSING, working, p.size):
+        elif not self._in_folder(PROCESSING, p, working):
             # Gone, or replaced by another upload: the copy is stale; the new file, if any, is a
             # fresh candidate.
             if p.object_key is not None:
@@ -481,6 +500,8 @@ class _Cycle:
             source_key(self.w.source_path, p.original_name),
             self.now,
         )
+        if not item_id:
+            return p  # no longer `seen`: another runner, or a stop, has it
         p = replace(p, step="refusing", working_name=working, item_id=item_id)
         p = self._from_root(p, FAILED)
         self._file_refused(p)
@@ -494,6 +515,7 @@ def run_cycle(w: Watch, deps: WatchDeps, now: datetime) -> CycleResult:
     c = _Cycle(w, deps, now)
     c.finish()
     c.resume()
+    c.show_stuck()
     if w.state == "draining":
         if not any(p.step in IN_PROGRESS for p in deps.store.pickups(w.id)):
             deps.store.set_state(w.id, "stopped", expect="draining")

@@ -71,7 +71,7 @@ class Pickup:
     working_name: str | None = None
     item_id: str | None = None
     object_key: str | None = None
-    #: Moves the sink refused (store.py `move_failed`).
+    #: Moves (and resume's listings) the sink refused (store.py `move_failed`).
     move_failures: int = 0
 
 

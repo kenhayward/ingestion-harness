@@ -688,3 +688,70 @@ def test_admit_and_refuse_leave_a_queued_pickup_alone() -> None:
     )
     assert w.store.refuse(watch, p, "a.pdf", "no", "x", "Plant A/Intake/a.pdf", T0) == p.item_id
     assert len(w.store.items) == 1 and len(w.store.jobs) == 1
+
+
+# --- fix round 2 ------------------------------------------------------------------------------
+
+
+def test_working_names_of_open_pickups_are_reserved() -> None:
+    w = World()
+    put(w, "processing", "a.pdf", b"another person's file")
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    (stored,) = w.store.pickups(w.watch_id)
+    assert stored.step == "stored" and stored.working_name == "a_1.pdf"
+
+    w.drop("a_1.pdf", pdf())  # named like the stored pickup's working name, same size
+    for n in (2, 3):  # the stored pickup's move keeps failing; the new file is admitted
+        w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+        w.cycle(T0 + timedelta(seconds=10 * n))
+    (other,) = w.store.items.values()
+    assert other["source_key"].endswith("/a_1.pdf") and other["filename"] == "a_1_1.pdf"
+    assert set(w.files("processing")) == {"a.pdf", "a_1_1.pdf"}
+    assert w.cycle(T0 + timedelta(seconds=40)).admitted == 1  # the stored pickup, as a_1.pdf
+    assert w.files("processing")["a_1.pdf"] == pdf()
+
+
+def test_a_file_in_processing_with_another_modified_time_is_not_the_pickups() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    w.bridge.sources.pop(FakeBridge.source_key(TARGET, SOURCE, "", "a.pdf"))
+    key = FakeBridge.source_key(TARGET, SOURCE, "processing", "a.pdf")
+    w.bridge.sources[key] = pdf()  # same name and size, but not the file the pickup took
+    w.bridge.modified[key] = "2026-10-29T11:59:00.000Z"
+    w.cycle(T0 + timedelta(seconds=20))
+    assert w.store.items == {} and w.store.pickups(w.watch_id) == []
+
+
+def test_a_refusal_the_store_left_alone_moves_nothing() -> None:
+    w = World()
+    w.drop("x.pdf", b"not a document")
+    w.cycle(T0)
+    original = w.store.refuse
+
+    def taken_meanwhile(watch: Any, pickup: Any, *args: Any) -> str:
+        w.store.advance(pickup.id, "abandoned")  # another runner, or stop now
+        return original(watch, pickup, *args)
+
+    w.store.refuse = taken_meanwhile  # type: ignore[method-assign]
+    w.cycle(T0 + timedelta(seconds=10))
+    assert set(w.files("")) == {"x.pdf"} and w.files("failed") == {}
+    assert w.store.items == {} and w.store.finishes == []
+
+
+def test_a_draining_watch_shows_its_stuck_pickups() -> None:
+    w = World()
+    item_id = w.admitted("a.pdf", pdf())
+    w.store.set_outcome(item_id, "created")
+    w.store.set_state(w.watch_id, "draining")
+    for n in range(5):
+        w.bridge.fail_next["move"] = refused("forbidden", "no access to delivered/")
+        w.cycle(T0 + timedelta(minutes=n + 1))
+    w.cycle(T0 + timedelta(minutes=10))
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None and watch.problem is not None and "processing/" in watch.problem
