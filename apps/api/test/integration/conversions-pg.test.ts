@@ -289,7 +289,10 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       `SELECT indexdef FROM pg_indexes WHERE tablename = 'decomposition_items'`,
     );
     expect(rows.map((r) => r.indexdef)).toContainEqual(
-      expect.stringMatching(/\(outcome\) WHERE .*waiting_to_deliver.*delivering/),
+      // Covers the lane count: every outcome that holds a lane, and the claim column.
+      expect.stringMatching(
+        /decomposition_items_lane_idx .*\(outcome, lane_claimed_at, batch_id\) WHERE .*decomposing.*waiting_to_deliver.*delivering/,
+      ),
     );
     const { rows: checks } = await p.query<{ def: string }>(
       `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
