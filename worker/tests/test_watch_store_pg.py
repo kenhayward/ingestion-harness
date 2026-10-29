@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from ingest_worker.bridge.client import BridgeUnavailable
 from ingest_worker.bridge.models import ActingUser, SourceFile
 from ingest_worker.storage import MemoryObjectStore
 from ingest_worker.watch.cycle import WatchDeps, run_cycle
@@ -305,3 +306,70 @@ def test_two_runners_never_run_one_watch_at_once(db: Db) -> None:
         == 1
     )
     assert folder(bridge, "processing") == {"a.pdf"}
+
+
+def test_admit_and_refuse_leave_a_pickup_past_them_alone(db: Db) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    drop(bridge, db, "a.pdf", PDF)
+    t0 = datetime.now(UTC)
+    w = d.store.watch(watch_id)
+    assert w is not None
+    run_cycle(w, d, t0)
+    run_cycle(w, d, t0 + timedelta(seconds=10))
+    (p,) = d.store.pickups(watch_id)
+    assert p.step == "queued" and p.item_id and p.object_key and p.working_name
+    key = "Plant A/Intake/a.pdf"
+    assert not d.store.admit(w, p, p.item_id, p.object_key, p.working_name, "x", key, t0)
+    assert d.store.refuse(w, p, "a.pdf", "no", "x", key, t0) == p.item_id
+    assert (
+        db.one(
+            "SELECT count(*) FROM decomposition_items i JOIN decomposition_batches b "
+            "ON b.id = i.batch_id WHERE b.watch_id = %s",
+            watch_id,
+        )
+        == 1
+    )
+
+
+def test_a_refusal_is_recorded_as_refusing_then_finished(db: Db) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    drop(bridge, db, "x.pdf", b"not a document")
+    t0 = datetime.now(UTC)
+    w = d.store.watch(watch_id)
+    assert w is not None
+    run_cycle(w, d, t0)
+    bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    run_cycle(w, d, t0 + timedelta(seconds=10))
+    (p,) = d.store.pickups(watch_id)
+    assert p.step == "refusing" and p.item_id is not None
+    assert db.one("SELECT total_failed FROM watched_folders WHERE id = %s", watch_id) == 0
+    run_cycle(w, d, t0 + timedelta(seconds=20))
+    assert d.store.pickups(watch_id) == []
+    assert db.one("SELECT total_failed FROM watched_folders WHERE id = %s", watch_id) == 1
+    assert folder(bridge, "failed") == {"x.pdf", "x.pdf.md"}
+
+
+def test_move_failures_count_and_a_new_working_name_renames_the_item(db: Db) -> None:
+    import psycopg
+
+    store = PgWatchStore(psycopg.connect(db.url, autocommit=True))
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    drop(bridge, db, "a.pdf", PDF)
+    t0 = datetime.now(UTC)
+    w = d.store.watch(watch_id)
+    assert w is not None
+    run_cycle(w, d, t0)
+    run_cycle(w, d, t0 + timedelta(seconds=10))
+    (p,) = store.pickups(watch_id)
+    assert store.move_failed(p.id) == 1
+    assert store.move_failed(p.id) == 2
+    store.advance(p.id, "queued", working_name="a_7.pdf")
+    (again,) = store.pickups(watch_id)
+    assert again.move_failures == 2 and again.working_name == "a_7.pdf"
+    assert db.one("SELECT filename FROM decomposition_items WHERE id = %s", p.item_id) == "a_7.pdf"

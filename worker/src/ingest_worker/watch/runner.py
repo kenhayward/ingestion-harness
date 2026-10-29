@@ -60,7 +60,13 @@ def watch_lock_key(watch_id: str) -> int:
 
 class PgWatchLocks:
     """A watch's lock as a session-level advisory lock on this runner's own autocommit connection
-    (opened when first needed, opened again after it is lost)."""
+    (opened when first needed, opened again after it is lost).
+
+    The lock lives on another connection than the cycle's writes. Should this connection drop in
+    the middle of a cycle, the lock goes with it while the cycle carries on, and another worker
+    may start the same watch. That is the trade of call_slots.PgCallSlots too; the store's own
+    guards bound the harm (`admit`, `refuse` and `finish` lock the pickup and check its step), so
+    at worst a stored copy is written twice, never a second item, job or count."""
 
     def __init__(self, conninfo: str) -> None:
         self._conninfo = conninfo

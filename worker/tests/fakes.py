@@ -957,6 +957,8 @@ class FakeBridge:
         #: A watched file's modified time as listed (default `SOURCE_MODIFIED`); moves keep it.
         self.modified: dict[SourceKey, str] = {}
         self.fail_next: dict[str, Exception] = {}
+        #: Called with (src, dst) at the start of every source move (a file arriving meanwhile).
+        self.on_move: Callable[[tuple[str, str], tuple[str, str]], None] | None = None
         self._ids = 0
 
     def _next_refusal(self) -> None:
@@ -1108,6 +1110,8 @@ class FakeBridge:
         acting_user: ActingUser | None,
     ) -> None:
         self._source_op("move", target_id)
+        if self.on_move is not None:
+            self.on_move(src, dst)
         src_key = self.source_key(target_id, source, *src)
         dst_key = self.source_key(target_id, source, *dst)
         # The contract's idempotent move (SourceMoveRequestSchema): a retried move whose source
@@ -1439,6 +1443,8 @@ class MemoryWatchStore:
     def advance(self, pickup_id: str, step: PickupStep, **fields: str | None) -> None:
         self._fail(f"advance:{step}")
         current = self._pickups[pickup_id]
+        if "working_name" in fields and current.item_id in self.items:
+            self.items[current.item_id]["filename"] = fields["working_name"]
         self._pickups[pickup_id] = replace(
             current,
             step=step,
@@ -1503,7 +1509,7 @@ class MemoryWatchStore:
         self._fail("admit")
         current = self._pickups[pickup.id]
         if current.step not in ("stored", "moved"):
-            return current.item_id or item_id
+            return False
         batch_id = self.batch_of(watch)
         self._item(
             item_id, batch_id, source_key, working_name, content_sha256, pickup.size, object_key
@@ -1529,7 +1535,7 @@ class MemoryWatchStore:
             working_name=working_name,
         )
         self.watched[watch.id]["last_pickup_at"] = now
-        return item_id
+        return True
 
     def refuse(
         self,
@@ -1541,6 +1547,10 @@ class MemoryWatchStore:
         source_key: str,
         now: datetime,
     ) -> str:
+        self._fail("refuse")
+        current = self._pickups[pickup.id]
+        if current.step != "seen":
+            return current.item_id or ""
         item_id = str(uuid.uuid4())
         batch_id = self.batch_of(watch)
         self._item(
@@ -1555,11 +1565,15 @@ class MemoryWatchStore:
             detail=reason,
         )
         self._pickups[pickup.id] = replace(
-            self._pickups[pickup.id], working_name=working_name, item_id=item_id
+            current, step="refusing", working_name=working_name, item_id=item_id
         )
-        self.finish(watch.id, False, now, pickup.id)
         self.watched[watch.id]["last_pickup_at"] = now
         return item_id
+
+    def move_failed(self, pickup_id: str) -> int:
+        current = self._pickups[pickup_id]
+        self._pickups[pickup_id] = replace(current, move_failures=current.move_failures + 1)
+        return current.move_failures + 1
 
     def item_state(self, item_id: str) -> ItemState | None:
         item = self.items.get(item_id)

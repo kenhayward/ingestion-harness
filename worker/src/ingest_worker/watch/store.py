@@ -4,8 +4,10 @@ watch's events, and the conversion batch, item and `decompose` job a pickup beco
 
 A pickup's steps: `seen` (listed), `stored` (a copy in the runs bucket, its working name, item id
 and object key chosen), `moved` (in `processing/`), `queued` (its item and job created),
-`finished` (moved out of `processing/`, or refused) or `abandoned`. Each step is written before
-the next action, so a cycle that stops anywhere is completed by the next one (cycle.py)."""
+`refusing` (a file conversion refuses: its `failed` item recorded, the file still to go to
+`failed/`), `finished` (moved out of `processing/`, or refused and filed) or `abandoned`. Each step
+is written before the next action, so a cycle that stops anywhere is completed by the next one
+(cycle.py)."""
 
 from __future__ import annotations
 
@@ -23,11 +25,11 @@ if TYPE_CHECKING:
     import psycopg
 
 WatchState = Literal["running", "draining", "stopped"]
-PickupStep = Literal["seen", "stored", "moved", "queued", "finished", "abandoned"]
+PickupStep = Literal["seen", "stored", "moved", "queued", "refusing", "finished", "abandoned"]
 EventLevel = Literal["info", "warn", "error"]
 
 #: Steps of a pickup on its way: its original name is in progress in the watch.
-IN_PROGRESS: tuple[PickupStep, ...] = ("stored", "moved", "queued")
+IN_PROGRESS: tuple[PickupStep, ...] = ("stored", "moved", "queued", "refusing")
 
 #: The API's `DECOMPOSE_JOB` (apps/api/src/repositories/types.ts).
 DECOMPOSE_PRIORITY = 0
@@ -69,6 +71,8 @@ class Pickup:
     working_name: str | None = None
     item_id: str | None = None
     object_key: str | None = None
+    #: Moves the sink refused (store.py `move_failed`).
+    move_failures: int = 0
 
 
 @dataclass(frozen=True)
@@ -128,7 +132,8 @@ class WatchStore(Protocol):
         ...
 
     def advance(self, pickup_id: str, step: PickupStep, **fields: str | None) -> None:
-        """Move a pickup to `step`, setting `working_name`, `item_id`, `object_key` if given."""
+        """Move a pickup to `step`, setting `working_name`, `item_id`, `object_key` if given. A
+        new working name also renames the pickup's item, when it has one."""
         ...
 
     def batch_of(self, watch: Watch) -> str:
@@ -145,9 +150,9 @@ class WatchStore(Protocol):
         content_sha256: str,
         source_key: str,
         now: datetime,
-    ) -> str:
+    ) -> bool:
         """In one transaction: the watch's batch, the watched item, its `decompose` job, the
-        pickup `queued`. A pickup already queued is left alone. The item id."""
+        pickup `queued`. A pickup no longer `stored` or `moved` is left alone (False)."""
         ...
 
     def refuse(
@@ -160,11 +165,17 @@ class WatchStore(Protocol):
         source_key: str,
         now: datetime,
     ) -> str:
-        """In one transaction: a `failed` item with no stored copy, a finish, the pickup
-        `finished`. The item id."""
+        """In one transaction, before the file moves: a `failed` item with no stored copy, and
+        the pickup `refusing` with its working name and item. A pickup no longer `seen` is left
+        alone. The item id (the existing one when left alone). The finish comes once the file is
+        in `failed/` (`finish`)."""
         ...
 
     def item_state(self, item_id: str) -> ItemState | None: ...
+
+    def move_failed(self, pickup_id: str) -> int:
+        """Count a move the sink refused; the count so far."""
+        ...
 
     def finish(
         self, watch_id: str, delivered: bool, at: datetime, pickup_id: str | None = None
@@ -199,7 +210,7 @@ _WATCH_COLUMNS = """id::text, name, target_id, source, source_path, run_as, forc
     reason_files, sleep_seconds, admit, state, batch_id::text, problem, next_look_at"""
 
 _PICKUP_COLUMNS = """id::text, watch_id::text, original_name, size, modified_at, etag,
-    first_seen_at, step, working_name, item_id::text, object_key"""
+    first_seen_at, step, working_name, item_id::text, object_key, move_failures"""
 
 
 def _watch(row: tuple[Any, ...]) -> Watch:
@@ -236,6 +247,7 @@ def _pickup(row: tuple[Any, ...]) -> Pickup:
         working_name=row[8],
         item_id=row[9],
         object_key=row[10],
+        move_failures=row[11],
     )
 
 
@@ -300,10 +312,16 @@ class PgWatchStore:
         if unknown:
             raise ValueError(f"no pickup field {sorted(unknown)}")
         sets = "".join(f", {name} = %({name})s" for name in fields)
-        self._conn.execute(
-            f"UPDATE watch_pickups SET step = %(step)s, updated_at = now(){sets} WHERE id = %(id)s",
-            {"step": step, "id": pickup_id, **fields},
-        )
+        with self._conn.transaction():
+            row = self._conn.execute(
+                f"""UPDATE watch_pickups SET step = %(step)s, updated_at = now(){sets}
+                     WHERE id = %(id)s RETURNING item_id::text, working_name""",
+                {"step": step, "id": pickup_id, **fields},
+            ).fetchone()
+            if "working_name" in fields and row is not None and row[0] is not None:
+                self._conn.execute(
+                    "UPDATE decomposition_items SET filename = %s WHERE id = %s", (row[1], row[0])
+                )
 
     def _ensure_batch(self, watch: Watch) -> str:
         """Inside a transaction: lock the watch and return its batch, creating one if none."""
@@ -347,7 +365,7 @@ class PgWatchStore:
         content_sha256: str,
         source_key: str,
         now: datetime,
-    ) -> str:
+    ) -> bool:
         with self._conn.transaction():
             batch_id = self._ensure_batch(watch)
             row = self._conn.execute(
@@ -355,7 +373,7 @@ class PgWatchStore:
                 (pickup.id,),
             ).fetchone()
             if row is None or row[0] not in ("stored", "moved"):
-                return str(row[1]) if row and row[1] else item_id
+                return False
             self._conn.execute(
                 """INSERT INTO decomposition_items
                      (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
@@ -398,7 +416,7 @@ class PgWatchStore:
                     WHERE id = %s""",
                 (now, watch.id),
             )
-        return item_id
+        return True
 
     def refuse(
         self,
@@ -413,6 +431,12 @@ class PgWatchStore:
         item_id = str(uuid.uuid4())
         with self._conn.transaction():
             batch_id = self._ensure_batch(watch)
+            row = self._conn.execute(
+                "SELECT step, item_id::text FROM watch_pickups WHERE id = %s FOR UPDATE",
+                (pickup.id,),
+            ).fetchone()
+            if row is None or row[0] != "seen":
+                return str(row[1]) if row and row[1] else ""
             self._conn.execute(
                 """INSERT INTO decomposition_items
                      (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
@@ -430,11 +454,11 @@ class PgWatchStore:
                 ),
             )
             self._conn.execute(
-                """UPDATE watch_pickups SET working_name = %s, item_id = %s, updated_at = now()
+                """UPDATE watch_pickups SET step = 'refusing', working_name = %s, item_id = %s,
+                          updated_at = now()
                     WHERE id = %s""",
                 (working_name, item_id, pickup.id),
             )
-            self._finish(watch.id, False, now, pickup.id)
             self._conn.execute(
                 "UPDATE watched_folders SET last_pickup_at = %s WHERE id = %s", (now, watch.id)
             )
@@ -446,6 +470,14 @@ class PgWatchStore:
             (item_id,),
         ).fetchone()
         return ItemState(outcome=row[0], detail=row[1], batch_id=row[2]) if row else None
+
+    def move_failed(self, pickup_id: str) -> int:
+        row = self._conn.execute(
+            """UPDATE watch_pickups SET move_failures = move_failures + 1, updated_at = now()
+                WHERE id = %s RETURNING move_failures""",
+            (pickup_id,),
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     def _finish(self, watch_id: str, delivered: bool, at: datetime, pickup_id: str | None) -> None:
         self._conn.execute(

@@ -41,10 +41,14 @@ CREATE TABLE watch_pickups (
   etag           text,
   first_seen_at  timestamptz NOT NULL DEFAULT now(),
   step           text NOT NULL DEFAULT 'seen'
-                 CHECK (step IN ('seen', 'stored', 'moved', 'queued', 'finished', 'abandoned')),
+                 CHECK (step IN ('seen', 'stored', 'moved', 'queued', 'refusing', 'finished',
+                                 'abandoned')),
   working_name   text,
   item_id        uuid,
   object_key     text,
+  -- Moves the sink refused (not an outage): after five the worker stops trying this pickup and
+  -- the watch shows a problem.
+  move_failures  integer NOT NULL DEFAULT 0,
   updated_at     timestamptz NOT NULL DEFAULT now(),
   UNIQUE (watch_id, original_name, size, modified_at)
 );

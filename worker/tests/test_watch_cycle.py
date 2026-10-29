@@ -466,3 +466,225 @@ def test_a_cycle_that_fails_is_logged_and_looked_at_after_its_sleep() -> None:
     assert runner.tick() == 0
     assert w.store.watched[w.watch_id]["next_look_at"] == T0 + timedelta(seconds=30)
     assert any(e["level"] == "error" for e in w.store.events)
+
+
+# --- fix round 1 ------------------------------------------------------------------------------
+
+
+def refused(code: str, message: str = "refused") -> BridgeRefused:
+    return BridgeRefused(
+        BridgeError.model_validate({"class": "needs_user", "code": code, "message": message})
+    )
+
+
+def put(w: World, folder: str, name: str, data: bytes) -> None:
+    w.bridge.sources[FakeBridge.source_key(TARGET, SOURCE, folder, name)] = data
+
+
+def test_a_working_name_taken_meanwhile_is_replaced_by_the_next_free_one() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    arrived: list[bool] = []
+
+    def arrive(src: tuple[str, str], dst: tuple[str, str]) -> None:
+        if dst == ("processing", "a.pdf") and not arrived:
+            arrived.append(True)
+            put(w, "processing", "a.pdf", b"another person's longer file")
+
+    w.bridge.on_move = arrive
+    assert w.cycle(T0 + timedelta(seconds=10)).admitted == 1
+    assert w.files("processing") == {
+        "a.pdf": b"another person's longer file",
+        "a_1.pdf": pdf(),
+    }
+    (item,) = w.store.items.values()
+    assert item["filename"] == "a_1.pdf"
+    assert item["source_key"] == "Plant A/Intake/a.pdf"
+
+
+def test_a_stored_pickup_whose_working_name_was_taken_resumes_under_a_new_one() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    put(w, "processing", "a.pdf", b"another file of another size")
+    assert w.cycle(T0 + timedelta(seconds=20)).admitted == 1
+    assert w.files("processing")["a_1.pdf"] == pdf()
+    (item,) = w.store.items.values()
+    assert item["filename"] == "a_1.pdf"
+
+
+def test_a_stored_pickup_whose_root_file_was_replaced_is_abandoned() -> None:
+    w = World()
+    w.drop("a.pdf", pdf("first"))
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    w.drop("a.pdf", pdf("an edited copy, longer"))  # uploaded again before the move
+    w.cycle(T0 + timedelta(seconds=20))
+    assert w.files("processing") == {} and w.store.items == {}
+    assert w.objects.objects == {}  # the stale copy is gone
+    assert any("changed" in e["message"] for e in w.store.events)
+    (fresh,) = w.store.pickups(w.watch_id)
+    assert fresh.step == "seen" and fresh.size == len(pdf("an edited copy, longer"))
+    assert w.cycle(T0 + timedelta(seconds=30)).admitted == 1
+    assert w.files("processing") == {"a.pdf": pdf("an edited copy, longer")}
+
+
+def test_a_refusal_is_recorded_before_the_file_moves() -> None:
+    w = World()
+    w.drop("x.pdf", b"not a document")
+    w.cycle(T0)
+    w.store.fail_next["refuse"] = RuntimeError("the database is down")
+    with pytest.raises(RuntimeError):
+        w.cycle(T0 + timedelta(seconds=10))
+    assert set(w.files("")) == {"x.pdf"} and w.files("failed") == {}
+
+    w.cycle(T0 + timedelta(seconds=20))
+    assert set(w.files("failed")) == {"x.pdf", "x.pdf.md"}
+    assert len(w.store.items) == 1 and len(w.store.finishes) == 1
+
+
+def test_a_refusal_whose_move_failed_is_completed_once() -> None:
+    w = World()
+    w.drop("x.pdf", b"not a document")
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    (pickup,) = w.store.pickups(w.watch_id)
+    assert pickup.step == "refusing" and pickup.working_name == "x.pdf"
+    assert set(w.files("")) == {"x.pdf"} and w.store.finishes == []
+    (item,) = w.store.items.values()
+    assert item["outcome"] == "failed"
+
+    w.cycle(T0 + timedelta(seconds=20))
+    assert set(w.files("failed")) == {"x.pdf", "x.pdf.md"}
+    assert NOT_A_SOURCE in w.files("failed")["x.pdf.md"].decode()
+    assert len(w.store.items) == 1 and len(w.store.finishes) == 1
+    assert w.store.pickups(w.watch_id) == []
+
+
+def test_a_moved_pickup_whose_copy_is_gone_is_filed_as_failed_and_never_blocks_the_rest() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.store.fail_next["admit"] = RuntimeError("the database is down")
+    with pytest.raises(RuntimeError):
+        w.cycle(T0 + timedelta(seconds=10))
+    w.objects.objects.clear()  # the stored copy is lost
+    w.drop("b.pdf", pdf("b"))
+    w.cycle(T0 + timedelta(seconds=20))
+    nxt = w.cycle(T0 + timedelta(seconds=30))
+    assert nxt.admitted == 1
+    assert set(w.files("processing")) == {"b.pdf"}
+    failed = w.files("failed")
+    assert failed["a.pdf"] == pdf()
+    assert "copy" in failed["a.pdf.md"].decode()
+    assert [p.original_name for p in w.store.pickups(w.watch_id)] == ["b.pdf"]
+
+
+def test_a_resume_refused_by_the_bridge_never_stops_the_look() -> None:
+    w = World()
+    w.drop("a.pdf", pdf())
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+    w.cycle(T0 + timedelta(seconds=10))
+    w.drop("b.pdf", pdf("b"))
+    w.bridge.fail_next["move"] = refused("forbidden", "no access to processing/")
+    w.cycle(T0 + timedelta(seconds=20))
+    assert any(p.original_name == "b.pdf" for p in w.store.pickups(w.watch_id))
+    assert w.cycle(T0 + timedelta(seconds=30)).admitted == 2
+    assert set(w.files("processing")) == {"a.pdf", "b.pdf"}
+
+
+def test_a_final_move_refused_five_times_stops_and_shows_a_problem() -> None:
+    w = World()
+    item_id = w.admitted("a.pdf", pdf())
+    w.store.set_outcome(item_id, "created")
+    for n in range(5):
+        w.bridge.fail_next["move"] = refused("forbidden", "no access to delivered/")
+        w.cycle(T0 + timedelta(minutes=n + 1))
+    assert [e["level"] for e in w.store.events if "delivered/" in e["message"]] == [
+        "warn",
+        "warn",
+        "warn",
+        "warn",
+        "error",
+    ]
+    w.bridge.fail_next["move"] = AssertionError("a stuck pickup is not tried again")
+    w.cycle(T0 + timedelta(minutes=10))
+    assert "move" in w.bridge.fail_next
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None and watch.problem is not None and "processing/" in watch.problem
+    assert set(w.files("processing")) == {"a.pdf"}
+
+
+def test_an_unavailable_bridge_does_not_count_as_a_refused_final_move() -> None:
+    w = World()
+    item_id = w.admitted("a.pdf", pdf())
+    w.store.set_outcome(item_id, "created")
+    for n in range(6):
+        w.bridge.fail_next["move"] = BridgeUnavailable("the sink is down")
+        w.cycle(T0 + timedelta(minutes=n + 1))
+    w.cycle(T0 + timedelta(minutes=10))
+    assert set(w.files("delivered")) == {"a.pdf"}
+
+
+def test_every_outcome_is_classified_once() -> None:
+    from typing import get_args
+
+    from ingest_worker.decompose.items import ItemOutcome
+    from ingest_worker.watch.cycle import DELIVERED_OUTCOMES, FAILED_OUTCOMES, STILL_RUNNING
+
+    groups = [STILL_RUNNING, DELIVERED_OUTCOMES, FAILED_OUTCOMES]
+    assert set().union(*groups) == set(get_args(ItemOutcome))
+    assert sum(len(g) for g in groups) == len(get_args(ItemOutcome))
+    assert "in_flight" in FAILED_OUTCOMES and "awaiting_review" in STILL_RUNNING
+
+
+def test_an_unknown_outcome_stays_in_processing_with_one_warning() -> None:
+    w = World()
+    item_id = w.admitted("a.pdf", pdf())
+    w.store.set_outcome(item_id, "teleported")
+    w.cycle(T0 + timedelta(seconds=40))
+    w.cycle(T0 + timedelta(seconds=80))
+    assert set(w.files("processing")) == {"a.pdf"} and w.files("failed") == {}
+    assert len([e for e in w.store.events if "teleported" in e["message"]]) == 1
+
+
+class CountingObjects(MemoryObjectStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def get(self, bucket: str, key: str) -> bytes:
+        self.reads += 1
+        return super().get(bucket, key)
+
+    def get_optional(self, bucket: str, key: str) -> bytes | None:
+        self.reads += 1
+        return super().get_optional(bucket, key)
+
+
+def test_an_admitted_file_is_not_read_back() -> None:
+    w = World()
+    objects = CountingObjects()
+    w.objects = objects
+    w.deps.objects = objects
+    w.admitted("a.pdf", pdf())
+    assert objects.reads == 0
+
+
+def test_admit_and_refuse_leave_a_queued_pickup_alone() -> None:
+    w = World()
+    w.admitted("a.pdf", pdf())
+    (p,) = w.store.pickups(w.watch_id)
+    watch = w.store.watch(w.watch_id)
+    assert watch is not None and p.item_id and p.object_key and p.working_name
+    assert not w.store.admit(
+        watch, p, p.item_id, p.object_key, p.working_name, "x", "Plant A/Intake/a.pdf", T0
+    )
+    assert w.store.refuse(watch, p, "a.pdf", "no", "x", "Plant A/Intake/a.pdf", T0) == p.item_id
+    assert len(w.store.items) == 1 and len(w.store.jobs) == 1
