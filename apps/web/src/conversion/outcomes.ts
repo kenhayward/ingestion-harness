@@ -24,7 +24,12 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
  * Still under way: the batch view refreshes while any item is. `in_flight` is not: the item is
  * final, because another batch's delivery owns the document's register entry.
  */
-export const UNFINISHED: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
+export const UNFINISHED: readonly ItemOutcome[] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'waiting_to_deliver',
+];
 
 /**
  * Outcomes a person should look at (the "Needs attention" filter), until resolved. A rejected

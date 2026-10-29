@@ -6,7 +6,12 @@ import { ITEM_OUTCOMES, type BatchSummary, type Item, type ItemOutcome } from '@
 import { App } from '../src/App.js';
 import { ApiError } from '../src/api/client.js';
 import { ConversionPage } from '../src/conversion/ConversionPage.js';
-import { batchState, spokenDuration } from '../src/conversion/outcomes.js';
+import {
+  OUTCOME_ICON,
+  UNFINISHED,
+  batchState,
+  spokenDuration,
+} from '../src/conversion/outcomes.js';
 import { conversionBatch, conversionItem, fakeApi } from './fake-api.js';
 
 const BATCH_ID = '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11';
@@ -130,6 +135,18 @@ describe('the Conversion tab: the batch view', () => {
     expect(show.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('1');
     await userEvent.click(show.getByRole('button', { name: /^Needs attention/ }));
     expect(listedKeys()).toEqual(['held.pdf']);
+  });
+
+  it('shows a document waiting for a delivery lane as unfinished, with a clock glyph', async () => {
+    expect(batchState(summary({}, { created: 1, waiting_to_deliver: 1 }))).toMatchObject({
+      icon: 'spinner',
+      label: 'Under way',
+    });
+    expect(UNFINISHED).toContain('waiting_to_deliver');
+    expect(OUTCOME_ICON.waiting_to_deliver).toBe('queued');
+    view(batchApi([item('ok.pdf', 'created'), item('wait.pdf', 'waiting_to_deliver')]));
+    await findRow('wait.pdf');
+    expect(within(rowOf('wait.pdf')).getByText('Waiting to deliver')).toHaveClass('pill');
   });
 
   it('says when a batch auto-approves', async () => {
