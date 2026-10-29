@@ -351,7 +351,10 @@ SourceName = Annotated[str, Field(min_length=1, max_length=255)]
 
 
 class SourceFile(Wire):
-    name: SourceName
+    """A listed file. Any non-empty name, so one odd file never invalidates the answer; the
+    requests keep `SourceName`, so a producer skips (and reports) a name it could not send back."""
+
+    name: str = Field(min_length=1)
     size: int = Field(ge=0)
     modified_at: str
     etag: str | None

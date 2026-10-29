@@ -1,0 +1,6 @@
+{
+  "source": { "folder": "inbox" },
+  "actingUser": null,
+  "from": { "folder": "processing", "name": "Report 1.docx" },
+  "to": { "folder": "delivered", "name": "Report 1.docx" }
+}

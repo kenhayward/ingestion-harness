@@ -244,7 +244,11 @@ export const SinkJobStatusSchema = z.discriminatedUnion('status', [
 ]);
 export type SinkJobStatus = z.infer<typeof SinkJobStatusSchema>;
 
-/** How many deliveries an instance takes at once: its `lanes`, else 1 (also for an unknown one). */
+/**
+ * How many deliveries an instance takes at once: its `lanes`, else 1 (also for an unknown one).
+ * A sink that lists no instances, and a target whose instance is null, always get 1 lane: they
+ * deliver one at a time per tenant. A sink wanting more declares an instance with `lanes`.
+ */
 export function lanesOf(d: { instances: readonly Instance[] }, instanceId: string): number {
   return d.instances.find((i) => i.id === instanceId)?.lanes ?? 1;
 }

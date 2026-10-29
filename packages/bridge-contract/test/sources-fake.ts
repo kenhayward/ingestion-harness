@@ -19,7 +19,11 @@ export const SOURCES_PLACE = { folder: 'inbox' };
 /** Ways the fake can break the contract, so the suite's checks are seen to fail. */
 export type SourceFault = 'move-not-idempotent' | 'missing-folder-wrong-code';
 
-const status: Record<string, number> = { not_found: 404, content_rejected: 422 };
+const status: Record<string, number> = {
+  not_found: 404,
+  content_rejected: 422,
+  destination_exists: 409,
+};
 
 /** A minimal sink with watched folders, as a `fetch`: files in memory, per folder. */
 export function sourcesFake(faults: SourceFault[] = []): typeof fetch {
@@ -100,6 +104,14 @@ export function sourcesFake(faults: SourceFault[] = []): typeof fetch {
           return noContent();
         }
         return fail(bridgeError('not_found', 'no such file'));
+      }
+      const there = folders[to.folder].get(to.name);
+      if (there !== undefined && !(from.folder === to.folder && from.name === to.name)) {
+        if (there.length !== content.length) {
+          return fail(bridgeError('destination_exists', `${to.name} is already in ${to.folder}`));
+        }
+        folders[from.folder].delete(from.name);
+        return noContent();
       }
       folders[from.folder].delete(from.name);
       folders[to.folder].set(to.name, content);

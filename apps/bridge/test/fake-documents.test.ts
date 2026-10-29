@@ -314,3 +314,54 @@ describe('FakeDocumentSink, read back', () => {
     expect(after.readBack.ok).toBe(true);
   });
 });
+
+describe('FakeDocumentSink watched folders: the idempotent move rule', () => {
+  const moveReq = {
+    instanceId: 'main',
+    credential: {},
+    source: { folder: 'inbox' },
+    actingUser: null,
+    from: { folder: '' as const, name: 'a.pdf' },
+    to: { folder: 'processing' as const, name: 'a.pdf' },
+  };
+  const put = (sink: FakeDocumentSink, folder: 'processing', bytes: string) =>
+    sink.sources.put({ ...moveReq, folder, name: 'a.pdf', content: bytes });
+
+  it('a retried move (source gone, destination there) succeeds', async () => {
+    const sink = new FakeDocumentSink();
+    sink.drop('a.pdf', Buffer.from('abc'));
+    await sink.sources.move(moveReq);
+    await expect(sink.sources.move(moveReq)).resolves.toBeUndefined();
+    expect(sink.folder('processing')?.map((f) => f.name)).toEqual(['a.pdf']);
+  });
+
+  it('both there with equal sizes: the source is deleted and the move succeeds', async () => {
+    const sink = new FakeDocumentSink();
+    sink.drop('a.pdf', Buffer.from('abc'));
+    await put(sink, 'processing', 'xyz');
+    await expect(sink.sources.move(moveReq)).resolves.toBeUndefined();
+    expect(sink.folder('')).toEqual([]);
+    expect(sink.folder('processing')?.map((f) => f.size)).toEqual([3]);
+  });
+
+  it('both there with different sizes: destination_exists, nothing changed', async () => {
+    const sink = new FakeDocumentSink();
+    sink.drop('a.pdf', Buffer.from('abc'));
+    await put(sink, 'processing', 'longer');
+    const err = await sink.sources.move(moveReq).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SinkError);
+    expect((err as SinkError).error).toMatchObject({
+      code: 'destination_exists',
+      class: 'needs_user',
+    });
+    expect((err as SinkError).error.details?.reason).toBeUndefined();
+    expect(sink.folder('')?.map((f) => f.size)).toEqual([3]);
+    expect(sink.folder('processing')?.map((f) => f.size)).toEqual([6]);
+  });
+
+  it('neither there: not_found', async () => {
+    const sink = new FakeDocumentSink();
+    const err = await sink.sources.move(moveReq).catch((e: unknown) => e);
+    expect((err as SinkError).error.code).toBe('not_found');
+  });
+});

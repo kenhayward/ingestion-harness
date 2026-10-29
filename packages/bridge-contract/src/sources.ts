@@ -34,8 +34,14 @@ export const WatchedFoldersSchema = z.strictObject({
 });
 export type WatchedFolders = z.infer<typeof WatchedFoldersSchema>;
 
+/**
+ * A file a sink lists. Its `name` is any non-empty string, so one odd file (a backslash, a name
+ * past 255 characters) never makes the whole answer invalid; every request body keeps the strict
+ * `SourceNameSchema`, so a producer skips (and reports) a listed name that fails
+ * `sourceNameProblem`: it could not read, move or answer for it.
+ */
 export const SourceFileSchema = z.strictObject({
-  name: SourceNameSchema,
+  name: z.string().min(1),
   size: z.number().int().nonnegative(),
   modifiedAt: z.string().datetime(),
   etag: z.string().nullable(),
@@ -80,6 +86,15 @@ export const SourceReadRequestSchema = z.strictObject({
   folder: SourceFolderSchema,
   name: SourceNameSchema,
 });
+/**
+ * A move is idempotent, so a producer may retry one it never saw answered:
+ * - source gone, destination there: success (an earlier try moved it);
+ * - both there, equal sizes: the source is deleted, success;
+ * - both there, different sizes: `destination_exists` (no `details.reason`), nothing changed;
+ * - neither there: `not_found`.
+ * A move otherwise takes the file from `from` to `to`. The request carries no size, so "equal
+ * sizes" compares the two files the sink holds.
+ */
 export const SourceMoveRequestSchema = z.strictObject({
   ...toSink,
   from: SourcePlaceSchema,
@@ -106,6 +121,7 @@ export const FOLDER_MISSING_REASON = 'folder_missing';
 export const SOURCE_PATHS = {
   list: '/sources:list',
   read: '/sources:read',
+  /** Idempotent: see `SourceMoveRequestSchema` for the rule, and `destination_exists`. */
   move: '/sources:move',
   put: '/sources:put',
 } as const;

@@ -235,8 +235,10 @@ export class FakeDocumentSink implements SinkPort {
 
   /**
    * Contract version 4 in memory: a location named by the source field `folder` has the four
-   * folders (empty until a file arrives); an unknown one is `folder_missing`. A move overwrites
-   * its destination, and a retried one (the source gone, the destination there) succeeds.
+   * folders (empty until a file arrives); an unknown one is `folder_missing`. A move follows the
+   * contract's idempotent rule (`SourceMoveRequestSchema`): a retried one (the source gone, the
+   * destination there) succeeds, a destination of the same size takes the source's place, and one of
+   * another size is `destination_exists` with nothing changed.
    */
   readonly sources: SourcePort = {
     list: async (r) => {
@@ -257,6 +259,16 @@ export class FakeDocumentSink implements SinkPort {
       if (!file) {
         if (held[r.to.folder].has(r.to.name)) return;
         throw new SinkError(bridgeError('not_found', `there is no file ${r.from.name}`));
+      }
+      const there = held[r.to.folder].get(r.to.name);
+      if (there && there !== file) {
+        if (there.bytes.length !== file.bytes.length) {
+          throw new SinkError(
+            bridgeError('destination_exists', `${r.to.name} is already in ${r.to.folder}`),
+          );
+        }
+        held[r.from.folder].delete(r.from.name);
+        return;
       }
       held[r.from.folder].delete(r.from.name);
       held[r.to.folder].set(r.to.name, file);

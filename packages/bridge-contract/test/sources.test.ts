@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   packageVersionFor,
+  ProducerSourceListSchema,
+  ProducerSourceMoveSchema,
+  ProducerSourcePutSchema,
+  ProducerSourceReadSchema,
   SinkDescribeSchema,
+  SourceListAnswerSchema,
   SourceListRequestSchema,
   SourceMoveRequestSchema,
   SourcePutRequestSchema,
@@ -68,9 +73,30 @@ describe('contract version 4: watched folders', () => {
     ['source-list.json', SourceListRequestSchema],
     ['source-move.json', SourceMoveRequestSchema],
     ['source-put.json', SourcePutRequestSchema],
+    ['producer-source-list.json', ProducerSourceListSchema],
+    ['producer-source-read.json', ProducerSourceReadSchema],
+    ['producer-source-move.json', ProducerSourceMoveSchema],
+    ['producer-source-put.json', ProducerSourcePutSchema],
+    ['source-list-answer.json', SourceListAnswerSchema],
   ] as const)('%s parses and re-serialises unchanged', (name, schema) => {
     const raw = fixture(name);
     expect(schema.parse(raw)).toStrictEqual(raw);
+  });
+
+  it('a list answer takes any non-empty name (producers skip the ones sourceNameProblem refuses)', () => {
+    const file = { size: 1, modifiedAt: '2026-10-29T09:15:00Z', etag: null };
+    const odd = [String.raw`a\b.pdf`, 'n'.repeat(300)];
+    expect(
+      SourceListAnswerSchema.safeParse({ files: odd.map((name) => ({ ...file, name })) }).success,
+    ).toBe(true);
+    expect(SourceListAnswerSchema.safeParse({ files: [{ ...file, name: '' }] }).success).toBe(
+      false,
+    );
+    // Request bodies keep the strict rule.
+    const read = fixture('producer-source-read.json') as object;
+    for (const name of odd) {
+      expect(ProducerSourceReadSchema.safeParse({ ...read, name }).success).toBe(false);
+    }
   });
 
   it('put takes at most 65,536 characters and a known folder', () => {
