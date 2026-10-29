@@ -71,7 +71,7 @@ def _writable(current: ItemOutcome, outcome: ItemOutcome) -> bool:
     )
 
 
-def _is_uuid(text: str) -> bool:
+def is_uuid(text: str) -> bool:
     try:
         uuid.UUID(text)
     except ValueError:
@@ -202,7 +202,7 @@ class PgItemStore:
         self._conn = conn
 
     def start(self, item_id: str) -> ConversionItem | None:
-        if not _is_uuid(item_id):
+        if not is_uuid(item_id):
             return None
         with self._conn.transaction():
             row = self._conn.execute(
@@ -225,7 +225,7 @@ class PgItemStore:
             return item
 
     def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
-        if not _is_uuid(item_id):
+        if not is_uuid(item_id):
             return
         self._conn.execute(
             "UPDATE decomposition_items SET report_key = %s, flag_count = %s WHERE id = %s",
@@ -239,7 +239,7 @@ class PgItemStore:
         held_entry: dict[str, Any] | None,
         detail: str | None = None,
     ) -> bool:
-        if not _is_uuid(item_id):
+        if not is_uuid(item_id):
             return False
         cur = self._conn.execute(
             """UPDATE decomposition_items
@@ -251,7 +251,7 @@ class PgItemStore:
         return cur.rowcount > 0
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
-        if not _is_uuid(item_id):
+        if not is_uuid(item_id):
             return False
         cur = self._conn.execute(
             """UPDATE decomposition_items

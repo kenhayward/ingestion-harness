@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from ingest_worker.decompose.items import _is_uuid
+from ingest_worker.decompose.items import is_uuid
 
 if TYPE_CHECKING:
     import psycopg
@@ -94,7 +94,7 @@ class PgLaneStore:
         )
 
     def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
-        if not _is_uuid(item_id):  # names no item
+        if not is_uuid(item_id):  # names no item
             return False
         with self._conn.transaction():
             self._lock(tenant)
