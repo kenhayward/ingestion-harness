@@ -229,6 +229,8 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         flags = ctypes.c_int()
         matrix = raw.FS_MATRIX()
         drawn: set[tuple[str, int, int, int, int]] = set()
+        #: Whether each text object, by its address, is shown: not invisible, not clipped out.
+        shown: dict[int, bool] = {}
         overprinted = 0
         gap = False
         left_out = 0
@@ -237,7 +239,15 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
                 gap = True  # a space or line break pdfium inserted, not one the PDF draws
                 continue
             obj = raw.FPDFText_GetTextObject(handle, i)
-            visible = not (obj and raw.FPDFTextObj_GetTextRenderMode(obj) == _INVISIBLE_RENDER_MODE)
+            if not obj:
+                visible = True
+            elif (address := ctypes.cast(obj, ctypes.c_void_p).value or 0) in shown:
+                visible = shown[address]
+            else:
+                visible = shown[address] = not (
+                    raw.FPDFTextObj_GetTextRenderMode(obj) == _INVISIBLE_RENDER_MODE
+                    or _clipped_out(obj)
+                )
             code = raw.FPDFText_GetUnicode(handle, i)
             if _no_text(code) or not raw.FPDFText_GetCharBox(handle, i, *box):
                 left_out += visible
@@ -303,6 +313,48 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         rules=rules,
         glyphs_left_out=left_out,
         overprinted=overprinted,
+    )
+
+
+def _clipped_out(obj: object) -> bool:
+    """Whether a text object's clip paths leave none of it shown: the boxes round them, which
+    hold all they let through, have no area in common with the object's box. A drawing exported
+    as a form can carry copies of its labels outside the form's box, clipped away (on page 12 of
+    ICH E2C(R2), a figure's caption is printed once and held a second time in its drawing)."""
+    import pypdfium2.raw as raw
+
+    clip = raw.FPDFPageObj_GetClipPath(obj)
+    if not clip:
+        return False
+    left, bottom, right, top = (ctypes.c_float() for _ in range(4))
+    if not raw.FPDFPageObj_GetBounds(obj, *map(ctypes.byref, (left, bottom, right, top))):
+        return False
+    shown: list[float] | None = None  # the clip boxes' intersection: x0, y0, x1, y1
+    x, y = ctypes.c_float(), ctypes.c_float()
+    for path in range(raw.FPDFClipPath_CountPaths(clip)):
+        points = []
+        for n in range(raw.FPDFClipPath_CountPathSegments(clip, path)):
+            segment = raw.FPDFClipPath_GetPathSegment(clip, path, n)
+            if segment and raw.FPDFPathSegment_GetPoint(segment, ctypes.byref(x), ctypes.byref(y)):
+                points.append((x.value, y.value))
+        if points:
+            xs, ys = [p[0] for p in points], [p[1] for p in points]
+            box = [min(xs), min(ys), max(xs), max(ys)]
+            shown = (
+                box
+                if shown is None
+                else [*map(max, shown[:2], box[:2]), *map(min, shown[2:], box[2:])]
+            )
+    if shown is None:
+        return False
+    x0, y0, x1, y1 = shown
+    return (
+        x0 > x1
+        or y0 > y1
+        or right.value < x0
+        or left.value > x1
+        or top.value < y0
+        or bottom.value > y1
     )
 
 
