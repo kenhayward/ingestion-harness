@@ -16,6 +16,7 @@ from ingest_worker.bridge.models import (
     CreateDeliveriesRequest,
     CreateDeliveriesResult,
     DeliveryRef,
+    SourceFile,
     package_archive_keys,
 )
 from ingest_worker.embeddings import EmbeddingTerm
@@ -898,6 +899,10 @@ class FakeBridge:
         self.puts: list[tuple[str, str, str]] = []
         self.deletes: list[tuple[str, list[tuple[str, str]]]] = []
         self.refusals: list[BridgeError | Exception] = []
+        #: Watched folders: (folder, name) -> bytes. `fail_next` maps an operation (list, read,
+        #: move, put) to an exception its next call raises.
+        self.sources: dict[tuple[str, str], bytes] = {}
+        self.fail_next: dict[str, Exception] = {}
         self._ids = 0
 
     def _next_refusal(self) -> None:
@@ -1000,6 +1005,78 @@ class FakeBridge:
         self._inside(target_id, bucket, key)
         self.puts.append((target_id, bucket, key))
         self._write(target_id, bucket, key, body, content_type)
+
+    def _source_op(self, op: str, target_id: str) -> None:
+        failure = self.fail_next.pop(op, None)
+        if failure is not None:
+            raise failure
+        self._known(target_id)
+
+    def list_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        acting_user: ActingUser | None,
+    ) -> list[SourceFile]:
+        self._source_op("list", target_id)
+        return [
+            SourceFile(name=n, size=len(b), modified_at="2026-10-29T00:00:00.000Z", etag=None)
+            for (f, n), b in sorted(self.sources.items())
+            if f == folder
+        ]
+
+    def read_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        acting_user: ActingUser | None,
+    ) -> bytes:
+        self._source_op("read", target_id)
+        try:
+            return self.sources[(folder, name)]
+        except KeyError:
+            raise self._no_file(folder, name) from None
+
+    def move_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        src: tuple[str, str],
+        dst: tuple[str, str],
+        acting_user: ActingUser | None,
+    ) -> None:
+        self._source_op("move", target_id)
+        if src in self.sources:
+            self.sources[dst] = self.sources.pop(src)
+        elif dst not in self.sources:  # a retried move whose destination is there succeeds
+            raise self._no_file(*src)
+
+    def put_source_text(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        content: str,
+        acting_user: ActingUser | None,
+    ) -> None:
+        self._source_op("put", target_id)
+        self.sources[(folder, name)] = content.encode("utf-8")
+
+    @staticmethod
+    def _no_file(folder: str, name: str) -> BridgeRefused:
+        return BridgeRefused(
+            BridgeError.model_validate(
+                {
+                    "class": "needs_user",
+                    "code": "not_found",
+                    "message": f"no file {name} in {folder or 'the root'}",
+                }
+            )
+        )
 
     def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int:
         self._next_refusal()

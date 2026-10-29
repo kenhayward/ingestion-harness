@@ -13,7 +13,18 @@ import httpx
 from pydantic import ValidationError
 
 from ..errors import DocumentError
-from .models import BridgeError, CreateDeliveriesRequest, CreateDeliveriesResult
+from .models import (
+    ActingUser,
+    BridgeError,
+    CreateDeliveriesRequest,
+    CreateDeliveriesResult,
+    ProducerSourceList,
+    ProducerSourceMove,
+    ProducerSourcePut,
+    ProducerSourceRead,
+    SourceFile,
+    SourceListAnswer,
+)
 from .signing import sign_request
 
 
@@ -41,6 +52,42 @@ class BridgeClient(Protocol):
     ) -> None: ...
 
     def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int: ...
+
+    def list_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        acting_user: ActingUser | None,
+    ) -> list[SourceFile]: ...
+
+    def read_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        acting_user: ActingUser | None,
+    ) -> bytes: ...
+
+    def move_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        src: tuple[str, str],
+        dst: tuple[str, str],
+        acting_user: ActingUser | None,
+    ) -> None: ...
+
+    def put_source_text(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        content: str,
+        acting_user: ActingUser | None,
+    ) -> None: ...
 
 
 def _error_of(response: httpx.Response) -> BridgeError | None:
@@ -152,3 +199,77 @@ class HttpBridgeClient:
         )
         self._raise_for(response, "an object delete")
         return int(response.json()["deleted"])
+
+    def _source_call(self, target_id: str, op: str, body: Any, what: str) -> httpx.Response:
+        payload = body.model_dump(by_alias=True, mode="json")
+        response = self._post(f"/v1/targets/{target_id}/sources:{op}", payload)
+        self._raise_for(response, what)
+        return response
+
+    def list_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        acting_user: ActingUser | None,
+    ) -> list[SourceFile]:
+        body = ProducerSourceList.model_validate(
+            {"source": source, "actingUser": _dump(acting_user), "folder": folder}
+        )
+        response = self._source_call(target_id, "list", body, "a folder listing")
+        return SourceListAnswer.model_validate(response.json()).files
+
+    def read_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        acting_user: ActingUser | None,
+    ) -> bytes:
+        body = ProducerSourceRead.model_validate(
+            {"source": source, "actingUser": _dump(acting_user), "folder": folder, "name": name}
+        )
+        return self._source_call(target_id, "read", body, "a file read").content
+
+    def move_source(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        src: tuple[str, str],
+        dst: tuple[str, str],
+        acting_user: ActingUser | None,
+    ) -> None:
+        body = ProducerSourceMove.model_validate(
+            {
+                "source": source,
+                "actingUser": _dump(acting_user),
+                "from": {"folder": src[0], "name": src[1]},
+                "to": {"folder": dst[0], "name": dst[1]},
+            }
+        )
+        self._source_call(target_id, "move", body, "a file move")
+
+    def put_source_text(
+        self,
+        target_id: str,
+        source: dict[str, str],
+        folder: str,
+        name: str,
+        content: str,
+        acting_user: ActingUser | None,
+    ) -> None:
+        body = ProducerSourcePut.model_validate(
+            {
+                "source": source,
+                "actingUser": _dump(acting_user),
+                "folder": folder,
+                "name": name,
+                "content": content,
+            }
+        )
+        self._source_call(target_id, "put", body, "a file write")
+
+
+def _dump(user: ActingUser | None) -> dict[str, Any] | None:
+    return user.model_dump(by_alias=True, mode="json") if user else None

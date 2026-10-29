@@ -342,3 +342,74 @@ def package_archive_keys(prefix: str, package: BridgePackage) -> list[tuple[str,
     keys += [(f"package:image:{i.id}", f"{root}images/{i.id}") for i in package.images or []]
     keys.append(("package:manifest", f"{root}package.json"))
     return keys
+
+
+# --- Watched folders (contract version 4) ---
+
+SourceFolder = Literal["", "processing", "delivered", "failed"]
+SourceName = Annotated[str, Field(min_length=1, max_length=255)]
+
+
+class SourceFile(Wire):
+    name: SourceName
+    size: int = Field(ge=0)
+    modified_at: str
+    etag: str | None
+
+
+class SourceListAnswer(Wire):
+    files: list[SourceFile]
+
+
+class SourcePlace(Wire):
+    folder: SourceFolder
+    name: SourceName
+
+
+class _ProducerWhere(Wire):
+    source: dict[str, str]
+    acting_user: ActingUser | None
+
+
+class ProducerSourceList(_ProducerWhere):
+    """What the worker sends the bridge (it fills in the instance and credential)."""
+
+    folder: SourceFolder
+
+
+class ProducerSourceRead(_ProducerWhere):
+    folder: SourceFolder
+    name: SourceName
+
+
+class ProducerSourceMove(_ProducerWhere):
+    from_: SourcePlace = Field(alias="from")
+    to: SourcePlace
+
+
+class ProducerSourcePut(_ProducerWhere):
+    folder: SourceFolder
+    name: SourceName
+    content: str = Field(max_length=65_536)
+
+
+class _SinkWhere(_ProducerWhere):
+    instance_id: str
+    credential: dict[str, str]
+
+
+class SourceListRequest(_SinkWhere):
+    """What the bridge sends a sink; the worker never sends these, the fixtures pin them."""
+
+    folder: SourceFolder
+
+
+class SourceMoveRequest(_SinkWhere):
+    from_: SourcePlace = Field(alias="from")
+    to: SourcePlace
+
+
+class SourcePutRequest(_SinkWhere):
+    folder: SourceFolder
+    name: SourceName
+    content: str = Field(max_length=65_536)

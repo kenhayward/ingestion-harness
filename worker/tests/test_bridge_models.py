@@ -18,6 +18,9 @@ from ingest_worker.bridge.models import (
     DeliveryView,
     DocumentReceipt,
     Receipt,
+    SourceListRequest,
+    SourceMoveRequest,
+    SourcePutRequest,
     TargetTestResult,
     decomposition_idempotency_key,
     graph_idempotency_key,
@@ -46,6 +49,9 @@ def fixture(name: str) -> Any:
         ("event.json", BridgeEvent),
         ("error.json", BridgeError),
         ("target-test-result.json", TargetTestResult),
+        ("source-list.json", SourceListRequest),
+        ("source-move.json", SourceMoveRequest),
+        ("source-put.json", SourcePutRequest),
     ],
 )
 def test_fixture_validates_and_reserialises_unchanged(name: str, model: type[BaseModel]) -> None:

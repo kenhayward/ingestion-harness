@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from ingest_worker.bridge.client import BridgeRefused, BridgeUnavailable, HttpBridgeClient
-from ingest_worker.bridge.models import CreateDeliveriesRequest
+from ingest_worker.bridge.models import ActingUser, CreateDeliveriesRequest
 from ingest_worker.errors import DocumentError
 
 KEY = "k" * 32
@@ -240,3 +240,97 @@ def test_the_fake_bridge_answers_as_the_bridge_does_for_targets_and_their_bounds
             bridge.put_object("finance-lake", bucket, key, b"x", "text/csv")
         with pytest.raises(BridgeRefused, match="outside the target"):
             bridge.delete_objects("finance-lake", [(bucket, key)])
+
+
+SOURCE = {"folder": "inbox"}
+USER = ActingUser(id="u1", name="Ada", email=None)
+USER_WIRE = {"id": "u1", "name": "Ada", "email": None}
+
+
+def test_list_source_posts_the_producer_body_and_parses_the_files() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        verify(request)
+        assert request.url.path == "/v1/targets/docs/sources:list"
+        seen.append(json.loads(request.content))
+        file = {"name": "a.docx", "size": 3, "modifiedAt": "2026-10-29T10:00:00.000Z", "etag": None}
+        return httpx.Response(200, json={"files": [file]})
+
+    files = client(handler).list_source("docs", SOURCE, "", None)
+    assert seen == [{"source": SOURCE, "actingUser": None, "folder": ""}]
+    assert [(f.name, f.size, f.etag) for f in files] == [("a.docx", 3, None)]
+
+
+def test_read_source_returns_the_bytes() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        verify(request)
+        assert request.url.path == "/v1/targets/docs/sources:read"
+        seen.append(json.loads(request.content))
+        return httpx.Response(
+            200, content=b"bytes", headers={"content-type": "application/octet-stream"}
+        )
+
+    assert client(handler).read_source("docs", SOURCE, "", "a.docx", USER) == b"bytes"
+    assert seen == [{"source": SOURCE, "actingUser": USER_WIRE, "folder": "", "name": "a.docx"}]
+
+
+def test_move_source_and_put_source_text_send_their_bodies() -> None:
+    seen: list[tuple[str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        verify(request)
+        seen.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(204)
+
+    c = client(handler)
+    c.move_source("docs", SOURCE, ("", "a.docx"), ("processing", "a.docx"), None)
+    c.put_source_text("docs", SOURCE, "failed", "a.docx.error.txt", "boom", None)
+    assert seen == [
+        (
+            "/v1/targets/docs/sources:move",
+            {
+                "source": SOURCE,
+                "actingUser": None,
+                "from": {"folder": "", "name": "a.docx"},
+                "to": {"folder": "processing", "name": "a.docx"},
+            },
+        ),
+        (
+            "/v1/targets/docs/sources:put",
+            {
+                "source": SOURCE,
+                "actingUser": None,
+                "folder": "failed",
+                "name": "a.docx.error.txt",
+                "content": "boom",
+            },
+        ),
+    ]
+
+
+def test_a_missing_folder_is_refused_and_an_outage_is_retried() -> None:
+    body = error("needs_user", "not_found", "no folder")
+    with pytest.raises(BridgeRefused, match="no folder"):
+        client(lambda _r: httpx.Response(404, json=body)).list_source("docs", SOURCE, "", None)
+    with pytest.raises(BridgeUnavailable):
+        client(
+            lambda _r: httpx.Response(503, json=error("retryable", "instance_unavailable", "x"))
+        ).read_source("docs", SOURCE, "", "a", None)
+
+
+def test_the_fake_bridge_keeps_sources_and_fails_on_request() -> None:
+    from .fakes import FakeBridge
+
+    bridge = FakeBridge(sinks={"docs"})
+    bridge.sources[("", "a.docx")] = b"x"
+    assert [f.name for f in bridge.list_source("docs", SOURCE, "", None)] == ["a.docx"]
+    bridge.move_source("docs", SOURCE, ("", "a.docx"), ("processing", "a.docx"), None)
+    assert bridge.read_source("docs", SOURCE, "processing", "a.docx", None) == b"x"
+    bridge.put_source_text("docs", SOURCE, "failed", "e.txt", "why", None)
+    assert bridge.sources[("failed", "e.txt")] == b"why"
+    bridge.fail_next["list"] = RuntimeError("down")
+    with pytest.raises(RuntimeError):
+        bridge.list_source("docs", SOURCE, "", None)
