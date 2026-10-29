@@ -1,0 +1,36 @@
+{
+  "name": "Example storage sink",
+  "contractVersion": 4,
+  "connectionKind": "shared",
+  "instances": [{ "id": "main", "label": "Main", "lanes": 2 }],
+  "credentialFields": [{ "id": "token", "label": "Token", "secret": true }],
+  "destinationFields": [
+    {
+      "id": "folder",
+      "label": "Folder",
+      "kind": "fixed",
+      "required": true,
+      "overridable": false,
+      "browse": true
+    }
+  ],
+  "capabilities": {
+    "browse": true,
+    "replace": false,
+    "withdraw": false,
+    "readBack": false,
+    "accepts": ["files"],
+    "watchedFolders": {
+      "sourceFields": [
+        {
+          "id": "folder",
+          "label": "Folder",
+          "kind": "fixed",
+          "required": true,
+          "overridable": false,
+          "browse": true
+        }
+      ]
+    }
+  }
+}

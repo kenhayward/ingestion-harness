@@ -163,6 +163,8 @@ export const TargetBrowseRequestSchema = z.strictObject({
   instanceId: z.string().nullable(),
   connectionId: z.string().regex(CONNECTION_ID).nullable(),
   field: z.string().min(1),
+  /** Which settings `field` belongs to; absent = `destination`. */
+  scope: z.enum(['destination', 'source']).optional(),
   parentId: z.string().nullable(),
   cursor: z.string().nullable(),
   actingUser: ActingUserSchema.nullable(),

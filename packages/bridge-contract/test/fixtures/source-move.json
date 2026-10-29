@@ -1,0 +1,8 @@
+{
+  "instanceId": "main",
+  "credential": { "token": "t" },
+  "source": { "folder": "inbox" },
+  "actingUser": { "id": "u1", "name": "Ada", "email": null },
+  "from": { "folder": "", "name": "Report 1.docx" },
+  "to": { "folder": "processing", "name": "Report 1.docx" }
+}

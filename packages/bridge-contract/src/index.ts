@@ -3,6 +3,7 @@ export * from './idempotency.js';
 export * from './package.js';
 export * from './signing.js';
 export * from './sink-api.js';
+export * from './sources.js';
 export * from './producer-api.js';
 export * from './conformance/suite.js';
 export * from './naming.js';

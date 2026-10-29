@@ -1,0 +1,7 @@
+{
+  "instanceId": "main",
+  "credential": { "token": "t" },
+  "source": { "folder": "inbox" },
+  "actingUser": null,
+  "folder": ""
+}
