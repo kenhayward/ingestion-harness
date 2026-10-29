@@ -301,6 +301,53 @@ or review step.
   document; one PDF is then approved (created, decomposer version 1011, its held files gone) and
   the other rejected (its held files gone, nothing sent).
 
+## Watched folders
+
+An admin points CT Studio at a folder of a sink that declares watched folders (contract version
+4: `watchedFolders` with its source fields; [spec](superpowers/specs/2026-10-29-watched-folders-design.md),
+migration `202610291400_watched_folders`). The worker picks up the PDF and Word files that appear
+in the folder's root and converts them with the decomposition pipeline above, with nobody in the
+loop; people act only on failures, by correcting the document and uploading it to the root again.
+
+- **The folder.** The root takes uploads; `processing/` holds a document under way, `delivered/`
+  one that was created, updated or already loaded, `failed/` anything else, with
+  `failed/<name>.md` saying why (when the watch writes reason files; it links the document's batch
+  when the worker has `APP_PUBLIC_URL`). A file keeps its name in the subfolders unless the name is
+  taken there, then `name_1.ext`, `name_2.ext`, … (`watch/naming.py` `working_name`, held in step
+  with the TS side by `packages/shared/test/fixtures/watch-naming.json`). Hidden files (a leading
+  dot) and Office lock files (`~$`) are skipped, as are names the bridge cannot address.
+- **The API** (`apps/api/src/routes/watches.ts`, admins only; `apps/api/src/watches/` `WatchRepo`
+  memory and Pg; schemas in `packages/shared/src/watches.ts`) creates, changes, stops, starts and
+  removes watches. Creating one lists the folder's root as the signed-in admin first, and the
+  watch then delivers as that admin; a change of the target or the folder (only while stopped)
+  runs it as the admin making the change, after listing the new root as them. **Stop now** cancels
+  the jobs of documents that have not reached the bridge: they fail with *Cancelled: the watch was
+  stopped* and count as failed (a running job's item is failed by the worker when it notices, so a
+  document the bridge accepted is never recorded as cancelled); **drain** stops pickups and lets
+  the documents under way finish, and a draining watch still admits files it took before the
+  drain. **Start** clears the problem and tries again the moves the sink refused (the worker stops
+  trying a pickup after five refused moves and shows the watch as a problem). A watch owns one
+  batch, shown on the Conversion page; its documents are not re-run in place (409 `watched`).
+- **The worker** (`worker/src/ingest_worker/watch/`) runs each due watch's cycle between jobs
+  (`runner.py`: one poller per watch across every worker, through a session advisory lock taken
+  without waiting). A cycle (`cycle.py` `run_cycle`) files finished documents, resumes pickups a
+  stopped worker left part-way, looks at the root, and admits settled files (the same size and
+  modified time on two looks 10 s apart) while fewer than the watch's `admit` are unfinished: a
+  copy in the runs bucket, the file moved to `processing/`, then its item and `decompose` job
+  (`store.py`, every step recorded in `watch_pickups` before the next). A file conversion would
+  refuse (`sources.py` `source_problem`, the worker's twin of the API's `checkSource`) is recorded
+  as a failed item and moved straight to `failed/`. It looks again at once after admitting or
+  filing a document, after 10 s while a file settles, else after the watch's sleep. Every bridge
+  call acts as the watch's run-as user, through the bridge's watched folder relay.
+- **The page** (`apps/web/src/watches/`, `#/watched-folders`, admins only, a nav badge counting
+  watches with a problem; help `watchedFolders`) lists the watches with their health, queue and
+  delivered and failed figures, and each watch's events.
+- **End to end.** `apps/api/test/integration/watch-e2e-pg.test.ts` creates a watch through the
+  API and drives the worker's watch cycle and `decompose` jobs (`worker/tests/conversion_e2e_worker.py`
+  with `E2E_WATCH_NOW`) and the bridge to the fake document sink's watched location: a Word file is
+  delivered, a PDF of random bytes refused with its reason file, and a changed Word file of the
+  same name updates the same document under `delivered/good_1.docx`.
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an email address and

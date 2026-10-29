@@ -1,7 +1,11 @@
-"""The worker side of the conversion end to end (apps/api/test/integration/conversion-e2e-pg.test.ts
-runs `python -m tests.conversion_e2e_worker` for each run): the worker's own `run_once` claims
-and runs every queued `decompose` job on the shared Postgres, with its Pg item and register
-stores and its HTTP bridge client, until none is left.
+"""The worker side of the conversion and watched folder end to ends
+(apps/api/test/integration/conversion-e2e-pg.test.ts and watch-e2e-pg.test.ts run
+`python -m tests.conversion_e2e_worker` for each run): the worker's own `run_once` claims and
+runs every queued `decompose` job on the shared Postgres, with its Pg item and register stores
+and its HTTP bridge client, until none is left. With E2E_WATCH_NOW set, the run first looks at
+every due watched folder once (the worker's `WatchRunner.tick` over its Pg watch store, the
+bridge's watched folder relay and the same object store), as of that time: the test moves its
+clock on between runs, so a file settles without waiting.
 
 Faked: the object store (a MemoryObjectStore filled from the files the test lists, and written
 back when the run ends, so a hold's files reach the API and an approved run finds them), the
@@ -13,7 +17,8 @@ deliveries are settled.
 
 Environment: E2E_DATABASE_URL, E2E_BRIDGE_URL, E2E_BRIDGE_KEY, E2E_OBJECTS (a JSON list of
 {bucket, key, path}), E2E_OBJECTS_AFTER (where the store is written back, a JSON list of
-{bucket, key, contentType, body} with the body in base64) and E2E_TARGET ({id, sinkId}).
+{bucket, key, contentType, body} with the body in base64), E2E_TARGET ({id, sinkId}) and,
+for the watched folders, E2E_WATCH_NOW (an ISO time) and E2E_MAX_BYTES (the upload limit).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +44,9 @@ from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.publish_targets import Target, TargetMissing
 from ingest_worker.queue import CLAIM_SQL, ClaimedJob, PgJobQueue
 from ingest_worker.storage import MemoryObjectStore
+from ingest_worker.watch.cycle import WatchDeps
+from ingest_worker.watch.runner import MemoryWatchLocks, WatchRunner
+from ingest_worker.watch.store import PgWatchStore
 from tests.decompose.pdf.fakes import PDF_FIXTURES
 
 #: The worker's claim, of `decompose` jobs only.
@@ -107,6 +116,29 @@ def run_until_settled(queue: DecomposeQueue, deps: PipelineDeps) -> None:
             return
 
 
+def look_at_watches(
+    conn: psycopg.Connection[Any], bridge: HttpBridgeClient, store: MemoryObjectStore
+) -> None:
+    """Every due watched folder looked at once, as of E2E_WATCH_NOW (none without it)."""
+    now = os.environ.get("E2E_WATCH_NOW")
+    if not now:
+        return
+    at = datetime.fromisoformat(now)
+    runner = WatchRunner(
+        WatchDeps(
+            store=PgWatchStore(conn),
+            bridge=bridge,
+            objects=store,
+            runs_bucket="runs",
+            max_bytes=int(os.environ.get("E2E_MAX_BYTES", str(1024 * 1024))),
+            app_url=None,
+        ),
+        MemoryWatchLocks(),
+        clock=lambda: at,
+    )
+    runner.tick()
+
+
 def write_back(store: MemoryObjectStore, path: Path) -> None:
     objects = [
         {
@@ -128,11 +160,14 @@ def main() -> None:
     for o in json.loads(Path(os.environ["E2E_OBJECTS"]).read_text(encoding="utf-8")):
         store.put(o["bucket"], o["key"], Path(o["path"]).read_bytes(), "application/octet-stream")
     queue = DecomposeQueue(database_url)
+    bridge = HttpBridgeClient(os.environ["E2E_BRIDGE_URL"], os.environ["E2E_BRIDGE_KEY"])
     with (
         psycopg.connect(database_url, autocommit=True) as items_conn,
         psycopg.connect(database_url, autocommit=True) as lanes_conn,
+        psycopg.connect(database_url, autocommit=True) as watch_conn,
     ):
         cache_target(lanes_conn, target["id"], target["sinkId"])
+        look_at_watches(watch_conn, bridge, store)
         deps = PipelineDeps(
             store=store,
             specs=None,  # type: ignore[arg-type]
@@ -140,7 +175,7 @@ def main() -> None:
             extract_text=lambda _pdf: [],
             buckets=Buckets("inbox", "outputs", "runs"),
             targets=OneTarget(target["id"], target["sinkId"]),
-            bridge=HttpBridgeClient(os.environ["E2E_BRIDGE_URL"], os.environ["E2E_BRIDGE_KEY"]),
+            bridge=bridge,
             layout=FixtureLayout(),
             decomposition=DecompositionStores(
                 register=PgRegisterStore.for_url(database_url),

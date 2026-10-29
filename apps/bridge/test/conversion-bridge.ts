@@ -1,12 +1,16 @@
 /**
- * The bridge side of the conversion end to end (apps/api/test/integration/conversion-e2e-pg.test.ts,
- * which loads this at run time): the bridge's routes over HTTP for the worker, its runner
- * delivering through `HttpSink` to the fake document sink's own server (`FAKE_SINK_MODE=documents`,
- * with `/_edit` and `/_delete`), and its event dispatcher posting signed events to CT Studio's events route. The
- * bridge's stores are its memory ones (their Pg twins have their own tests).
+ * The bridge side of the conversion and watched folder end to ends
+ * (apps/api/test/integration/conversion-e2e-pg.test.ts and watch-e2e-pg.test.ts, which load this
+ * at run time): the bridge's routes over HTTP for the worker (deliveries and the watched folder
+ * relay), its runner delivering through `HttpSink` to the fake document sink's own server
+ * (`FAKE_SINK_MODE=documents`, with `/_edit`, `/_delete`, `/_drop` and `/_folder`), and its event
+ * dispatcher posting signed events to CT Studio's events route. The bridge's stores are its
+ * memory ones (their Pg twins have their own tests).
  */
 import {
   isDecompositionProvenance,
+  type SourceFile,
+  type SourceFolder,
   MemoryNonceStore,
   textForm,
   type DecompositionProvenance,
@@ -61,6 +65,10 @@ export interface ConversionBridge {
   edit(persistentId: string, componentId: string): Promise<{ version: string } | null>;
   /** Someone deletes a document in the target (`POST /_delete`); whether it was there. */
   remove(persistentId: string): Promise<boolean>;
+  /** A file arrives in the root of the fake sink's watched location `inbox` (`POST /_drop`). */
+  drop(name: string, content: Buffer): Promise<void>;
+  /** What one folder of the location `inbox` holds (`GET /_folder`). */
+  folder(folder: SourceFolder): Promise<SourceFile[]>;
   /** The persistent ids of the documents the fake sink holds. */
   documents(): string[];
   /** The text the fake sink holds for a document (its comparison form), or null if none. */
@@ -130,6 +138,19 @@ export async function startConversionBridge(opts: {
         body: JSON.stringify({ persistentId }),
       });
       return res.status === 204;
+    },
+    async drop(name, content) {
+      const res = await fetch(`${sinkUrl}/_drop`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, content: content.toString('base64') }),
+      });
+      if (res.status !== 204) throw new Error(`drop ${name}: ${res.status} ${await res.text()}`);
+    },
+    async folder(folder) {
+      const res = await fetch(`${sinkUrl}/_folder?f=${encodeURIComponent(folder)}`);
+      if (!res.ok) throw new Error(`folder ${folder}: ${res.status} ${await res.text()}`);
+      return ((await res.json()) as { files: SourceFile[] }).files;
     },
     documents: () => [...documents.documents.keys()],
     text(persistentId) {

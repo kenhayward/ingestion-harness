@@ -164,12 +164,17 @@
         through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
         PR #362, and four more: PR #363. Earlier batches can be deleted, and the target picked is
         remembered: PR #364. External targets take documents at their own pace, the groundwork for
-        watched folders: PR #368. Documents to one target take turns: PR #369.
+        watched folders: PR #368. Documents to one target take turns: PR #369. Watched folders
+        convert what is dropped in a folder<!-- PR -->.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
         <h4>Major changes</h4>
         <ul>
+          <li>
+            <a href="#watched-folders">Watched folders</a>
+            <span>— documents dropped in a folder are converted and filed by how they ended</span>
+          </li>
           <li>
             <a href="#conversion-turns">Documents to one target take turns</a>
             <span>— a document is read while another is delivered, and none waits unseen</span>
@@ -224,6 +229,27 @@
         <strong>Watch out for</strong>
         <ul>
           <li>
+            Migration <code>202610291400_watched_folders</code> adds the tables
+            <code>watched_folders</code>, <code>watch_pickups</code>,
+            <code>watch_finishes</code> and <code>watch_events</code>,
+            <code>decomposition_batches.watch_id</code> and
+            <code>decomposition_items.watched</code>, and makes
+            <code>decomposition_items.object_key</code> nullable (a refused file is never stored).
+          </li>
+          <li>
+            A new optional worker setting, <code>APP_PUBLIC_URL</code>: the app's public address.
+            When set, a watched folder's reason file links the document's batch on the Conversion
+            page. The worker now also reads <code>MAX_UPLOAD_MB</code>, the largest file it picks up
+            from a watched folder.
+          </li>
+          <li>
+            A new admin page, <strong>Watched folders</strong> (<code>#/watched-folders</code>), and
+            routes under <code>/api/watches</code> (admins only). A target a watch names cannot be
+            removed while the watch exists. Documents of a watched folder's batch are not re-run
+            from the Conversion page (409 <code>watched</code>): upload the file to the folder
+            again.
+          </li>
+          <li>
             The delivery contract is now version 4 (<code>@ih/bridge-contract</code> 0.11.0). Sinks
             built for version 2 or 3 keep working. An external sink that declares no
             <code>lanes</code> now gets one delivery at a time per tenant, and so does a sink that
@@ -253,6 +279,52 @@
       </div>
 
       <h2 id="major">Major changes</h2>
+      <h3 id="watched-folders">Watched folders</h3>
+      <p class="prs"><!-- PR --></p>
+      <p>
+        Some teams would rather drop documents into a folder of their own storage than open CT
+        Studio and start a batch. An admin can now point CT Studio at a folder of a target whose
+        storage offers watched folders: every PDF or Word file that appears in the folder's root is
+        picked up, converted, delivered to the target and moved to a subfolder that says how it
+        ended, with nobody in the loop.
+      </p>
+      <ul>
+        <li>
+          <strong>Watched folders</strong> in the navigation (admins only) lists every watch with
+          its health, the files waiting and under way, and how many were delivered and failed today
+          and in all. A badge counts the watches with a problem, such as a folder that is gone or a
+          missing connection. Each watch shows what it picked up, moved or refused.
+        </li>
+        <li>
+          A picked-up file moves to <code>processing/</code>, then to <code>delivered/</code> once
+          it is created, updated or already loaded, or to <code>failed/</code>, with a short
+          <code>.md</code> file beside it saying why and what to do. A name already used in those
+          folders gets a number: <code>report_1.docx</code>, <code>report_2.docx</code>, …
+        </li>
+        <li>
+          To fix a failure, correct the document and upload it to the folder's root again: a changed
+          file updates the document it loaded before.
+        </li>
+        <li>
+          A file is taken once it has stopped changing for 10 seconds. Hidden files and the lock
+          files left while a document is open (<code>~$…</code>) are skipped.
+        </li>
+        <li>
+          <strong>Stop</strong> asks how: <em>Stop now</em> cancels the documents not yet handed to
+          the target, which count as failed, and leaves their files where they are;
+          <em>Drain</em> takes no new files but finishes the ones it already took.
+          <strong>Start</strong> tries again any file it had given up moving.
+        </li>
+        <li>
+          A watch delivers as the admin who created it. Changing its folder or target (while it is
+          stopped) makes the admin who changes it the one it delivers as.
+        </li>
+        <li>
+          Each watch's documents form one batch on the Conversion page, so its reports and outcomes
+          are there too.
+        </li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h3 id="conversion-turns">Documents to one target take turns</h3>
       <p class="prs">
