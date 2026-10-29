@@ -149,6 +149,33 @@ describe('the Conversion tab: the batch view', () => {
     expect(within(rowOf('wait.pdf')).getByText('Waiting to deliver')).toHaveClass('pill');
   });
 
+  it('leaves a waiting document out of Done', async () => {
+    view(batchApi([item('ok.pdf', 'created'), item('wait.pdf', 'waiting_to_deliver')]));
+    await findRow('wait.pdf');
+    const filter = within(screen.getByRole('group', { name: 'Show' }));
+    await userEvent.click(filter.getByRole('button', { name: /^Done/ }));
+    expect(listedKeys()).toEqual(['ok.pdf']);
+  });
+
+  it('keeps reading the batch while a document waits to deliver', async () => {
+    vi.useFakeTimers();
+    try {
+      const getConversionBatch = vi.fn(async () =>
+        detailOf([item('ok.pdf', 'created'), item('wait.pdf', 'waiting_to_deliver')]),
+      );
+      const page = view(batchApi([], { getConversionBatch }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(getConversionBatch).toHaveBeenCalledTimes(1);
+      for (const reads of [2, 3, 4]) {
+        await act(() => vi.advanceTimersByTimeAsync(3000)); // every 3 s while it waits
+        expect(getConversionBatch).toHaveBeenCalledTimes(reads);
+      }
+      page.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('says when a batch auto-approves', async () => {
     const api = batchApi([item('ok.pdf', 'created')], {
       getConversionBatch: vi.fn(async () => ({
