@@ -8,7 +8,7 @@ from typing import Any
 
 from ingest_worker.decompose.model import Text
 from ingest_worker.decompose.pdf.layout import LayoutDoc, parse_docling
-from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece, attach_text
+from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece, attach_text, words_of
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer, read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
@@ -79,6 +79,34 @@ def test_a_small_char_lowered_half_a_point_is_a_subscript() -> None:
         [docling.text("text", 1, bl(60, 85, 200, 110))],
     )
     assert pieces[0].inlines() == [Text(text="The INa")]
+
+
+def test_a_subscript_then_a_superscript_stay_in_their_word() -> None:
+    # "Sum" with "t=1" lowered after it and "n" raised over it, as a formula draws a sum's limits:
+    # the two small runs are further apart than half their own size, not than half the word's.
+    # Built as chars, with no word gap from pdfium: where it sees one depends on the font it has.
+    def char(n: int, ch: str, size: float, baseline: float) -> Char:
+        x = 72 + 6 * n
+        return Char(
+            n,
+            ch,
+            "Helvetica",
+            size,
+            False,
+            False,
+            x,
+            baseline - size,
+            x + 6,
+            baseline,
+            baseline,
+            True,
+        )
+
+    chars = [char(n, ch, 11, 100) for n, ch in enumerate("Sum")]
+    chars += [char(3 + n, ch, 7, 101) for n, ch in enumerate("t=1")]
+    chars += [char(6, "n", 7, 96)]
+    page = PageText(0, 595, HEIGHT, tuple(chars), 0.0)
+    assert ["".join(c.text for c in w) for w in words_of(page)] == ["Sumt=1n"]
 
 
 def test_lines_join_with_one_space_and_gaps_become_spaces() -> None:

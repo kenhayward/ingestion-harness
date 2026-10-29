@@ -35,6 +35,8 @@ class Run:
     angle: int = 0
     #: How much the run's matrix scales its font: drawn at `size`, with a font of `size / scale`.
     scale: float = 1
+    #: A box (x0, y0, x1, y1), displayed, the run is clipped to.
+    clip: tuple[float, float, float, float] | None = None
 
 
 @dataclass
@@ -130,17 +132,19 @@ def _content(page: Page) -> bytes:
                 uy,
             )
         )
-        out.append(
-            b"BT /F%d %s Tf %d Tr %s Ts %s Tm %s Tj ET"
-            % (
-                _FONTS.index(run.font),
-                _num(run.size / run.scale),
-                3 if run.invisible else 0,
-                _num(run.rise),
-                tm,
-                _pdf_string(run.text, run.font),
-            )
+        text = b"BT /F%d %s Tf %d Tr %s Ts %s Tm %s Tj ET" % (
+            _FONTS.index(run.font),
+            _num(run.size / run.scale),
+            3 if run.invisible else 0,
+            _num(run.rise),
+            tm,
+            _pdf_string(run.text, run.font),
         )
+        if run.clip is not None:
+            (px0, py0), (px1, py1) = space.point(*run.clip[:2]), space.point(*run.clip[2:])
+            box = (min(px0, px1), min(py0, py1), abs(px1 - px0), abs(py1 - py0))
+            text = b"q %s re W n %s Q" % (b" ".join(_num(v) for v in box), text)
+        out.append(text)
     return b"\n".join(out)
 
 

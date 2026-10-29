@@ -117,6 +117,21 @@ def test_chars_carry_the_way_their_text_runs(angle: int, rotate: int) -> None:
         assert len({round(c.baseline) for c in chars}) == 4
 
 
+def test_text_clipped_out_is_not_visible() -> None:
+    # A drawing can hold a copy of a caption outside its box, clipped away.
+    page = Page(
+        runs=[
+            Run("Shown", 72, 100, clip=(60, 80, 300, 110)),
+            Run("Hidden", 72, 200, clip=(60, 300, 300, 340)),
+        ]
+    )
+    [layer] = read_text_layer(make_pdf([page])).pages
+    assert [(c.text, c.visible) for c in layer.chars if c.text in "SH"] == [
+        ("S", True),
+        ("H", False),
+    ]
+
+
 def test_a_page_drawn_at_font_size_1_reads_at_its_printed_sizes() -> None:
     # Some PDFs set every font at 1 point and give the size in the matrix: 12 and 8 points here.
     chars = _chars(Run("Body", 72, 100, size=12, scale=12), Run("sub", 72, 120, size=8, scale=8))

@@ -172,6 +172,21 @@ baselines with a glyph on one overlapping one on the other by half the narrower'
 is two lines, one per baseline: two labels printed over each other. A superscript or subscript
 sits beside its word's glyphs, not over them, and stays in its line.
 
+(2026-10-29) **Text clipped away.** A text object whose clip paths leave none of it showing is
+not visible, as the OCR layer's is not: it is not read, and not accounted for. Its clip paths'
+boxes are compared with its own, so text partly shown stays. A drawing placed as a form can
+carry copies of its labels outside the form's box: on page 12 of ICH E2C(R2), a figure's
+caption is printed once and held again, clipped away, in the drawing at a smaller size, on the
+same baseline. The two copies' chars were read as one line, interleaved, and the check refused
+it ("'Shading' missing").
+
+(2026-10-29) **A sum's limits stay in their word.** Whether a char drawn after another on a
+line goes on its word is measured as a line is (`lines_of`): baselines at most half the
+largest char's size apart, the word's chars included. Measured on the pair alone, "t=1"
+lowered under a sum and "n" raised over it, both 7-point beside 11-point text, were two words
+to the check and one to the document ("1n"), and ICH M9's f2 formula was refused ("'1'
+missing").
+
 Docling's items are matched to the text layer by page and position, and Docling's own text for an
 item is replaced by the text layer's characters inside it, in Docling's reading order. So the text
 comes from the PDF, and the structure from Docling.
@@ -323,6 +338,15 @@ Docling's table grid and spans are the starting point, then:
   their chars. On S11's Appendix A, Docling gave a table of coloured age bars both as a table and
   as a picture whose 56 text items covered its cells: the items' smaller boxes won the chars, the
   cells were left empty, and the fidelity check found "Neonate" moved out of the table.
+  (2026-10-29) A line of the grid is a row's (or column's) edge only where its rules run the
+  whole way between two neighbouring lines across it: an underline under a word in a cell,
+  touching the cell's border, is in the group but makes no row. In ICH S5(R3)'s annex tables,
+  each underline was a row, so a header and one row of findings came out a dozen rows deep with
+  every cell spanning all of them, and the sink refused rows with no cells of their own. The
+  rules of one line are joined in order along it: the pieces of a rule drawn per cell, at
+  heights a hundredth of a point apart, were joined from the highest piece's start, and the
+  line under S11 Table A1's first three header cells was lost, so "Cardiovascular" was read into
+  the header cell above it and the sink refused a header cell spanning into the body.
 - (2026-10-29) **A char inside a table but in no cell goes to the cell nearest it**, measured to
   the cell's box (nought inside it), the nearer centre breaking a tie. It was measured to the
   cell's centre, so a bullet at the left edge of a wide cell went to the narrow cell beside it.

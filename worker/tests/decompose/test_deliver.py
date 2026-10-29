@@ -751,9 +751,9 @@ def test_a_pdf_delivered_without_a_decomposition_is_read_by_the_pdf_reader() -> 
     assert out.outcome == "created"
     [request] = bridge.requests
     assert request.package.idempotency_key == decomposition_idempotency_key(
-        hashlib.sha256(data).hexdigest(), None, 1009, None
+        hashlib.sha256(data).hexdigest(), None, 1010, None
     )
-    assert request.package.provenance.decomposer_version == 1009  # type: ignore[union-attr]
+    assert request.package.provenance.decomposer_version == 1010  # type: ignore[union-attr]
 
 
 def test_a_pdf_without_a_layout_service_fails_when_delivered() -> None:
