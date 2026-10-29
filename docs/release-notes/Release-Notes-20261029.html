@@ -261,7 +261,8 @@
         document as soon as it was read, however long the queue there. Now a document asks for a
         free slot of its target before it is delivered; the worker reads the next document while the
         last one is delivered, and a document that finds no slot shows
-        <strong>Waiting to deliver</strong> on its line, with the count in the batch's totals.
+        <strong>Waiting to deliver</strong> on its line and is counted in the list of earlier
+        batches.
       </p>
       <ul>
         <li>
@@ -269,8 +270,9 @@
           ago gets it, and within a batch the oldest waiting document goes first.
         </li>
         <li>
-          Nothing needs doing for a waiting document: it moves on by itself, within a few seconds of
-          a slot freeing.
+          Nothing needs doing for a waiting document: it moves on by itself once a slot frees,
+          within a few seconds when a worker is free (a worker busy with a long job hands the slot
+          on when that job ends).
         </li>
       </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>

@@ -286,9 +286,13 @@ or review step.
   sink that says nothing gets one). A `decompose` job decomposes the file, then takes a lane
   (`decompose/lanes.py`) before handing the package to the bridge, so the worker reads the next
   document while the last is delivered. A document that finds none is `waiting_to_deliver`; the
-  dispatcher (`decompose/dispatch.py`, every 5 s and after each job) gives freed lanes to waiting
-  documents, batches taking turns, and queues each a `waited` run that delivers the stored copy.
-  An item holds its lane while `decomposing`, `waiting_to_deliver` or `delivering`.
+  dispatcher (`decompose/dispatch.py`) gives freed lanes to waiting documents, batches taking
+  turns, and queues each a `waited` run that delivers the stored copy. It runs in the worker's
+  loop between jobs, every 5 s and right after each `decompose` job, so a worker busy with a long
+  job (OCR, a recipe) leaves a freed lane until that job finishes, unless another worker is idle.
+  An item holds its lane while `decomposing`, `waiting_to_deliver` or `delivering`; each round
+  first fails an item holding one whose job ended without deciding it (deleting its stored copy),
+  then queues again an item that got a lane but no job.
 - **End to end.** `apps/api/test/integration/conversion-e2e-pg.test.ts` runs batches from the
   API's routes through the worker (`worker/tests/conversion_e2e_worker.py`, with a layout
   analyser answering the PDF fixtures with their saved Docling output) and the bridge to the fake
