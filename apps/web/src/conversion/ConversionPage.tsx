@@ -4,11 +4,12 @@ import type { Api } from '../api/client.js';
 import { StatusGlyph } from '../jobs/JobStatusIcon.js';
 import { navigate } from '../router.js';
 import { Avatar } from '../shell/Avatar.js';
+import { Dialog } from '../ui/Dialog.js';
 import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { BatchView } from './BatchView.js';
 import { NewBatch } from './NewBatch.js';
-import { OUTCOME, batchState } from './outcomes.js';
+import { OUTCOME, UNFINISHED, batchState } from './outcomes.js';
 
 /** Earlier batches a page holds. */
 export const BATCHES_PER_PAGE = 10;
@@ -73,12 +74,20 @@ function OutcomeChips({ batch }: { batch: BatchSummary }) {
   );
 }
 
-/** The batches started before, newest first, a page at a time, each a link to its view. */
+/** A batch's documents not finished yet (held ones too): it can't be deleted while it has any. */
+export const unfinishedIn = (b: BatchSummary) =>
+  [...UNFINISHED, 'awaiting_review' as const].reduce((n, o) => n + (b.counts[o] ?? 0), 0);
+
+/**
+ * The batches started before, newest first, a page at a time, each a link to its view and with
+ * a Delete… for one whose documents have all finished.
+ */
 function EarlierBatches({ api }: { api: Api }) {
   const [batches, setBatches] = useState<BatchSummary[] | null>(null);
   const [targets, setTargets] = useState<ConversionTarget[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [deleting, setDeleting] = useState<BatchSummary | null>(null);
 
   useEffect(() => {
     api.listConversionBatches().then(
@@ -140,6 +149,7 @@ function EarlierBatches({ api }: { api: Api }) {
             <col className="docs-col" />
             <col className="outcomes-col" />
             <col className="by-col" />
+            <col className="act-col" />
             <col className="go-col" />
           </colgroup>
           <tbody>
@@ -152,7 +162,7 @@ function EarlierBatches({ api }: { api: Api }) {
                   key={b.id}
                   onClick={(e) => {
                     // The whole row opens the batch; its date is the link for the keyboard.
-                    if (!(e.target as HTMLElement).closest('a')) navigate(href);
+                    if (!(e.target as HTMLElement).closest('a, button')) navigate(href);
                   }}
                 >
                   <td className="status-cell">
@@ -180,6 +190,9 @@ function EarlierBatches({ api }: { api: Api }) {
                       </>
                     )}
                   </td>
+                  <td className="act-cell">
+                    <DeleteButton batch={b} onDelete={() => setDeleting(b)} />
+                  </td>
                   <td className="go-cell" aria-hidden="true">
                     <Icon name="chevronRight" size={14} />
                   </td>
@@ -189,6 +202,81 @@ function EarlierBatches({ api }: { api: Api }) {
           </tbody>
         </table>
       )}
+      {deleting && (
+        <DeleteBatchDialog
+          api={api}
+          batch={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setBatches((list) => list?.filter((x) => x.id !== deleting.id) ?? null);
+            setDeleting(null);
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/** A row's Delete…: off, saying why, while the batch has documents not finished. */
+function DeleteButton({ batch, onDelete }: { batch: BatchSummary; onDelete: () => void }) {
+  const unfinished = unfinishedIn(batch);
+  const why = unfinished > 0 ? `${plural(unfinished, 'document')} not finished yet` : null;
+  return (
+    <button
+      type="button"
+      className="icon-button danger"
+      disabled={why !== null}
+      aria-label={`Delete the batch of ${fullWhen(batch.createdAt)}`}
+      title={why ?? 'Delete…'}
+      onClick={onDelete}
+    >
+      <Icon name="trash" />
+    </button>
+  );
+}
+
+/** Deleting a batch, once confirmed: what goes, and what stays in the target. */
+function DeleteBatchDialog({
+  api,
+  batch,
+  onClose,
+  onDeleted,
+}: {
+  api: Api;
+  batch: BatchSummary;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteConversionBatch(batch.id);
+      onDeleted();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title="Delete this batch?"
+      onClose={onClose}
+      actions={
+        <button type="button" className="danger" disabled={busy} onClick={() => void remove()}>
+          Delete batch
+        </button>
+      }
+    >
+      <p>
+        The batch of {fullWhen(batch.createdAt)}, {plural(batch.itemCount, 'document')}, leaves this
+        list, with its uploaded files and reports.
+        {batch.state === 'started' &&
+          ' The documents it delivered stay in the target, and are still found there when loaded again.'}
+      </p>
+      {error && <p role="alert">{error}</p>}
+    </Dialog>
   );
 }

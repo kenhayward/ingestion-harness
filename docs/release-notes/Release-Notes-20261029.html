@@ -162,7 +162,8 @@
       <p class="subtitle">
         Thursday 29 October 2026: failed documents re-run in their own batch, which shows them going
         through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
-        PR #362, and four more: PR #363.
+        PR #362, and four more: PR #363. Earlier batches can be deleted, and the target picked is
+        remembered: PR #364.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -171,6 +172,14 @@
           <li>
             <a href="#rerun-in-place">Re-running failed documents in their batch</a>
             <span>— Re-run Failures on the list's bar, and Auto approve in the dialog</span>
+          </li>
+          <li>
+            <a href="#delete-batch">Deleting an earlier batch</a>
+            <span>— a bin on each line of Earlier batches</span>
+          </li>
+          <li>
+            <a href="#remember-target">The Conversion tab keeps your target</a>
+            <span>— a new batch starts on the target you picked last</span>
           </li>
         </ul>
         <h4>Fixes</h4>
@@ -222,6 +231,42 @@
           Force-load, Redeliver or Load as a new document, which still make a batch of their own.
         </li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="delete-batch">Deleting an earlier batch</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/364">#364</a>
+      </p>
+      <p>
+        Earlier batches add up over time. Each line of <em>Earlier batches</em> on the Conversion
+        tab now ends with a bin that deletes the batch, once you confirm.
+      </p>
+      <ul>
+        <li>
+          The batch leaves the list with its uploaded files and reports. The documents it delivered
+          stay in the target, and are still found there when loaded again.
+        </li>
+        <li>
+          The bin is off while any of the batch's documents is still queued, converting, delivering
+          or waiting for review; hover over it to see how many. Approve or reject held PDFs first.
+        </li>
+        <li>
+          A batch that was never started is discarded as before. A file a later batch still uses,
+          such as a force-load re-run's, is kept until that batch goes too.
+        </li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="remember-target">The Conversion tab keeps your target</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/364">#364</a>
+      </p>
+      <p>
+        Coming back to the Conversion tab used to start a new batch on the first target in the list,
+        whichever you had used last, so it was easy to load into the wrong one. The target you pick
+        is now remembered in this browser, and a new batch starts on it for as long as it is still
+        listed.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h2 id="fixes">Fixes</h2>

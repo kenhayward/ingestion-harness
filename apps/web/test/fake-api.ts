@@ -856,6 +856,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     discardConversionBatch: vi.fn(async () => {
       throw new Error('discardConversionBatch not stubbed');
     }),
+    deleteConversionBatch: vi.fn(async () => {
+      throw new Error('deleteConversionBatch not stubbed');
+    }),
     getConversionBatch: vi.fn(async () => {
       throw new Error('getConversionBatch not stubbed');
     }),

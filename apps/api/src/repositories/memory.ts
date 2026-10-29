@@ -17,6 +17,7 @@ import type {
 import {
   DEFAULT_TARGET_ID,
   DELETABLE_STATUSES,
+  decompositionBatchPrefix,
   isMine,
   sourceContentType,
   statusGroup,
@@ -35,6 +36,7 @@ import {
   type AddItemResult,
   type ApproveResult,
   type DetachResult,
+  type DeleteBatchResult,
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
@@ -1485,6 +1487,26 @@ export class MemoryRepo implements IngestionRepo {
       .filter((i) => i.batchId === id)
       .map((i) => i.objectKey);
     return { ok: true, objectKeys };
+  }
+
+  async deleteBatch(id: string): Promise<DeleteBatchResult> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'started') return { ok: false, reason: 'not_started' };
+    const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
+    const running = items.filter((i) => RUNNING_OUTCOMES.includes(i.outcome)).length;
+    if (running > 0) return { ok: false, reason: 'running', running };
+    const prefix = decompositionBatchPrefix(id);
+    const kept = [
+      ...new Set(
+        [...this.conversionItems.values()]
+          .filter((i) => i.batchId !== id && i.objectKey.startsWith(prefix))
+          .map((i) => i.objectKey),
+      ),
+    ].sort();
+    for (const i of items) this.conversionItems.delete(i.id);
+    this.conversionBatches.delete(id);
+    return { ok: true, kept };
   }
 
   async rerunItem({
