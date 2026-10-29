@@ -890,3 +890,65 @@ def test_a_still_running_outcome_wakes_nothing() -> None:
     w.store.now = T0 + timedelta(seconds=20)
     w.store.set_outcome(item_id, "delivering")
     assert w.store.watched[w.watch_id]["next_look_at"] == T0 + timedelta(hours=1)
+
+
+def refusal_with(code: str, message: str, **details: Any) -> BridgeRefused:
+    return BridgeRefused(
+        BridgeError.model_validate(
+            {"class": "needs_user", "code": code, "message": message, "details": details or None}
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("refusal", "reason"),
+    [
+        (
+            refusal_with("content_rejected", "source file too large", reason="too_large"),
+            "larger than",
+        ),
+        (refusal_with("forbidden", "you may not read old.pdf"), "you may not read old.pdf"),
+    ],
+)
+def test_a_file_the_bridge_refuses_to_read_goes_to_failed_and_the_next_is_admitted(
+    refusal: BridgeRefused, reason: str
+) -> None:
+    w = World()
+    w.drop("old.pdf", pdf("old"), modified="2026-10-28T00:00:00.000Z")
+    w.drop("new.pdf", pdf("new"), modified="2026-10-29T00:00:00.000Z")
+    w.cycle(T0)
+    w.bridge.fail_next["read"] = refusal  # the oldest is read first
+    done = w.cycle(T0 + timedelta(seconds=10))
+    assert done.admitted == 1 and done.finished == 1
+    assert set(w.files("failed")) == {"old.pdf", "old.pdf.md"}
+    assert reason in w.files("failed")["old.pdf.md"].decode()
+    assert set(w.files("processing")) == {"new.pdf"}
+    old = next(i for i in w.store.items.values() if i["filename"] == "old.pdf")
+    assert old["outcome"] == "failed" and old["object_key"] is None
+    assert old["content_sha256"] == "unread"
+    assert w.store.watched[w.watch_id]["total_failed"] == 1
+
+
+def test_an_unavailable_bridge_while_reading_ends_the_admission() -> None:
+    w = World()
+    w.drop("old.pdf", pdf("old"), modified="2026-10-28T00:00:00.000Z")
+    w.drop("new.pdf", pdf("new"), modified="2026-10-29T00:00:00.000Z")
+    w.cycle(T0)
+    w.bridge.fail_next["read"] = BridgeUnavailable("the bridge is down")
+    done = w.cycle(T0 + timedelta(seconds=10))
+    assert done.admitted == 0 and done.finished == 0
+    assert set(w.files("")) == {"old.pdf", "new.pdf"}
+    assert w.store.items == {}
+
+
+def test_a_move_the_sink_refuses_while_admitting_is_counted_and_the_next_is_admitted() -> None:
+    w = World()
+    w.drop("old.pdf", pdf("old"), modified="2026-10-28T00:00:00.000Z")
+    w.drop("new.pdf", pdf("new"), modified="2026-10-29T00:00:00.000Z")
+    w.cycle(T0)
+    w.bridge.fail_next["move"] = refused("forbidden", "you may not move old.pdf")
+    done = w.cycle(T0 + timedelta(seconds=10))
+    assert done.admitted == 1
+    assert set(w.files("processing")) == {"new.pdf"}
+    (stored,) = [p for p in w.store.pickups(w.watch_id) if p.original_name == "old.pdf"]
+    assert stored.step == "stored" and stored.move_failures == 1

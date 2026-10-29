@@ -13,7 +13,9 @@
 5. **Admit** settled files, oldest first, while fewer than `admit` are unfinished: a copy stored
    in the runs bucket, the file moved to `processing/` under its working name, then its item and
    `decompose` job queued (store.py `admit`). A file conversion would refuse is recorded as a
-   `failed` item first, then goes straight to `failed/` with its reason.
+   `failed` item first, then goes straight to `failed/` with its reason; so does a file the
+   bridge refuses to read (too large for it, unreadable). A move the sink refuses is counted
+   (below) and the next file is taken; an unavailable bridge ends the admission.
 6. **Schedule** the next look: at once after admitting or finishing, after `SETTLE` while a file
    is settling, else after the watch's sleep.
 
@@ -459,18 +461,37 @@ class _Cycle:
             taken.add(working)
             try:
                 p = self._take(f, p, working, batch_id)
-            except BridgeError as exc:
+            except BridgeUnavailable as exc:
                 self._event("warn", f"could not pick up {f.name}: {exc}")
                 return  # the sink is likely down: the next look tries again
+            except BridgeRefused as exc:
+                # This file alone: its move is counted (after MAX_MOVE_TRIES the watch shows a
+                # problem; resume tries it again), and the next file is taken.
+                current = next((q for q in self.store.pickups(self.w.id) if q.id == p.id), p)
+                self._refused_move(current, f"{f.name} while picking it up", exc)
+                continue
             if p.working_name:
                 taken.add(p.working_name)
+
+    @staticmethod
+    def _read_refusal(exc: BridgeRefused) -> str:
+        """Why a file the bridge refused to read is refused (its reason file's words)."""
+        details = exc.error.details or {}
+        if exc.error.code == "content_rejected" and details.get("reason") == "too_large":
+            return OVER_LIMIT
+        return exc.error.message
 
     def _take(self, f: SourceFile, p: Pickup, working: str, batch_id: str) -> Pickup:
         if f.size > self.deps.max_bytes:
             return self._refuse(p, working, OVER_LIMIT, UNREAD)
-        data = self.deps.bridge.read_source(
-            self.w.target_id, self.w.source, "", f.name, self.w.run_as
-        )
+        try:
+            data = self.deps.bridge.read_source(
+                self.w.target_id, self.w.source, "", f.name, self.w.run_as
+            )
+        except BridgeRefused as exc:
+            # A refusal of this one file (too large for the bridge, unreadable): refused like a
+            # file conversion refuses, so it never blocks the files behind it.
+            return self._refuse(p, working, self._read_refusal(exc), UNREAD)
         problem = source_problem(data, f.name, self.deps.max_bytes)
         if problem is not None:
             return self._refuse(p, working, problem, sha256_of(data))
