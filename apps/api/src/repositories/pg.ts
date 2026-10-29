@@ -1431,7 +1431,7 @@ export class PgRepo implements IngestionRepo {
         `INSERT INTO decomposition_items
            (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (batch_id, source_key) DO NOTHING
+         ON CONFLICT (batch_id, source_key) WHERE NOT watched DO NOTHING
          RETURNING ${ITEM_COLUMNS}`,
         [
           item.id,
