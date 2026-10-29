@@ -11,3 +11,4 @@ export * from './decomposed/model.js';
 export * from './decomposed/forms.js';
 export * from './administration.js';
 export * from './conformance/administration.js';
+export * from './conformance/watched-folders.js';

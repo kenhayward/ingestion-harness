@@ -25,6 +25,10 @@ const results = await conformanceSuite({
         },
       }
     : {}),
+  // Version 4: a value for each of the sink's source fields, e.g. {"folder": "inbox"}.
+  ...(env.SINK_SOURCE_FIELDS
+    ? { watchedFolders: { source: JSON.parse(env.SINK_SOURCE_FIELDS) as Record<string, string> } }
+    : {}),
 });
 for (const r of results) {
   console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.detail ? ` (${r.detail})` : ''}`);
