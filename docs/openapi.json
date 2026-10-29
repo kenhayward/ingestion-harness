@@ -14351,11 +14351,11 @@
     "/api/conversions/batches/{id}/retry": {
       "post": {
         "operationId": "retryConversionItems",
-        "summary": "Re-run a batch's failed documents",
+        "summary": "Re-run a batch's failed documents in place",
         "tags": [
           "Conversions"
         ],
-        "description": "Runs the batch's failed documents named in `itemIds` again, from the files uploaded\nwith it, as one new batch that starts at once (the Conversion tab's _Re-run failed_).\nEach new item keeps its document's source key and names the item it re-runs\n(`redeliverOf`); nothing is uploaded again. `force` delivers them as an explicit\nupdate (absent: as the batch was started). Only items of this batch whose outcome is\n`failed`; refused while an earlier re-run of any of them is unfinished, so a\nrepeated request makes one batch, and once any of them was run again at all (its\n`rerunIn` is set): a document is re-run once, and a failed re-run is re-run from its\nown batch. The batch keeps its record.",
+        "description": "Runs the batch's failed documents named in `itemIds` again, in this batch, from the\nfiles uploaded with it (the batch's _Re-run failures_, and _Re-run_ on one document).\nEach item is queued again under its own id with a new job, its last run's detail,\nreport, link and times cleared, and its status moves on as it runs; nothing is uploaded\nagain and no batch is made. `force` delivers them as an explicit update (absent: as\nthe batch was started); `autoApprove` delivers their PDFs without review (absent: no,\nwhatever the batch was started with). Only items of this batch whose outcome is\n`failed`, and all or none: refused while one is under way again (a repeated\nrequest) and for one run again in another batch (force-load, redeliver or reload: its\n`rerunIn` is set), which is re-run from that batch.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14373,6 +14373,9 @@
                     }
                   },
                   "force": {
+                    "type": "boolean"
+                  },
+                  "autoApprove": {
                     "type": "boolean"
                   }
                 },
@@ -14397,8 +14400,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "The new batch, started, and its items in the order asked.",
+          "200": {
+            "description": "The batch as now, with all its items.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14750,13 +14753,13 @@
                     "items"
                   ],
                   "additionalProperties": false,
-                  "description": "The new batch, started, and its items in the order asked."
+                  "description": "The batch as now, with all its items."
                 }
               }
             }
           },
           "400": {
-            "description": "The body is not `{ itemIds, force? }`: one to 1,000 item ids, each once.",
+            "description": "The body is not `{ itemIds, force?, autoApprove? }`: one to 1,000 item ids, each once.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14781,7 +14784,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "The body is not `{ itemIds, force? }`: one to 1,000 item ids, each once."
+                  "description": "The body is not `{ itemIds, force?, autoApprove? }`: one to 1,000 item ids, each once."
                 }
               }
             }
@@ -14882,7 +14885,7 @@
             }
           },
           "409": {
-            "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request; `not_finished`), or one of the items was already run again (`already_rerun`, naming it).",
+            "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14915,7 +14918,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request; `not_finished`), or one of the items was already run again (`already_rerun`, naming it)."
+                  "description": "The batch was never started, or one of the items is under way again (a repeated request; `not_finished`), or one of the items was run again in another batch (`already_rerun`, naming it)."
                 }
               }
             }

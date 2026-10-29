@@ -133,17 +133,22 @@ export function ConversionHelp() {
 
       <h3>Re-running failed documents</h3>
       <p>
-        <strong>Re-run N failed</strong>, at the top of a batch with failed documents, lists them,
-        each ticked, with why it failed. Untick any to leave out, and choose whether to{' '}
-        <strong>Keep Force-load</strong> (it starts as the batch was started). They run again from
-        the files uploaded with the batch, as one new batch to the same target, which opens; this
-        batch keeps its record. <strong>Re-run this document</strong> on the panel, or{' '}
-        <strong>Re-run</strong> in a line&apos;s <strong>⋯</strong> menu, does the same for one.
+        <strong>Re-run Failures</strong>, on the list&apos;s bar after{' '}
+        <strong>Find a document</strong>
+        in a batch with failed documents, lists them, each ticked, with why it failed. Untick any to
+        leave out, and choose whether to <strong>Keep Force-load</strong> (it starts as the batch
+        was started) and whether to <strong>Auto approve</strong> (it starts off: tick it to deliver
+        the PDFs without holding them for review). They run again in this batch, from the files
+        uploaded with it: each line goes back to Queued and moves on as it runs, and the list
+        refreshes while they are under way. <strong>Re-run this document</strong> on the panel, or{' '}
+        <strong>Re-run</strong> in a line&apos;s <strong>⋯</strong> menu, does the same for one. A
+        document can be re-run as often as it fails; its line shows the latest run.
       </p>
       <p>
-        A document is re-run once from a batch. Its line then says <strong>Re-run in batch</strong>{' '}
-        and the date, which opens the batch it was re-run in, and it is no longer offered here. If
-        the re-run fails too, re-run it from that batch.
+        A document run again in a batch of its own (by <strong>Force-load</strong>,{' '}
+        <strong>Redeliver</strong> or <strong>Load as a new document</strong>, or re-run before
+        re-runs stayed in their batch) says <strong>Re-run in batch</strong> and the date, which
+        opens that batch, and it is no longer offered here: if it fails there, re-run it from there.
       </p>
       <p>
         <strong>Download original</strong>, on the panel and in the <strong>⋯</strong> menu, saves

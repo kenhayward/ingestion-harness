@@ -8348,6 +8348,11 @@ button.evidence-chip[aria-expanded='true'] {
   min-width: 120px;
   min-height: 30px;
 }
+.batch-rerun {
+  min-height: 30px;
+  font-size: var(--ih-text-sm);
+  white-space: nowrap;
+}
 .batch-list-rows {
   min-height: 0;
 }

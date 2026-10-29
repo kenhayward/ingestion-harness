@@ -126,21 +126,29 @@ describe('the Conversion tab redesign: a batch', () => {
     expect(panel().queryByRole('button', { name: /^Re-run/ })).toBeNull();
   });
 
-  it('re-runs the chosen failed documents as a new batch, keeping force-load or not', async () => {
+  it('re-runs the chosen failed documents in this batch, and stays on it as they run', async () => {
     const b = item('QA/b.docx', 'failed', { detail: 'merged cells' });
     const c = item('Labs/c.docx', 'failed', { detail: 'target unavailable' });
+    const done = item('QA/a.docx', 'created');
+    const batch = conversionBatch({ id: BATCH_ID, ...STARTED, force: true });
     const api = batchApi(
-      [item('QA/a.docx', 'created'), b, c],
+      [done, b, c],
       {
         retryConversionItems: vi.fn(async () => ({
-          batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
-          items: [],
+          batch,
+          items: [done, { ...b, outcome: 'queued' as const, detail: null }, c],
         })),
       },
       true,
     );
-    render(<BatchView api={api} batchId={BATCH_ID} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-run 2 failed' }));
+    window.location.hash = `#/conversion/${BATCH_ID}`;
+    render(<BatchView api={api} batchId={BATCH_ID} pollMs={60_000} />);
+    // On the list's bar, after the find box.
+    const find = await screen.findByRole('searchbox', { name: 'Find a document' });
+    const rerun = screen.getByRole('button', { name: 'Re-run Failures' });
+    expect(rerun.parentElement).toBe(find.parentElement);
+    expect(find.compareDocumentPosition(rerun) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await userEvent.click(rerun);
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run 2 failed documents' }));
     expect(dialog.getByRole('checkbox', { name: /QA\/b\.docx/ })).toBeChecked();
     expect(dialog.getByText('merged cells')).toBeVisible();
@@ -152,13 +160,55 @@ describe('the Conversion tab redesign: a batch', () => {
     expect(api.retryConversionItems).toHaveBeenCalledWith(BATCH_ID, {
       itemIds: [b.id],
       force: false,
+      autoApprove: false,
     });
-    await waitFor(() => expect(window.location.hash).toBe(`#/conversion/${NEW_BATCH_ID}`));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.hash).toBe(`#/conversion/${BATCH_ID}`);
+    // Its row shows it queued again, and the list refreshes while it runs.
+    const row = within(table().getByText('QA/b.docx').closest('tr')!);
+    expect(row.getByText('Queued')).toBeVisible();
+    expect(screen.getByText(/this list refreshes every few seconds/)).toBeVisible();
+  });
+
+  it('re-runs auto-approving only when ticked: it starts off, whatever the batch', async () => {
+    const b = item('QA/b.pdf', 'failed');
+    const api = batchApi([b], {
+      getConversionBatch: vi.fn(async () => ({
+        batch: conversionBatch({ id: BATCH_ID, ...STARTED, autoApprove: true }),
+        items: [b],
+      })),
+      retryConversionItems: vi.fn(async () => ({
+        batch: conversionBatch({ id: BATCH_ID, ...STARTED }),
+        items: [{ ...b, outcome: 'queued' as const }],
+      })),
+    });
+    render(<BatchView api={api} batchId={BATCH_ID} pollMs={60_000} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Re-run Failures' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
+    const switches = dialog.getAllByRole('switch');
+    const auto = dialog.getByRole('switch', { name: /Auto approve/ });
+    // Under Force-load.
+    expect(switches.indexOf(auto)).toBe(switches.length - 1);
+    expect(switches[0]).toHaveAccessibleName(/Keep Force-load/);
+    expect(auto).not.toBeChecked();
+    await userEvent.click(auto);
+    await userEvent.click(dialog.getByRole('button', { name: 'Re-run 1 document' }));
+    expect(api.retryConversionItems).toHaveBeenCalledWith(BATCH_ID, {
+      itemIds: [b.id],
+      force: false,
+      autoApprove: true,
+    });
+  });
+
+  it('offers no Re-run Failures with nothing failed to re-run', async () => {
+    render(<BatchView api={batchApi([item('a.docx', 'created')])} batchId={BATCH_ID} />);
+    await screen.findByRole('table', { name: 'Documents' });
+    expect(screen.queryByRole('button', { name: 'Re-run Failures' })).toBeNull();
   });
 
   it('cannot re-run with nothing chosen', async () => {
     render(<BatchView api={batchApi([item('b.docx', 'failed')])} batchId={BATCH_ID} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-run 1 failed' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Re-run Failures' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
     await userEvent.click(dialog.getByRole('checkbox', { name: /b\.docx/ }));
     expect(dialog.getByRole('button', { name: /^Re-run/ })).toBeDisabled();
@@ -171,22 +221,23 @@ describe('the Conversion tab redesign: a batch', () => {
       }),
     });
     render(<BatchView api={api} batchId={BATCH_ID} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-run 1 failed' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Re-run Failures' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
     await userEvent.click(dialog.getByRole('button', { name: 'Re-run 1 document' }));
     expect(await dialog.findByRole('alert')).toHaveTextContent('still running');
-    expect(window.location.hash).toBe('');
   });
 
-  it('re-runs one document from its panel', async () => {
+  it('re-runs one document from its panel, staying on the batch', async () => {
     const b = item('b.docx', 'failed');
-    const api = batchApi([b, item('c.docx', 'failed')], {
+    const c = item('c.docx', 'failed');
+    const api = batchApi([b, c], {
       retryConversionItems: vi.fn(async () => ({
-        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
-        items: [],
+        batch: conversionBatch({ id: BATCH_ID, ...STARTED }),
+        items: [{ ...b, outcome: 'decomposing' as const }, c],
       })),
     });
-    render(<BatchView api={api} batchId={BATCH_ID} />);
+    window.location.hash = `#/conversion/${BATCH_ID}`;
+    render(<BatchView api={api} batchId={BATCH_ID} pollMs={60_000} />);
     await waitFor(() => expect(panel().getByRole('heading', { name: 'b.docx' })).toBeVisible());
     await userEvent.click(panel().getByRole('button', { name: 'Re-run this document' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run b.docx' }));
@@ -195,7 +246,13 @@ describe('the Conversion tab redesign: a batch', () => {
     expect(api.retryConversionItems).toHaveBeenCalledWith(BATCH_ID, {
       itemIds: [b.id],
       force: false,
+      autoApprove: false,
     });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.hash).toBe(`#/conversion/${BATCH_ID}`);
+    expect(
+      within(table().getByText('b.docx').closest('tr')!).getByText('Decomposing'),
+    ).toBeVisible();
   });
 
   it("a row's menu re-runs, opens the report and downloads the original", async () => {
@@ -263,7 +320,8 @@ describe('the Conversion tab redesign: a batch', () => {
     const b = item('QA/b.docx', 'failed');
     render(<BatchView api={batchApi([a, b])} batchId={BATCH_ID} />);
     await screen.findByRole('table', { name: 'Documents' });
-    expect(screen.queryByRole('button', { name: 'Re-run 2 failed' })).toBeNull();
+    // b alone is offered: a was re-run in another batch.
+    expect(screen.getByRole('button', { name: 'Re-run Failures' })).toBeVisible();
     // Still failed in this batch's record.
     const show = within(screen.getByRole('group', { name: 'Show' }));
     expect(show.getByRole('button', { name: /^Failed/ })).toHaveTextContent('2');
@@ -285,7 +343,7 @@ describe('the Conversion tab redesign: a batch', () => {
     expect(menu.queryByRole('menuitem', { name: 'Re-run' })).toBeNull();
     await userEvent.keyboard('{Escape}');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Re-run 1 failed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run Failures' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
     expect(dialog.getByRole('checkbox', { name: /QA\/b\.docx/ })).toBeChecked();

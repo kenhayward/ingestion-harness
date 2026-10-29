@@ -753,7 +753,7 @@ describe('the Conversion tab: the batch view', () => {
     // Re-running takes the failed document only; the gone one is no re-run's to make.
     await userEvent.click(show.getByRole('button', { name: /^All/ }));
     expect(panelFor('gone.docx').queryByRole('button', { name: /^Re-run/ })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Re-run 1 failed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run Failures' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
     expect(dialog.getByRole('checkbox', { name: /broke\.docx/ })).toBeChecked();

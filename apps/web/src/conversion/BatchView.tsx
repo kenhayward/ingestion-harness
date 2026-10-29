@@ -327,11 +327,6 @@ export function BatchView({
           <a className="button" href="#/conversion">
             New batch
           </a>
-          {retryable.length > 0 && (
-            <button type="button" className="primary" onClick={retryAll}>
-              <Icon name="refresh" size={14} /> Re-run {retryable.length} failed
-            </button>
-          )}
           <HelpButton topic="conversion" />
         </div>
       </div>
@@ -393,6 +388,11 @@ export function BatchView({
                 setPage(0);
               }}
             />
+            {retryable.length > 0 && (
+              <button type="button" className="primary batch-rerun" onClick={retryAll}>
+                <Icon name="refresh" size={14} /> Re-run Failures
+              </button>
+            )}
             <nav className="jobs-pager" aria-label="Pages of documents">
               <span className="jobs-pager-buttons">
                 <button
@@ -507,6 +507,10 @@ export function BatchView({
           items={retry.items}
           target={targetInfo}
           title={retry.title}
+          onDone={(d) => {
+            // The rows re-run show as queued at once, so the list refreshes while they run.
+            setDetail(d);
+          }}
           onClose={() => setRetry(null)}
         />
       )}

@@ -289,12 +289,14 @@ export const CreateBatchSchema = z
   .strict();
 export type CreateBatch = z.infer<typeof CreateBatchSchema>;
 
-/** The most documents one *Re-run failed* request names. */
+/** The most documents one *Re-run failures* request names. */
 export const MAX_RETRY_ITEMS = 1000;
 
 /**
- * `POST /api/conversions/batches/{id}/retry`: the batch's failed items to run again (each once),
- * and whether to deliver them as an explicit update (absent: as the batch was started).
+ * `POST /api/conversions/batches/{id}/retry`: the batch's failed items to run again in place
+ * (each once), whether to deliver them as an explicit update (absent: as the batch was started),
+ * and whether to deliver their PDFs without review (absent: no, whatever the batch was started
+ * with).
  */
 export const RetryItemsSchema = z
   .object({
@@ -304,6 +306,7 @@ export const RetryItemsSchema = z
       .max(MAX_RETRY_ITEMS)
       .refine((ids) => new Set(ids).size === ids.length, 'each item once'),
     force: z.boolean().optional(),
+    autoApprove: z.boolean().optional(),
   })
   .strict();
 export type RetryItems = z.infer<typeof RetryItemsSchema>;

@@ -1,17 +1,17 @@
 import { useRef, useState } from 'react';
-import type { Batch, ConversionTarget, Item } from '@ih/shared';
+import type { Batch, BatchDetail, ConversionTarget, Item } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { navigate } from '../router.js';
 import { Dialog } from '../ui/Dialog.js';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * Re-run failed documents (`POST /api/conversions/batches/:id/retry`): each runs again from the
- * file uploaded with this batch, as one new batch to the same target, and this batch keeps its
- * record. Every listed document starts ticked; Force-load starts as the batch was started. On
- * success the new batch opens; a refusal (an earlier re-run still running, say) stays in the
- * dialog.
+ * Re-run failed documents (`POST /api/conversions/batches/:id/retry`): each runs again in this
+ * batch from the file uploaded with it, its row queued again (owner's call, 2026-10-29: no new
+ * batch, so it is plain which documents have since gone through). Every listed document starts
+ * ticked; Force-load starts as the batch was started, and Auto approve off. On success the batch
+ * as now goes to `onDone`, and the dialog closes; a refusal (one already running again, say)
+ * stays in the dialog.
  */
 export function RetryDialog({
   api,
@@ -19,6 +19,7 @@ export function RetryDialog({
   items,
   target,
   title,
+  onDone,
   onClose,
 }: {
   api: Api;
@@ -27,10 +28,13 @@ export function RetryDialog({
   items: Item[];
   target: ConversionTarget | undefined;
   title: string;
+  /** The batch as the re-run left it. */
+  onDone: (detail: BatchDetail) => void;
   onClose: () => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(items.map((i) => i.id)));
   const [force, setForce] = useState(batch.force);
+  const [autoApprove, setAutoApprove] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
@@ -45,8 +49,9 @@ export function RetryDialog({
       const detail = await api.retryConversionItems(batch.id, {
         itemIds: chosen.map((i) => i.id),
         force,
+        autoApprove,
       });
-      navigate(`#/conversion/${encodeURIComponent(detail.batch.id)}`);
+      onDone(detail);
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -80,11 +85,12 @@ export function RetryDialog({
       }
     >
       <p>
-        {items.length === 1 ? 'It runs' : 'They run'} again from the{' '}
-        {items.length === 1 ? 'file' : 'files'} uploaded with this batch, as a new batch to{' '}
+        {items.length === 1 ? 'It runs' : 'They run'} again in this batch, from the{' '}
+        {items.length === 1 ? 'file' : 'files'} uploaded with it, to{' '}
         <strong>{target?.label ?? batch.targetId}</strong>
-        {target && <span className="sink-tag">{target.sinkName}</span>}. This batch keeps its
-        record.
+        {target && <span className="sink-tag">{target.sinkName}</span>}.{' '}
+        {items.length === 1 ? 'Its row shows' : 'Their rows show'} how{' '}
+        {items.length === 1 ? 'it goes' : 'they go'}.
       </p>
       <div className="retry-list">
         <p className="retry-list-head">
@@ -118,6 +124,17 @@ export function RetryDialog({
           {' '}
           · {batch.force ? 'as this batch was started' : 'off for this batch'}
         </span>
+      </label>
+      <label className="conv-switch">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={autoApprove}
+          onChange={(e) => setAutoApprove(e.target.checked)}
+        />
+        <span className="conv-switch-track" aria-hidden="true" />
+        Auto approve
+        <span className="muted"> · deliver converted PDFs without holding them for review</span>
       </label>
       {error && <p role="alert">{error}</p>}
     </Dialog>

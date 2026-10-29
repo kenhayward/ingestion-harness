@@ -516,28 +516,31 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         tags: ['Conversions'],
         operationId: 'retryConversionItems',
-        summary: "Re-run a batch's failed documents",
+        summary: "Re-run a batch's failed documents in place",
         description: md`
-          Runs the batch's failed documents named in \`itemIds\` again, from the files uploaded
-          with it, as one new batch that starts at once (the Conversion tab's _Re-run failed_).
-          Each new item keeps its document's source key and names the item it re-runs
-          (\`redeliverOf\`); nothing is uploaded again. \`force\` delivers them as an explicit
-          update (absent: as the batch was started). Only items of this batch whose outcome is
-          \`failed\`; refused while an earlier re-run of any of them is unfinished, so a
-          repeated request makes one batch, and once any of them was run again at all (its
-          \`rerunIn\` is set): a document is re-run once, and a failed re-run is re-run from its
-          own batch. The batch keeps its record.
+          Runs the batch's failed documents named in \`itemIds\` again, in this batch, from the
+          files uploaded with it (the batch's _Re-run failures_, and _Re-run_ on one document).
+          Each item is queued again under its own id with a new job, its last run's detail,
+          report, link and times cleared, and its status moves on as it runs; nothing is uploaded
+          again and no batch is made. \`force\` delivers them as an explicit update (absent: as
+          the batch was started); \`autoApprove\` delivers their PDFs without review (absent: no,
+          whatever the batch was started with). Only items of this batch whose outcome is
+          \`failed\`, and all or none: refused while one is under way again (a repeated
+          request) and for one run again in another batch (force-load, redeliver or reload: its
+          \`rerunIn\` is set), which is re-run from that batch.
         `,
         params: BatchParams,
         body: RetryItemsSchema,
         response: {
-          201: res('The new batch, started, and its items in the order asked.', BatchDetailSchema),
-          400: error('The body is not `{ itemIds, force? }`: one to 1,000 item ids, each once.'),
+          200: res('The batch as now, with all its items.', BatchDetailSchema),
+          400: error(
+            'The body is not `{ itemIds, force?, autoApprove? }`: one to 1,000 item ids, each once.',
+          ),
           404: NOT_FOUND,
           409: res(
-            'The batch was never started, or an earlier re-run of one of the items is still ' +
-              'running (a repeated request; `not_finished`), or one of the items was already ' +
-              'run again (`already_rerun`, naming it).',
+            'The batch was never started, or one of the items is under way again (a repeated ' +
+              'request; `not_finished`), or one of the items was run again in another batch ' +
+              '(`already_rerun`, naming it).',
             ErrorBody.extend({ code: z.enum(['not_finished', 'already_rerun']) }),
           ),
           422: res(
@@ -561,7 +564,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       }
       const items = new Map((await repo.listItems(batch.id)).map((i) => [i.id, i]));
       const asked = body.data.itemIds.map((id) => items.get(id));
-      const notFailed = body.data.itemIds.find((id, n) => asked[n]?.outcome !== 'failed');
+      // An item of another batch, or none; the repo checks each one's outcome, under its lock.
+      const notFailed = body.data.itemIds.find((_, n) => asked[n] === undefined);
       if (notFailed) {
         return reply.code(422).send({
           error: `${notFailed} is not a failed document of this batch`,
@@ -572,23 +576,24 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
       }
       const done = await repo.retryItems({
-        batchId: randomUUID(),
-        items: (asked as Item[]).map((of) => ({ itemId: randomUUID(), of })),
+        items: asked as Item[],
         targetId: batch.targetId,
         force: body.data.force ?? batch.force,
-        autoApprove: batch.autoApprove,
-        createdBy: batchCreator(creatorOf(req)),
+        autoApprove: body.data.autoApprove ?? false,
         by: creatorOf(req),
       });
       if (!done.ok) {
         const key = items.get(done.itemId)?.sourceKey ?? done.itemId;
+        if (done.reason === 'not_failed') {
+          return reply
+            .code(422)
+            .send({ error: `${key} is not a failed document of this batch`, code: 'not_failed' });
+        }
         return done.reason === 'running'
-          ? reply
-              .code(409)
-              .send({ error: `a re-run of ${key} is still running`, code: 'not_finished' })
+          ? reply.code(409).send({ error: `${key} is already running`, code: 'not_finished' })
           : reply.code(409).send({ error: `${key} was already re-run`, code: 'already_rerun' });
       }
-      return reply.code(201).send({ batch: done.batch, items: done.items });
+      return { batch, items: await repo.listItems(batch.id) };
     },
   );
 

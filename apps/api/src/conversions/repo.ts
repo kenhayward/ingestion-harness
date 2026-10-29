@@ -41,17 +41,19 @@ export interface ConversionRepo {
    * started at once, its `decompose` job queued, all at once. The item keeps `of`'s source key
    * and records `redeliverOf`; it delivers `source` (the stored file, or a replacement already
    * stored under the new ids). With `of` locked, refused (`running`) while an earlier rerun of
-   * it is unfinished, so a repeated request makes one batch.
+   * it is unfinished, so a repeated request makes one batch, or while `of` itself is under way
+   * again (re-run in place).
    */
   rerunItem(rerun: Rerun): Promise<RerunResult>;
   /**
-   * Re-run failed items (the Conversion tab's *Re-run failed*): one new batch, started at once,
-   * holding a new item per item asked, in order, each under its item's source key with its
-   * stored file and `redeliverOf` it, a `decompose` job each, all at once. With the items locked,
-   * refused (`running`, naming the first) while an earlier rerun of any of them is unfinished,
-   * so a repeated request makes one batch, and (`already_rerun`, naming the first) once any of
-   * them was run again at all (`Item.rerunIn`): an item is re-run once, and a failed re-run is
-   * re-run from its own batch.
+   * Re-run failed items in place (the batch's *Re-run failures*, owner's call 2026-10-29): each
+   * item asked, in order, gets a new `decompose` job from its stored file, in its own batch, and
+   * is `queued` again, its last run's detail, report, link, times and review cleared (its
+   * register entry is kept), all at once. With the items locked, refused, naming the first and
+   * changing nothing: `not_failed` for an item that is not `failed` (rejected is final),
+   * `running` for one under way (a repeated request) or whose rerun in another batch is, and
+   * `already_rerun` for one run again in another batch (`Item.rerunIn`): that one is re-run
+   * there.
    */
   retryItems(retry: Retry): Promise<RetryResult>;
   /**
@@ -153,23 +155,20 @@ export interface Rerun {
 }
 
 export interface Retry {
-  /** The new batch's id. */
-  batchId: string;
-  /** Each item re-run, with its new item's id. */
-  items: { itemId: string; of: Item }[];
+  /** The items re-run, of one started batch. */
+  items: Item[];
   targetId: string;
   /** Deliver as an explicit update (force-load). */
   force: boolean;
-  /** Deliver PDFs without review (the re-run batch's Auto Approve; default false). */
+  /** Deliver PDFs without review (the re-run's Auto Approve; default false). */
   autoApprove?: boolean;
-  createdBy: Batch['createdBy'];
   /** Who queues the jobs. */
   by: Creator | null;
 }
 
 export type RetryResult =
-  | { ok: true; batch: Batch; items: Item[] }
-  | { ok: false; reason: 'running' | 'already_rerun'; itemId: string };
+  | { ok: true; items: Item[] }
+  | { ok: false; reason: 'not_failed' | 'running' | 'already_rerun'; itemId: string };
 
 export type DetachResult =
   | { ok: true; entry: RegisterEntry; item: Item }

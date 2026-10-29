@@ -117,6 +117,14 @@ Real app (Vite, `/api` mocked) at 1,600 × 1,000 unless named; sample data.
   every listed document ticked with its reason; *Keep Force-load* switch, starting as the batch
   was; **Re-run N documents** (disabled at none). Success navigates to the new batch; a refusal
   stays in the dialog as an alert.
+  (2026-10-29, owner's call) Re-runs now stay in their batch: the route resets each failed item in
+  place (queued, a new job, its last run's detail, report, link, times and review cleared) and
+  answers 200 with the batch as now, so the dialog hands that to `BatchView` and closes, and the
+  list polls while they run. The header's **Re-run N failed** became **Re-run Failures** on the
+  list's bar after *Find a document*, and the dialog has an **Auto approve** switch under *Keep
+  Force-load*, starting off (`RetryItems.autoApprove`; absent is off, whatever the batch). A
+  document is re-run in place as often as it fails; one run again in a batch of its own
+  (`rerunIn`, force-load, redeliver, reload) is still re-run from there.
 - **Shared bits:** `StatusGlyph` exported from `jobs/JobStatusIcon.tsx` (`JobStatusIcon` uses it);
   `outcomes.ts` adds `OUTCOME_ICON`, `isDelivered`, `isFailed`, `batchState`, `spokenSize`.
 - **Styles:** the Conversion block of `styles.css` is replaced (new batch, earlier batches,
