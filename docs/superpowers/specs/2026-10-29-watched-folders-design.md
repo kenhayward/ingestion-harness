@@ -175,8 +175,10 @@ watch exists. Its creator is the run-as user.
 Deleting the watch's batch **[owner]**: anyone allowed to delete a batch today may delete it, to
 clear old records. Its documents' rows go; the watch's counters (§8) are held outside the batch and
 keep counting. The next pickup starts a new batch for the watch, which reappears on the list with
-only the new rows. **[call]**: rows still unfinished when the batch is deleted are kept and move to
-the new batch, so a delete never strands a file in `processing/`.
+only the new rows. **[call]**: rows still unfinished when the batch is deleted are kept, and the
+batch stays on the list holding only them until they finish, so a delete never strands a file in
+`processing/`. (Moving them to a new batch was rejected: an item's stored files are keyed by its
+batch.)
 
 What the watch's batch does not offer **[owner]** ("no re-processing from CT Studio"): *Re-run N
 failed*, a row's Re-run, Force-load, Redeliver and *Load as a new document* are hidden for watched
@@ -184,8 +186,9 @@ items. **[call]**: Detach and Accept the target's state stay, since they only ch
 and send nothing; the next upload of the file then creates or updates. Review of a held PDF stays
 (only when auto-approve is off).
 
-**Lanes per tenant.** **[owner]** At most `min(lanes, workers)` conversions run at once for one
-sink instance, counting UI batches and watches together. **[owner]** A lane is held only while an
+**Lanes per tenant.** **[owner]** At most `lanes` deliveries run at once for one sink instance,
+counting UI batches and watches together. (The worker count still bounds decomposition; since a
+delivering document holds no worker (§11), it no longer caps deliveries.) **[owner]** A lane is held only while an
 item is `delivering`; decomposition takes no lane, so the next document is decomposed while the
 previous one is delivered (§11). **[call]** The limit is counted from item states, in one place,
 not from job claims, since the decompose job finishes before the bridge settles the item. An item
