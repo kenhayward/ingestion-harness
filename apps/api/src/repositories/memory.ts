@@ -1398,6 +1398,8 @@ export class MemoryRepo implements IngestionRepo {
   }
   /** Test hooks: the step of the pickup behind a watched item, and each watch's current batch. */
   readonly watchPickups = new Map<string, string>();
+  /** Test hook: copies of watched files the worker stored but has not admitted (key → watch). */
+  readonly watchHeldCopies = new Map<string, string>();
   private readonly watchBatches = new Map<string, string | null>();
   watchBatchOf(watchId: string): string | null {
     return this.watchBatches.get(watchId) ?? null;
@@ -1531,7 +1533,15 @@ export class MemoryRepo implements IngestionRepo {
       ...new Set(
         [...this.conversionItems.values()]
           .filter((i) => i.batchId !== id && i.objectKey?.startsWith(prefix))
-          .map((i) => i.objectKey as string),
+          .map((i) => i.objectKey as string)
+          // A watch's file stored under this batch but not admitted yet keeps its copy.
+          .concat(
+            batch.watch
+              ? [...this.watchHeldCopies]
+                  .filter(([key, watchId]) => watchId === batch.watch!.id && key.startsWith(prefix))
+                  .map(([key]) => key)
+              : [],
+          ),
       ),
     ].sort();
     for (const i of items) this.conversionItems.delete(i.id);

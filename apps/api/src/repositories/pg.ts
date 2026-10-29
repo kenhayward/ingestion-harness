@@ -1578,10 +1578,17 @@ export class PgRepo implements IngestionRepo {
         };
       }
       const prefix = decompositionBatchPrefix(id);
+      // Keys another batch's items name, and the copies a watch stored under this batch for
+      // files it has taken but not admitted yet (its next admit puts them in a new batch).
       const kept = await client.query<{ object_key: string }>(
-        `SELECT DISTINCT object_key FROM decomposition_items
-          WHERE batch_id <> $1 AND left(object_key, length($2)) = $2 ORDER BY object_key`,
-        [id, prefix],
+        `SELECT object_key FROM decomposition_items
+          WHERE batch_id <> $1 AND left(object_key, length($2)) = $2
+         UNION
+         SELECT object_key FROM watch_pickups
+          WHERE watch_id = $3 AND step IN ('stored', 'moved')
+            AND left(object_key, length($2)) = $2
+         ORDER BY object_key`,
+        [id, prefix, locked.rows[0].watch_id],
       );
       await client.query('DELETE FROM decomposition_items WHERE batch_id = $1', [id]);
       await client.query('DELETE FROM decomposition_batches WHERE id = $1', [id]);

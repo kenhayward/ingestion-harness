@@ -44,6 +44,9 @@ conversionsContract('memory', async () => {
       pickup: async (itemId, step) => {
         repo.watchPickups.set(itemId, step);
       },
+      heldCopy: async (watchId, objectKey) => {
+        repo.watchHeldCopies.set(objectKey, watchId);
+      },
       watchBatch: async (watchId) => repo.watchBatchOf(watchId),
       entry: async (seed) => {
         const { state, lastReceipt, lastError, ...rest } = seed;

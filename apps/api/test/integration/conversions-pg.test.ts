@@ -119,6 +119,14 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             [itemId, step],
           );
         },
+        heldCopy: async (watchId: string, objectKey: string, step: string) => {
+          await p.query(
+            `INSERT INTO watch_pickups
+               (watch_id, original_name, size, modified_at, step, working_name, item_id, object_key)
+             VALUES ($1, $2, 1, now(), $3, $2, gen_random_uuid(), $4)`,
+            [watchId, `held-${randomUUID()}.docx`, step, objectKey],
+          );
+        },
         watchBatch: async (watchId: string) => {
           const { rows } = await p.query<{ batch_id: string | null }>(
             'SELECT batch_id FROM watched_folders WHERE id = $1',

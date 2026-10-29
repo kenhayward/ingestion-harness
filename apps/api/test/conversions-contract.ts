@@ -8,6 +8,7 @@ import {
 import {
   BatchSchema,
   BatchSummarySchema,
+  decompositionSourceKey,
   DecomposeParamsSchema,
   ItemSchema,
   type Item,
@@ -51,6 +52,8 @@ export interface ConversionFacts {
   watch(batchId: string, name: string): Promise<string>;
   /** The pickup that led to an item, at `step` (the worker writes these). */
   pickup(itemId: string, step: 'queued' | 'finished' | 'abandoned'): Promise<void>;
+  /** A pickup the worker stored a copy of (`stored` or `moved`) but has not admitted yet. */
+  heldCopy(watchId: string, objectKey: string, step: 'stored' | 'moved'): Promise<void>;
   /** The batch the watch adds its next pickup to (null: it starts a new one). */
   watchBatch(watchId: string): Promise<string | null>;
   /** Records when an item started and finished, as the worker and the settle do. */
@@ -530,6 +533,25 @@ export function conversionsContract(
 
       await facts.pickup(a!.id, 'finished');
       expect(await repo.deleteBatch(batch.id)).toEqual({ ok: true, kept: [] });
+      expect(await repo.getBatch(batch.id)).toBeNull();
+    });
+
+    it("keeps the copies of a watch's files taken but not admitted yet", async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const a = item(batch.id, 'a.docx');
+      await repo.addItem(a);
+      await repo.startBatch(batch.id, null);
+      const watchId = await facts.watch(batch.id, 'Inbox');
+      await facts.settleItem(a.id, 'created', null);
+      await facts.pickup(a.id, 'finished');
+      const stored = decompositionSourceKey(batch.id, randomUUID(), 'docx');
+      const moved = decompositionSourceKey(batch.id, randomUUID(), 'pdf');
+      await facts.heldCopy(watchId, stored, 'stored');
+      await facts.heldCopy(watchId, moved, 'moved');
+
+      const done = await repo.deleteBatch(batch.id);
+      expect(done).toEqual({ ok: true, kept: [moved, stored].sort() });
       expect(await repo.getBatch(batch.id)).toBeNull();
     });
 
