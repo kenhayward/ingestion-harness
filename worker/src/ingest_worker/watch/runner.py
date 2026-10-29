@@ -141,8 +141,11 @@ class WatchRunner:
                 except Exception as exc:
                     log.warning("watch %s: the cycle failed", w.name, exc_info=True)
                     store.event(w.id, "error", f"the folder could not be looked at: {exc}", None)
-                    store.schedule(w.id, now + timedelta(seconds=w.sleep_seconds))
+                    store.schedule(
+                        w.id, now + timedelta(seconds=w.sleep_seconds), seen=w.next_look_at
+                    )
                     continue
-                store.schedule(w.id, result.next_look_at)
+                # A document that finished during the cycle keeps its wake (`seen`).
+                store.schedule(w.id, result.next_look_at, seen=w.next_look_at)
                 ran += 1
         return ran

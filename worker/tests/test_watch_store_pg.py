@@ -464,3 +464,138 @@ def test_a_stopped_watch_lets_a_taken_pickup_go_and_leaves_its_file(db: Db) -> N
         )
         == 0
     )
+
+
+def _admitted_item(db: Db, d: WatchDeps, bridge: FakeBridge, watch_id: str) -> str:
+    """Drop a.pdf and run the two looks that admit it; its item id."""
+    drop(bridge, db, "a.pdf", PDF)
+    t0 = datetime.now(UTC)
+    for at in (t0, t0 + timedelta(seconds=10)):
+        w = d.store.watch(watch_id)
+        assert w is not None
+        run_cycle(w, d, at)
+    return str(
+        db.one(
+            "SELECT i.id::text FROM decomposition_items i JOIN decomposition_batches b "
+            "ON b.id = i.batch_id WHERE b.watch_id = %s",
+            watch_id,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "wakes"),
+    [
+        ("created", True),
+        ("failed", True),
+        ("duplicate", True),
+        ("delivering", False),
+        ("awaiting_review", False),
+        ("waiting_to_deliver", False),
+    ],
+)
+def test_a_watched_item_reaching_a_final_outcome_makes_its_watch_due(
+    db: Db, outcome: str, wakes: bool
+) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    item_id = _admitted_item(db, d, bridge, watch_id)
+    db.conn.execute(
+        "UPDATE watched_folders SET next_look_at = now() + interval '1 hour' WHERE id = %s",
+        (watch_id,),
+    )
+    db.conn.execute("UPDATE decomposition_items SET outcome = %s WHERE id = %s", (outcome, item_id))
+    due = db.one("SELECT next_look_at <= now() FROM watched_folders WHERE id = %s", watch_id)
+    assert due is wakes
+
+
+def test_a_finished_document_wakes_a_sleeping_worker_and_is_filed(db: Db) -> None:
+    import psycopg
+
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    item_id = _admitted_item(db, d, bridge, watch_id)
+    db.conn.execute(
+        "UPDATE watched_folders SET next_look_at = now() + interval '1 hour' WHERE id = %s",
+        (watch_id,),
+    )
+    runner = WatchRunner(d, PgWatchLocks(db.url))
+    try:
+        assert runner.tick() == 0  # asleep
+
+        listener = psycopg.connect(db.url, autocommit=True)
+        try:
+            listener.execute("LISTEN ih_jobs")
+            db.conn.execute(
+                "UPDATE decomposition_items SET outcome = 'created' WHERE id = %s", (item_id,)
+            )
+            woken = list(listener.notifies(timeout=5, stop_after=1))
+        finally:
+            listener.close()
+        assert woken, "an idle worker waiting on ih_jobs is woken"
+
+        assert runner.tick() == 1
+    finally:
+        assert isinstance(runner.locks, PgWatchLocks)
+        runner.locks.close()
+    assert folder(bridge, "delivered") == {"a.pdf"}
+    assert db.one("SELECT total_delivered FROM watched_folders WHERE id = %s", watch_id) == 1
+
+
+def test_an_unwatched_item_wakes_no_watch(db: Db) -> None:
+    watch_id = db.watch()
+    db.conn.execute(
+        "UPDATE watched_folders SET next_look_at = now() + interval '1 hour' WHERE id = %s",
+        (watch_id,),
+    )
+    batch = db.one(
+        "INSERT INTO decomposition_batches (target_id, created_by, state) "
+        "VALUES (%s, '{}', 'started') RETURNING id::text",
+        db.target,
+    )
+    try:
+        item = db.one(
+            "INSERT INTO decomposition_items (batch_id, source_key, filename, content_sha256, "
+            "size_bytes, object_key) VALUES (%s, 'k/a.pdf', 'a.pdf', 'x', 1, 'k') "
+            "RETURNING id::text",
+            batch,
+        )
+        db.conn.execute("UPDATE decomposition_items SET outcome = 'created' WHERE id = %s", (item,))
+        due = db.one("SELECT next_look_at <= now() FROM watched_folders WHERE id = %s", watch_id)
+        assert due is False
+    finally:
+        db.conn.execute("DELETE FROM decomposition_items WHERE batch_id = %s", (batch,))
+        db.conn.execute("DELETE FROM decomposition_batches WHERE id = %s", (batch,))
+
+
+def test_a_wake_written_during_a_cycle_is_kept_by_its_schedule(db: Db) -> None:
+    import psycopg
+
+    store = PgWatchStore(psycopg.connect(db.url, autocommit=True))
+    watch_id = db.watch()
+    w = store.watch(watch_id)
+    assert w is not None
+    later = datetime.now(UTC) + timedelta(hours=1)
+    store.schedule(watch_id, later, seen=w.next_look_at)
+    assert db.one("SELECT next_look_at FROM watched_folders WHERE id = %s", watch_id) == later
+
+    seen = later
+    db.conn.execute("UPDATE watched_folders SET next_look_at = now() WHERE id = %s", (watch_id,))
+    store.schedule(watch_id, later + timedelta(hours=1), seen=seen)
+    assert db.one("SELECT next_look_at <= now() FROM watched_folders WHERE id = %s", watch_id)
+
+
+def test_a_stopped_watch_is_not_woken(db: Db) -> None:
+    bridge, objects = FakeBridge(sinks={db.target}), MemoryObjectStore()
+    d = deps(db, bridge, objects)
+    watch_id = db.watch()
+    item_id = _admitted_item(db, d, bridge, watch_id)
+    db.conn.execute(
+        "UPDATE watched_folders SET state = 'stopped', next_look_at = now() + interval '1 hour' "
+        "WHERE id = %s",
+        (watch_id,),
+    )
+    db.conn.execute("UPDATE decomposition_items SET outcome = 'failed' WHERE id = %s", (item_id,))
+    assert db.one("SELECT next_look_at > now() FROM watched_folders WHERE id = %s", watch_id)

@@ -193,7 +193,12 @@ class WatchStore(Protocol):
         self, watch_id: str, problem: str | None, root_waiting: int | None, now: datetime
     ) -> None: ...
 
-    def schedule(self, watch_id: str, next_look_at: datetime) -> None: ...
+    def schedule(self, watch_id: str, next_look_at: datetime, seen: datetime | None = None) -> None:
+        """Set the watch's next look. With `seen`, the next look the cycle started from: when
+        another writer moved it meanwhile (a document finished: the trigger of migration
+        202610291400; an admin's start), the earlier of the two is kept, so that wake is not
+        lost."""
+        ...
 
     def event(
         self,
@@ -550,10 +555,15 @@ class PgWatchStore:
             (problem, root_waiting, now, watch_id),
         )
 
-    def schedule(self, watch_id: str, next_look_at: datetime) -> None:
+    def schedule(self, watch_id: str, next_look_at: datetime, seen: datetime | None = None) -> None:
         self._conn.execute(
-            "UPDATE watched_folders SET next_look_at = %s WHERE id = %s",
-            (next_look_at, watch_id),
+            """UPDATE watched_folders
+                  SET next_look_at = CASE
+                        WHEN %(seen)s::timestamptz IS NULL OR next_look_at = %(seen)s
+                          THEN %(next)s::timestamptz
+                        ELSE LEAST(next_look_at, %(next)s::timestamptz) END
+                WHERE id = %(id)s""",
+            {"seen": seen, "next": next_look_at, "id": watch_id},
         )
 
     def event(

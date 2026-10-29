@@ -834,3 +834,59 @@ def test_refuse_answers_for_a_pickup_already_refusing_whatever_the_state(state: 
     w.store.set_state(w.watch_id, state)  # type: ignore[arg-type]
     again = w.store.refuse(watch, pickup, "x.pdf", "r", "sha", "k", T0)
     assert again == pickup.item_id and len(w.store.items) == 1
+
+
+def test_a_finished_document_wakes_its_sleeping_watch() -> None:
+    """Spec §3: a watch looks again at once when a document of its own finishes (the trigger of
+    migration 202610291400, which the memory store follows in `set_outcome`)."""
+    w = World(sleep_seconds=3600)
+    now = [T0]
+    runner = WatchRunner(w.deps, MemoryWatchLocks(), clock=lambda: now[0])
+    w.drop("a.pdf", pdf())
+    runner.tick()
+    now[0] = T0 + timedelta(seconds=10)
+    runner.tick()  # admitted: looks again at once
+    runner.tick()  # nothing to do: asleep for an hour
+    assert w.store.watched[w.watch_id]["next_look_at"] == now[0] + timedelta(hours=1)
+    (item_id,) = w.store.items
+
+    w.store.now = T0 + timedelta(seconds=15)
+    w.store.set_outcome(item_id, "created")
+    now[0] = T0 + timedelta(seconds=16)
+    assert runner.tick() == 1
+    assert set(w.files("delivered")) == {"a.pdf"}
+
+
+def test_a_document_finishing_during_a_look_is_filed_by_the_next_one() -> None:
+    """A wake written while a cycle runs is kept when the cycle schedules its next look."""
+    w = World(sleep_seconds=3600)
+    now = [T0]
+    runner = WatchRunner(w.deps, MemoryWatchLocks(), clock=lambda: now[0])
+    item_id = w.admitted("a.pdf", pdf())
+    runner.tick()
+    assert w.store.watched[w.watch_id]["next_look_at"] == T0 + timedelta(hours=1)
+
+    now[0] = T0 + timedelta(hours=1)
+    lists = w.bridge.list_source
+
+    def finishing_meanwhile(*args: Any, **kwargs: Any) -> Any:
+        w.bridge.list_source = lists  # type: ignore[method-assign]
+        w.store.now = now[0] + timedelta(seconds=1)
+        w.store.set_outcome(item_id, "created")  # after this cycle's finish step
+        return lists(*args, **kwargs)
+
+    w.bridge.list_source = finishing_meanwhile  # type: ignore[method-assign]
+    runner.tick()
+    assert w.store.watched[w.watch_id]["next_look_at"] == now[0] + timedelta(seconds=1)
+    now[0] += timedelta(seconds=1)
+    assert runner.tick() == 1
+    assert set(w.files("delivered")) == {"a.pdf"}
+
+
+def test_a_still_running_outcome_wakes_nothing() -> None:
+    w = World(sleep_seconds=3600)
+    item_id = w.admitted("a.pdf", pdf())
+    w.store.watched[w.watch_id]["next_look_at"] = T0 + timedelta(hours=1)
+    w.store.now = T0 + timedelta(seconds=20)
+    w.store.set_outcome(item_id, "delivering")
+    assert w.store.watched[w.watch_id]["next_look_at"] == T0 + timedelta(hours=1)

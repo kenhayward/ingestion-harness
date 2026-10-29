@@ -1314,6 +1314,10 @@ class MemoryLaneStore:
         ]
 
 
+#: Outcomes still on their way: a watched item reaching one wakes nothing.
+WAKE_SKIPS = ("queued", "decomposing", "delivering", "waiting_to_deliver", "awaiting_review")
+
+
 class MemoryWatchStore:
     """WatchStore in memory: watches (`watched`, rows as dicts), pickups, the batches, items and
     jobs a pickup becomes, finishes and events. `fail_next` maps an operation (`admit`, `see`, or
@@ -1328,6 +1332,8 @@ class MemoryWatchStore:
         self.finishes: list[tuple[str, bool, datetime]] = []
         self.events: list[dict[str, Any]] = []
         self.fail_next: dict[str, Exception] = {}
+        #: The database's clock, as the wake trigger reads it (`set_outcome`).
+        self.now = datetime.min.replace(tzinfo=UTC)
 
     def _fail(self, op: str) -> None:
         failure = self.fail_next.pop(op, None)
@@ -1375,8 +1381,16 @@ class MemoryWatchStore:
         return watch_id
 
     def set_outcome(self, item_id: str, outcome: str, detail: str | None = None) -> None:
-        self.items[item_id]["outcome"] = outcome
-        self.items[item_id]["detail"] = detail
+        """As every writer of an outcome does; a watched item turning final makes its watch due
+        at `now`, unless it is stopped (the trigger `watch_item_finished`)."""
+        item = self.items[item_id]
+        before = item["outcome"]
+        item["outcome"] = outcome
+        item["detail"] = detail
+        if item["watched"] and outcome != before and outcome not in WAKE_SKIPS:
+            watch_id = self.batches[item["batch_id"]]["watch_id"]
+            if self.watched[watch_id]["state"] != "stopped":
+                self.watched[watch_id]["next_look_at"] = self.now
 
     @staticmethod
     def _watch(w: dict[str, Any]) -> Watch:
@@ -1609,8 +1623,11 @@ class MemoryWatchStore:
             w["root_waiting"] = root_waiting
         w["last_look_at"] = now
 
-    def schedule(self, watch_id: str, next_look_at: datetime) -> None:
-        self.watched[watch_id]["next_look_at"] = next_look_at
+    def schedule(self, watch_id: str, next_look_at: datetime, seen: datetime | None = None) -> None:
+        w = self.watched[watch_id]
+        if seen is not None and w["next_look_at"] != seen:
+            next_look_at = min(next_look_at, w["next_look_at"])
+        w["next_look_at"] = next_look_at
 
     def event(
         self,

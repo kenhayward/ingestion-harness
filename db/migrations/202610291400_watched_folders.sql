@@ -97,3 +97,40 @@ CREATE UNIQUE INDEX decomposition_items_batch_source_idx
 
 -- A refused watched file was never stored.
 ALTER TABLE decomposition_items ALTER COLUMN object_key DROP NOT NULL;
+
+-- The list view, stop now and the batch delete join batches to their watch.
+CREATE INDEX decomposition_batches_watch_idx ON decomposition_batches (watch_id)
+  WHERE watch_id IS NOT NULL;
+
+-- A watch looks again at once when a document of its own finishes (spec §3), so its file is
+-- filed and its admission slot used without waiting out the watch's sleep. Every writer of a
+-- final outcome (the worker's decide, the API's bridge settle, the lane sweeps, stop now) goes
+-- through here, and the NOTIFY wakes an idle worker (worker: LISTEN ih_jobs) at once. The value
+-- always moves, so a cycle running meanwhile keeps the wake when it schedules its next look
+-- (worker watch/store.py `schedule(seen=)`). The watch row is taken without waiting: whoever
+-- holds it (stop now locks it before the items) would otherwise deadlock with this item's
+-- writer; a wake skipped that way is only a later look.
+CREATE FUNCTION watch_item_finished() RETURNS trigger AS $$
+DECLARE w uuid;
+BEGIN
+  SELECT f.id INTO w
+    FROM watched_folders f
+    JOIN decomposition_batches b ON b.watch_id = f.id
+   WHERE b.id = NEW.batch_id AND f.state <> 'stopped'
+     FOR NO KEY UPDATE OF f SKIP LOCKED;
+  IF w IS NOT NULL THEN
+    UPDATE watched_folders SET next_look_at = now() WHERE id = w;
+    PERFORM pg_notify('ih_jobs', 'watch:' || w::text);
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER watch_item_finished
+  AFTER UPDATE OF outcome ON decomposition_items
+  FOR EACH ROW
+  WHEN (NEW.watched
+        AND NEW.outcome IS DISTINCT FROM OLD.outcome
+        AND NEW.outcome NOT IN ('queued', 'decomposing', 'delivering', 'waiting_to_deliver',
+                                'awaiting_review'))
+  EXECUTE FUNCTION watch_item_finished();
