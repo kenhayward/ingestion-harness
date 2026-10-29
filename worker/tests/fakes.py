@@ -19,6 +19,8 @@ from ingest_worker.bridge.models import (
     SourceFile,
     package_archive_keys,
 )
+from ingest_worker.decompose.items import ItemOutcome
+from ingest_worker.decompose.lanes import HOLDING, Tenant
 from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
@@ -1122,3 +1124,110 @@ class BucketView:
 
     def get(self, bucket: str, key: str) -> bytes:
         return self.bridge.get(bucket, key)
+
+
+@dataclass
+class _LaneBatch:
+    tenant: Tenant
+    created: int
+    last_lane: int | None = None
+
+
+@dataclass
+class _LaneItem:
+    batch_id: str
+    outcome: ItemOutcome
+    created: int
+    claimed: int | None = None
+
+
+class MemoryLaneStore:
+    """The lane gate (decompose/lanes.py) over items and batches in memory; a counter stands in
+    for the clock, so every claim and creation is ordered."""
+
+    def __init__(self) -> None:
+        self.batches: dict[str, _LaneBatch] = {}
+        self.items: dict[str, _LaneItem] = {}
+        self._clock = 0
+
+    def _tick(self) -> int:
+        self._clock += 1
+        return self._clock
+
+    def add_batch(self, batch_id: str, tenant: Tenant) -> None:
+        self.batches[batch_id] = _LaneBatch(tenant, self._tick())
+
+    def add_item(self, item_id: str, batch_id: str, outcome: ItemOutcome = "decomposing") -> None:
+        self.items[item_id] = _LaneItem(batch_id, outcome, self._tick())
+
+    def set_outcome(self, item_id: str, outcome: ItemOutcome) -> None:
+        self.items[item_id].outcome = outcome
+
+    def mark_claimed(self, item_id: str) -> None:
+        self.items[item_id].claimed = self._tick()
+
+    def _of(self, tenant: Tenant) -> list[tuple[str, _LaneItem]]:
+        return [
+            (item_id, item)
+            for item_id, item in self.items.items()
+            if self.batches[item.batch_id].tenant == tenant
+        ]
+
+    def _claim(self, item_id: str) -> None:
+        item = self.items[item_id]
+        item.claimed = self._tick()
+        self.batches[item.batch_id].last_lane = self._tick()
+
+    def in_flight(self, tenant: Tenant) -> int:
+        return sum(
+            1
+            for _, item in self._of(tenant)
+            if item.claimed is not None and item.outcome in HOLDING
+        )
+
+    def _waiting(self, tenant: Tenant) -> list[tuple[str, _LaneItem]]:
+        return [
+            (item_id, item)
+            for item_id, item in self._of(tenant)
+            if item.outcome == "waiting_to_deliver" and item.claimed is None
+        ]
+
+    def try_claim(self, item_id: str, tenant: Tenant, lanes: int) -> bool:
+        item = self.items.get(item_id)
+        if item is None:
+            return False
+        if item.claimed is not None and item.outcome in HOLDING:
+            return True
+        if self.in_flight(tenant) >= lanes:
+            return False
+        if any(other != item_id for other, _ in self._waiting(tenant)):
+            return False
+        self._claim(item_id)
+        return True
+
+    def dispatch(self, tenant: Tenant, lanes: int) -> list[str]:
+        claimed: list[str] = []
+        free = lanes - self.in_flight(tenant)
+        while free > 0:
+            waiting = self._waiting(tenant)
+            if not waiting:
+                break
+
+            def turn(entry: tuple[str, _LaneItem]) -> tuple[bool, int, int, int]:
+                batch = self.batches[entry[1].batch_id]
+                last = batch.last_lane
+                return (last is not None, last or 0, batch.created, entry[1].created)
+
+            item_id, _ = min(waiting, key=turn)
+            self._claim(item_id)
+            claimed.append(item_id)
+            free -= 1
+        return claimed
+
+    def waiting_tenants(self) -> list[Tenant]:
+        tenants = {
+            self.batches[item.batch_id].tenant
+            for item in self.items.values()
+            if item.outcome == "waiting_to_deliver" and item.claimed is None
+        }
+        return sorted(tenants, key=lambda t: (t[0], t[1] is not None, t[1] or ""))
