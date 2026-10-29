@@ -9,6 +9,10 @@ an event may arrive before the worker's write, so every worker write moves only 
 still `queued` or `decomposing` (or, for a retry resuming its delivery, records `delivering` over
 `delivering`): it never overwrites an outcome the API already settled.
 
+A document whose tenant has no free lane (lanes.py) waits instead (`wait`, migration
+202610291300): `waiting_to_deliver`, with the sha-256 of its stored decomposition, moved only from
+an undecided item; the run that gets it a lane decides its outcome.
+
 A converted PDF is held for review instead (`hold`, migration 202610271200): `awaiting_review`,
 with the sha-256 of the held files and the register entry it would write on approval. Holding,
 like deciding, moves only an undecided item. `rejected` is the reviewer's, written by the API.
@@ -124,6 +128,13 @@ class ItemStore(Protocol):
         held item is not finished."""
         ...
 
+    def wait(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        """The item waits for a lane: `waiting_to_deliver`, recording its stored decomposition's
+        sha-256 and the register entry it was decided against (if any). Only while the item is
+        still `queued` or `decomposing`; False when it had moved on. A waiting item is not
+        finished."""
+        ...
+
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         """Record the worker's outcome (and the register entry it is about, when given), only
         while the item is still `queued`, `decomposing` or `waiting_to_deliver`, or `delivering`
@@ -176,6 +187,16 @@ class MemoryItemStore:
                 held_sha256=held_sha256,
                 held_entry=held_entry,
                 detail=detail,
+            )
+            return True
+
+    def wait(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        with self._lock:
+            item = self.items.get(item_id)
+            if item is None or item.outcome not in UNDECIDED:
+                return False
+            self.items[item_id] = replace(
+                item, outcome="waiting_to_deliver", held_sha256=held_sha256, held_entry=held_entry
             )
             return True
 
@@ -247,6 +268,17 @@ class PgItemStore:
                       detail = %s
                 WHERE id = %s AND outcome IN ('queued', 'decomposing')""",
             (held_sha256, Jsonb(held_entry) if held_entry is not None else None, detail, item_id),
+        )
+        return cur.rowcount > 0
+
+    def wait(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        if not is_uuid(item_id):
+            return False
+        cur = self._conn.execute(
+            """UPDATE decomposition_items
+                  SET outcome = 'waiting_to_deliver', held_sha256 = %s, held_entry = %s
+                WHERE id = %s AND outcome IN ('decomposing', 'queued')""",
+            (held_sha256, Jsonb(held_entry) if held_entry is not None else None, item_id),
         )
         return cur.rowcount > 0
 

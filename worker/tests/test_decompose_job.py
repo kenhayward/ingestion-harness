@@ -35,6 +35,7 @@ from ingest_worker.decompose import (
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
+from ingest_worker.decompose.lanes import Tenant
 from ingest_worker.decompose.pdf.layout import LayoutUnavailable
 from ingest_worker.decompose.register import MemoryRegisterStore
 from ingest_worker.errors import DocumentError
@@ -58,7 +59,7 @@ from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeLayout, two_pages
 from tests.decompose.pdf.make_pdf import Img, Page, make_pdf
 from tests.decompose.test_deliver import REFUSAL, FakeBridge, report_docx
-from tests.fakes import FakeProvider, FakeQueue
+from tests.fakes import FakeProvider, FakeQueue, MemoryLaneStore
 from tests.test_pipeline import OLMOCR_OK
 
 AT = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
@@ -72,13 +73,92 @@ BATCH_D = "00000000-0000-4000-8000-00000000000d"
 DETACH_ACTION = "00000000-0000-4000-8000-0000000000de"
 
 
-class World:
-    """The runs bucket, the items, the register, the bridge and the queue one worker shares."""
+#: The tenant every World target belongs to (its sink and instance).
+TENANT: Tenant = ("documents", "tenant-1")
 
-    def __init__(self, bridge: Any = None) -> None:
+
+class LanedItems(MemoryItemStore):
+    """The items, each write told to the lane gate too, so it sees what the item holds."""
+
+    def __init__(self, lanes: MemoryLaneStore, clock: Callable[[], datetime]) -> None:
+        super().__init__(clock=clock)
+        self.lanes = lanes
+
+    def _sync(self, item_id: str) -> None:
+        item = self.items.get(item_id)
+        if item is not None and item_id in self.lanes.items:
+            self.lanes.set_outcome(item_id, item.outcome)
+
+    def add(self, item: ConversionItem) -> None:
+        super().add(item)
+        if item.batch_id not in self.lanes.batches:
+            self.lanes.add_batch(item.batch_id, TENANT)
+        self.lanes.add_item(item.id, item.batch_id, item.outcome)
+
+    def start(self, item_id: str) -> ConversionItem | None:
+        found = super().start(item_id)
+        self._sync(item_id)
+        return found
+
+    def hold(
+        self,
+        item_id: str,
+        held_sha256: str,
+        held_entry: dict[str, Any] | None,
+        detail: str | None = None,
+    ) -> bool:
+        done = super().hold(item_id, held_sha256, held_entry, detail)
+        self._sync(item_id)
+        return done
+
+    def wait(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
+        done = super().wait(item_id, held_sha256, held_entry)
+        self._sync(item_id)
+        return done
+
+    def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
+        done = super().decide(item_id, outcome, detail, entry_id)
+        self._sync(item_id)
+        return done
+
+
+#: The item outcome the API's settle records with each final register state.
+SETTLED: dict[str, ItemOutcome] = {
+    "delivered": "created",
+    "changed": "changed_in_target",
+    "failed": "failed",
+}
+
+
+class SettlingRegister(MemoryRegisterStore):
+    """The register, whose settle (the tests' stand-in for the API's) also settles the
+    delivering item of the entry, as the API does: its lane is free again."""
+
+    def __init__(self, items: LanedItems, clock: Callable[[], datetime]) -> None:
+        super().__init__(clock=clock)
+        self._items = items
+
+    def settle(self, entry_id: str, **kwargs: Any) -> None:
+        super().settle(entry_id, **kwargs)
+        outcome = SETTLED.get(kwargs["state"])
+        if outcome is None:
+            return
+        for item in list(self._items.items.values()):
+            if item.register_entry_id == entry_id and item.outcome == "delivering":
+                self._items.items[item.id] = replace(item, outcome=outcome)
+                self._items.lanes.set_outcome(item.id, outcome)
+
+
+class World:
+    """The runs bucket, the items, the register, the bridge, the queue and the lane gate one
+    worker shares; the target's tenant takes `lanes` documents at once."""
+
+    def __init__(self, bridge: Any = None, *, lanes: int = 1) -> None:
         self.store = MemoryObjectStore()
-        self.items = MemoryItemStore(clock=lambda: AT)
-        self.register = MemoryRegisterStore(clock=lambda: AT)
+        self.lanes = MemoryLaneStore()
+        self.lane_count = lanes
+        self.items = LanedItems(self.lanes, clock=lambda: AT)
+        self.register = SettlingRegister(self.items, clock=lambda: AT)
         self.bridge = bridge if bridge is not None else FakeBridge()
         self.queue = FakeQueue()
         self.renderer = FakeRenderer()
@@ -102,6 +182,8 @@ class World:
                 clock=lambda: AT,
                 deployment="test",
             ),
+            lanes=self.lanes,
+            target_lanes=lambda target_id: self.lane_count,
         )
 
     def upload(
@@ -1194,7 +1276,7 @@ def test_an_unreadable_file_fails_its_own_item() -> None:
 
 
 def test_a_second_batch_for_a_pending_entry_reports_in_flight() -> None:
-    world = World()
+    world = World(lanes=2)  # with one lane, the second would wait for the first to settle
     data = report_docx()
     first = world.upload(data, "r1.docx", batch=BATCH_A)
     second = world.upload(report_docx("Edited"), "r1.docx", batch=BATCH_B)
@@ -1279,7 +1361,7 @@ def test_an_item_settled_before_the_worker_records_it_ends_the_job() -> None:
     """The bridge's event settled the item before the worker's `delivering` write: the job has
     nothing left to wait for."""
 
-    class SettledFirst(MemoryItemStore):
+    class SettledFirst(LanedItems):
         def decide(
             self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None
         ) -> bool:
@@ -1288,7 +1370,7 @@ def test_an_item_settled_before_the_worker_records_it_ends_the_job() -> None:
             return super().decide(item_id, outcome, detail, entry_id)
 
     world = World()
-    world.items = SettledFirst()
+    world.items = SettledFirst(world.lanes, clock=lambda: AT)
     job = world.upload(report_docx(), "r1.docx")
 
     outcome = run_decompose(job, world.deps())
@@ -1486,6 +1568,8 @@ def test_a_target_not_synced_yet_decides_nothing_even_on_the_last_attempt() -> N
         items=deps.items,
         queue=deps.queue,
         deliver=replace(deps.deliver, target_lookup=not_synced),
+        lanes=deps.lanes,
+        target_lanes=deps.target_lanes,
     )
 
     with pytest.raises(TargetNotSynced):
@@ -1504,7 +1588,9 @@ def test_the_task_runs_through_the_worker() -> None:
         buckets=Buckets("inbox", "outputs", "runs"),
         targets=_Targets(),
         bridge=world.bridge,
-        decomposition=DecompositionStores(register=world.register, items=world.items),
+        decomposition=DecompositionStores(
+            register=world.register, items=world.items, lanes=world.lanes
+        ),
     )
 
     outcome = TASKS["decompose"](job, deps, world.queue)
@@ -1537,7 +1623,9 @@ def _worker_deps(world: World, layout: FakeLayout, ocr: FakeProvider | None) -> 
         buckets=Buckets("inbox", "outputs", "runs"),
         targets=_Targets(),
         bridge=world.bridge,
-        decomposition=DecompositionStores(register=world.register, items=world.items),
+        decomposition=DecompositionStores(
+            register=world.register, items=world.items, lanes=world.lanes
+        ),
         layout=layout,
     )
     if ocr is not None:
@@ -1594,3 +1682,169 @@ def test_an_ocr_refusal_fails_the_item_naming_the_page() -> None:
     item = world.item(job)
     assert item.outcome == "failed" and item.detail is not None
     assert item.detail.startswith("decomposition failed at page 1: OCR page 1:")
+
+
+# The lane gate (watched folders plan 2): a tenant takes `lanes` documents at once; the others
+# wait, decomposed, for the dispatcher to give them a lane.
+
+
+def _settle(world: World, job: ClaimedJob, outcome: ItemOutcome = "created") -> None:
+    """The bridge's final event for `job`'s delivering item, as the API's settle records it."""
+    item = world.item(job)
+    assert item.outcome == "delivering"
+    world.items.items[item.id] = replace(item, outcome=outcome)
+    world.lanes.set_outcome(item.id, outcome)
+
+
+def _waited(world: World, job: ClaimedJob) -> ClaimedJob:
+    """The dispatcher's run of `job`'s waiting item, after it claimed the item's lane."""
+    assert world.lanes.dispatch(TENANT, world.lane_count) == [world.item(job).id]
+    assert job.params is not None
+    world._n += 1
+    return replace(job, id=f"job-{world._n}", params={**job.params, "waited": True})
+
+
+def test_a_word_file_with_a_free_lane_is_delivered_at_once() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    assert world.item(job).outcome == "delivering"
+    assert world.lanes.in_flight(TENANT) == 1
+    assert world.lanes.items[world.item(job).id].claimed is not None
+
+
+def test_a_second_word_file_waits_while_the_first_delivers() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+
+    run_decompose(first, world.deps())
+    outcome = run_decompose(second, world.deps())
+
+    assert outcome == Complete(note="waiting to deliver")
+    assert world.item(first).outcome == "delivering"
+    item = world.item(second)
+    assert item.outcome == "waiting_to_deliver" and item.held_sha256 is not None
+    assert len(world.bridge.requests) == 1
+    manifest = _manifest(world, second)
+    assert manifest["reason"] == "lane" and manifest["pageCount"] == 0
+    assert manifest["startedBy"] == USER.model_dump(by_alias=True)
+    assert not any(".held/page-" in key or "/pages/" in key for key in _held(world, second))
+    assert world.messages(second)[-1] == "waiting for a lane"
+    assert world.lanes.in_flight(TENANT) == 1
+
+
+def test_a_waited_run_delivers_the_stored_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    _settle(world, first)
+
+    def no_decomposing(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the document was decomposed again")
+
+    monkeypatch.setattr("ingest_worker.decompose.job.decompose_source", no_decomposing)
+    outcome = run_decompose(_waited(world, second), world.deps())
+
+    assert isinstance(outcome, Delivering)
+    assert world.item(second).outcome == "delivering"
+    assert len(world.bridge.requests) == 2
+    request = world.bridge.requests[1]
+    assert request.acting_user == USER
+    assert request.package.provenance.source_key == "r2.docx"  # type: ignore[union-attr]
+    assert _held(world, second) == []
+    assert world.lanes.in_flight(TENANT) == 1
+
+
+def test_a_waited_run_re_decides_through_the_register() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    data = report_docx("Second")
+    second = world.upload(data, "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    _settle(world, first)
+    entry_id = _registered(world, data, "r2.docx")  # delivered meanwhile by another batch
+
+    outcome = run_decompose(_waited(world, second), world.deps())
+
+    assert outcome == Complete(note="r2.docx: already_loaded")
+    item = world.item(second)
+    assert (item.outcome, item.register_entry_id) == ("already_loaded", entry_id)
+    assert len(world.bridge.requests) == 1
+    assert _held(world, second) == []
+    assert world.lanes.in_flight(TENANT) == 0
+
+
+def test_an_approved_pdf_waits_when_no_lane_is_free() -> None:
+    world = World()
+    held = _held_pdf(world)
+    busy = world.upload(report_docx(), "r1.docx")
+    run_decompose(busy, world.deps())
+    files = _held(world, held)
+
+    outcome = run_decompose(_approve(world, held), world.deps())
+
+    assert outcome == Complete(note="waiting to deliver")
+    item = world.item(held)
+    assert item.outcome == "waiting_to_deliver"
+    assert _held(world, held) == files  # the reviewed files are kept for the delivery
+    assert len(world.bridge.requests) == 1
+
+    _settle(world, busy)
+    waited = _waited(world, held)
+    outcome = run_decompose(waited, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    assert world.item(held).outcome == "delivering"
+    assert world.bridge.requests[1].acting_user == USER  # who started the batch
+    assert _held(world, held) == []
+
+
+def test_a_refused_hand_off_frees_the_lane() -> None:
+    world = World(FakeBridge(refuse=True))
+    job = world.upload(report_docx(), "r1.docx")
+
+    run_decompose(job, world.deps())
+
+    assert world.item(job).outcome == "failed"
+    assert world.lanes.in_flight(TENANT) == 0
+
+
+def test_a_cancelled_waited_run_fails_the_item_and_deletes_the_stored_copy() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    _settle(world, first)
+    waited = _waited(world, second)
+    world.queue.cancel_when = lambda: True
+
+    with pytest.raises(JobCancelled):
+        run_decompose(waited, world.deps())
+
+    assert world.item(second).outcome == "failed"
+    assert _held(world, second) == []
+    assert len(world.bridge.requests) == 1
+    assert world.lanes.in_flight(TENANT) == 0
+
+
+def test_a_run_of_a_waiting_item_leaves_it_to_the_dispatcher() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    files = _held(world, second)
+
+    outcome = run_decompose(replace(second, attempts=2), world.deps())
+
+    assert outcome == Complete(note=f"item {world.item(second).id} is waiting for a lane")
+    assert world.item(second).outcome == "waiting_to_deliver"
+    assert _held(world, second) == files

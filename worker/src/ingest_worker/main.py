@@ -22,6 +22,7 @@ from .config import Settings
 from .convert import GotenbergConverter
 from .decompose.items import PgItemStore
 from .decompose.job import DecompositionStores, decompose_deps, run_decompose
+from .decompose.lanes import PgLaneStore
 from .decompose.pdf.layout import layout_analyser
 from .decompose.register import PgRegisterStore
 from .drafting import run_draft
@@ -448,6 +449,8 @@ class _Worker:
         # A model's parallel calls hold across every worker: slots as advisory locks on their own
         # connection, opened when a model with the setting is first called.
         self.call_slots = PgCallSlots(settings.database_url)
+        # The conversions' lane gate commits each claim on its own connection (lanes.py).
+        self.lanes_conn = psycopg.connect(settings.database_url, autocommit=True)
         # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in
         # Postgres, so a stopped job resumes at the step it stopped at (step_graph.py).
         self.step_checkpointer: BaseCheckpointSaver[Any] | None = None
@@ -495,6 +498,7 @@ class _Worker:
             decomposition=DecompositionStores(
                 register=PgRegisterStore.for_url(settings.database_url),
                 items=PgItemStore(self.library),
+                lanes=PgLaneStore(self.lanes_conn),
             ),
             ontology_max_triples=settings.ontology_max_triples,
             ontology_fetch=(
@@ -556,6 +560,7 @@ class _Worker:
             self.target_store.close,
             self.library.close,
             self.graph_conn.close,
+            self.lanes_conn.close,
             self.call_slots.close,
             self.close_checkpointer,
         ):

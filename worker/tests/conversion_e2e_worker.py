@@ -29,6 +29,7 @@ import psycopg
 from ingest_worker.bridge.client import HttpBridgeClient
 from ingest_worker.decompose.items import PgItemStore
 from ingest_worker.decompose.job import DecompositionStores
+from ingest_worker.decompose.lanes import PgLaneStore
 from ingest_worker.decompose.register import PgRegisterStore
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps
@@ -103,7 +104,10 @@ def main() -> None:
     for o in json.loads(Path(os.environ["E2E_OBJECTS"]).read_text(encoding="utf-8")):
         store.put(o["bucket"], o["key"], Path(o["path"]).read_bytes(), "application/octet-stream")
     queue = DecomposeQueue(database_url)
-    with psycopg.connect(database_url, autocommit=True) as items_conn:
+    with (
+        psycopg.connect(database_url, autocommit=True) as items_conn,
+        psycopg.connect(database_url, autocommit=True) as lanes_conn,
+    ):
         deps = PipelineDeps(
             store=store,
             specs=None,  # type: ignore[arg-type]
@@ -116,6 +120,7 @@ def main() -> None:
             decomposition=DecompositionStores(
                 register=PgRegisterStore.for_url(database_url),
                 items=PgItemStore(items_conn),
+                lanes=PgLaneStore(lanes_conn),
             ),
         )
         while run_once(queue, deps, "conversion-e2e"):
