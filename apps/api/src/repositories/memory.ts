@@ -1499,7 +1499,7 @@ export class MemoryRepo implements IngestionRepo {
     whileDetached,
   }: Rerun): Promise<RerunResult> {
     const running = [...this.conversionItems.values()].some(
-      (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
+      (i) => (i.redeliverOf === of.id || i.id === of.id) && RUNNING_OUTCOMES.includes(i.outcome),
     );
     if (running) return { ok: false, reason: 'running' };
     if (whileDetached !== undefined && this.register.get(whileDetached)?.state !== 'detached') {
@@ -1586,75 +1586,55 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async retryItems({
-    batchId,
     items: asked,
     targetId,
     force,
     autoApprove = false,
-    createdBy,
     by,
   }: Retry): Promise<RetryResult> {
-    // A rejected document was decided on: only a failed one is run again.
-    const items = asked.filter((i) => i.of.outcome !== 'rejected');
-    const busy = items.find(({ of }) =>
-      [...this.conversionItems.values()].some(
-        (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
-      ),
-    );
-    if (busy) return { ok: false, reason: 'running', itemId: busy.of.id };
-    const done = items.find(({ of }) =>
-      [...this.conversionItems.values()].some((i) => i.redeliverOf === of.id),
-    );
-    if (done) return { ok: false, reason: 'already_rerun', itemId: done.of.id };
-    const now = new Date().toISOString();
-    const batch: Batch = {
-      id: batchId,
-      targetId,
-      createdBy: { ...createdBy },
-      state: 'started',
-      force,
-      autoApprove,
-      createdAt: now,
-      startedAt: now,
-    };
-    this.conversionBatches.set(batchId, batch);
-    const made = items.map(({ itemId, of }) => {
-      const item: StoredItem = {
-        id: itemId,
-        batchId,
-        sourceKey: of.sourceKey,
-        filename: of.filename,
-        contentSha256: of.contentSha256,
-        sizeBytes: of.sizeBytes,
-        objectKey: of.objectKey,
-        jobId: null,
+    const all = [...this.conversionItems.values()];
+    for (const { id } of asked) {
+      const outcome = this.conversionItems.get(id)?.outcome;
+      const reruns = all.filter((i) => i.redeliverOf === id);
+      const reason =
+        outcome && RUNNING_OUTCOMES.includes(outcome)
+          ? 'running'
+          : outcome !== 'failed'
+            ? 'not_failed'
+            : reruns.some((i) => RUNNING_OUTCOMES.includes(i.outcome))
+              ? 'running'
+              : reruns.length
+                ? 'already_rerun'
+                : null;
+      if (reason) return { ok: false, reason, itemId: id };
+    }
+    const made = asked.map(({ id }) => {
+      const item = this.conversionItems.get(id)!;
+      Object.assign(item, {
         outcome: 'queued',
         detail: null,
-        registerEntryId: null,
         reportKey: null,
         link: null,
-        redeliverOf: of.id,
         startedAt: null,
         finishedAt: null,
         ...NOT_REVIEWED,
-      };
+      });
       item.jobId = this.queueBackground(
         'decompose',
         {
-          batchId,
-          itemId,
+          batchId: item.batchId,
+          itemId: id,
           targetId,
-          sourceKey: of.sourceKey,
+          sourceKey: item.sourceKey,
           force,
           ...(autoApprove ? { autoApprove: true } : {}),
         },
         by?.name ?? null,
         by?.userId ?? null,
       );
-      this.conversionItems.set(itemId, item);
       return this.withResolution(item);
     });
-    return { ok: true, batch: structuredClone(batch), items: made };
+    return { ok: true, items: made };
   }
 
   async registerEntry(id: string): Promise<RegisterEntry | null> {

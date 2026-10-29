@@ -173,8 +173,11 @@ async function confirmAccept(c: Ctx, item: Item, cookie?: string) {
   );
 }
 
+/** The item's job: its current one when it names it (a re-run in place queues another). */
 const jobOf = (c: Ctx, item: Item) =>
-  c.repo.backgroundJobs.find((j) => (j.params as { itemId?: string }).itemId === item.id);
+  c.repo.backgroundJobs.find((j) =>
+    item.jobId ? j.id === item.jobId : (j.params as { itemId?: string }).itemId === item.id,
+  );
 
 /** A body with a tracked insertion, which the API refuses. */
 const TRACKED_BODY = '<w:p><w:ins w:id="1"><w:r><w:t>new</w:t></w:r></w:ins></w:p>';
@@ -1143,78 +1146,71 @@ const failed = (c: Ctx, ...items: Item[]) => {
 };
 
 describe('re-running failed documents', () => {
-  it('re-runs the failed documents asked for as one new batch, from their stored files', async () => {
+  it('re-runs the failed documents asked for in place, in their batch, from their stored files', async () => {
     const c = await setup();
     const { batch, items } = await startedBatch(c, ['qa/a.docx', 'qa/b.docx', 'qa/c.docx']);
-    const [a, , cc] = items as [Item, Item, Item];
+    const [a, b, cc] = items as [Item, Item, Item];
     failed(c, a, cc);
     const objects = runsObjects(c);
+    const batches = c.repo.conversionBatches.size;
+    const bJob = c.repo.conversionItems.get(b.id)!.jobId;
 
     const res = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
       itemIds: [a.id, cc.id],
     });
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const detail = BatchDetailSchema.parse(res.json());
-    expect(detail.batch).toMatchObject({ targetId: 'manuals', force: false, state: 'started' });
-    expect(detail.batch.id).not.toBe(batch.id);
-    expect(detail.items).toEqual([
-      expect.objectContaining({
-        sourceKey: 'qa/a.docx',
-        objectKey: a.objectKey,
-        redeliverOf: a.id,
-        outcome: 'queued',
-      }),
-      expect.objectContaining({
-        sourceKey: 'qa/c.docx',
-        objectKey: cc.objectKey,
-        redeliverOf: cc.id,
-        outcome: 'queued',
-      }),
+    // The batch as read, every document in it, the re-run ones queued again under their own ids.
+    expect(detail.batch.id).toBe(batch.id);
+    expect(detail.items.map((i) => [i.id, i.outcome, i.detail])).toEqual([
+      [a.id, 'queued', null],
+      [b.id, 'queued', null],
+      [cc.id, 'queued', null],
     ]);
+    expect(detail.items[0]!.jobId).not.toBe(bJob);
+    expect(c.repo.conversionBatches.size).toBe(batches);
     // Nothing is uploaded again: the stored files are reused.
     expect(runsObjects(c)).toEqual(objects);
-    const job = jobOf(c, detail.items[1]!)!;
-    expect(DecomposeParamsSchema.parse(job.params)).toEqual({
-      batchId: detail.batch.id,
-      itemId: detail.items[1]!.id,
+    expect(DecomposeParamsSchema.parse(jobOf(c, detail.items[2]!)!.params)).toEqual({
+      batchId: batch.id,
+      itemId: cc.id,
       targetId: 'manuals',
       sourceKey: 'qa/c.docx',
       force: false,
     });
+    expect(detail.items[1]!.jobId).toBe(bJob);
   });
 
-  it('re-runs as the batch was started, unless the request says otherwise', async () => {
+  it('re-runs forced as the batch was started, unless the request says otherwise', async () => {
     const c = await setup();
     const { batch, items } = await startedBatch(c, ['qa/a.docx'], undefined, true);
     failed(c, ...items);
-    const same = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
-      itemIds: [items[0]!.id],
-    });
-    const first = BatchDetailSchema.parse(same.json());
-    expect(first.batch.force).toBe(true);
-    // A failed re-run is re-run from its own batch.
-    c.repo.conversionItems.get(first.items[0]!.id)!.outcome = 'failed';
-    const plain = await post(c.app, `/api/conversions/batches/${first.batch.id}/retry`, {
-      itemIds: [first.items[0]!.id],
-      force: false,
-    });
-    expect(plain.statusCode).toBe(201);
+    const url = `/api/conversions/batches/${batch.id}/retry`;
+    const same = BatchDetailSchema.parse(
+      (await post(c.app, url, { itemIds: [items[0]!.id] })).json(),
+    );
+    expect((jobOf(c, same.items[0]!)!.params as { force: boolean }).force).toBe(true);
+    // A failed re-run is re-run in place again.
+    failed(c, ...items);
+    const plain = await post(c.app, url, { itemIds: [items[0]!.id], force: false });
+    expect(plain.statusCode).toBe(200);
     const rerun = BatchDetailSchema.parse(plain.json());
-    expect(rerun.batch.force).toBe(false);
+    expect(rerun.batch.force).toBe(true);
     expect((jobOf(c, rerun.items[0]!)!.params as { force: boolean }).force).toBe(false);
   });
 
-  it('re-runs an auto-approving batch auto-approving', async () => {
+  it('re-runs auto-approving only when asked, whatever the batch was started with', async () => {
     const c = await setup();
     const { batch, items } = await startedBatch(c, ['qa/a.docx'], undefined, false, true);
-    failed(c, ...items);
-    const res = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
-      itemIds: [items[0]!.id],
-    });
-    const rerun = BatchDetailSchema.parse(res.json());
-    expect(rerun.batch.autoApprove).toBe(true);
-    expect(DecomposeParamsSchema.parse(jobOf(c, rerun.items[0]!)!.params).autoApprove).toBe(true);
+    const url = `/api/conversions/batches/${batch.id}/retry`;
+    for (const autoApprove of [undefined, false, true]) {
+      failed(c, ...items);
+      const res = await post(c.app, url, { itemIds: [items[0]!.id], autoApprove });
+      const rerun = BatchDetailSchema.parse(res.json());
+      const params = DecomposeParamsSchema.parse(jobOf(c, rerun.items[0]!)!.params);
+      expect(params.autoApprove ?? false, String(autoApprove)).toBe(autoApprove ?? false);
+    }
   });
 
   it('re-runs only failed documents of this batch, and once while unfinished', async () => {
@@ -1232,41 +1228,49 @@ describe('re-running failed documents', () => {
       expect(res.statusCode, JSON.stringify(itemIds)).toBe(422);
       expect(res.json()).toMatchObject({ code: 'not_failed' });
     }
-    for (const body of [{}, { itemIds: [] }, { itemIds: [a.id, a.id] }, { itemIds: ['nope'] }]) {
+    for (const body of [
+      {},
+      { itemIds: [] },
+      { itemIds: [a.id, a.id] },
+      { itemIds: ['nope'] },
+      { itemIds: [a.id], autoApprove: 'yes' },
+    ]) {
       expect((await post(c.app, url, body)).statusCode, JSON.stringify(body)).toBe(400);
     }
-    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.conversionItems.get(a.id)!.outcome).toBe('failed');
 
-    expect((await post(c.app, url, { itemIds: [a.id] })).statusCode).toBe(201);
+    expect((await post(c.app, url, { itemIds: [a.id] })).statusCode).toBe(200);
     const again = await post(c.app, url, { itemIds: [a.id] });
     expect(again.statusCode).toBe(409);
-    expect(again.json()).toMatchObject({ code: 'not_finished' });
-    expect(c.repo.conversionBatches.size).toBe(3);
+    expect(again.json()).toEqual({ error: 'qa/a.docx is already running', code: 'not_finished' });
   });
 
-  it('re-runs a document once: a finished re-run refuses another, naming it', async () => {
+  it('refuses a document run again in another batch, naming it: it is re-run there', async () => {
     const c = await setup();
     const { batch, items } = await startedBatch(c, ['qa/a.docx']);
     const [a] = items as [Item];
     failed(c, a);
-    const url = `/api/conversions/batches/${batch.id}/retry`;
-    const first = BatchDetailSchema.parse((await post(c.app, url, { itemIds: [a.id] })).json());
-    for (const outcome of ['created', 'failed'] as const) {
-      c.repo.conversionItems.get(first.items[0]!.id)!.outcome = outcome;
-      const again = await post(c.app, url, { itemIds: [a.id] });
-      expect(again.statusCode, outcome).toBe(409);
-      expect(again.json()).toEqual({
-        error: 'qa/a.docx was already re-run',
-        code: 'already_rerun',
-      });
-    }
-    expect(c.repo.conversionBatches.size).toBe(2);
-    // The original says where it was re-run.
-    const read = await c.app.inject(`/api/conversions/batches/${batch.id}`);
-    expect(BatchDetailSchema.parse(read.json()).items[0]).toMatchObject({
-      rerunIn: first.batch.id,
-      rerunAt: first.batch.startedAt,
+    const reload = await c.repo.rerunItem({
+      batchId: randomUUID(),
+      itemId: randomUUID(),
+      of: a,
+      targetId: 'manuals',
+      createdBy: { id: null, name: null },
+      by: null,
+      source: {
+        filename: a.filename,
+        contentSha256: a.contentSha256,
+        sizeBytes: a.sizeBytes,
+        objectKey: a.objectKey,
+      },
     });
+    if (!reload.ok) throw new Error(reload.reason);
+    c.repo.conversionItems.get(reload.item.id)!.outcome = 'failed';
+    const res = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
+      itemIds: [a.id],
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'qa/a.docx was already re-run', code: 'already_rerun' });
   });
 
   it('refuses a batch not found, or never started', async () => {
@@ -1286,7 +1290,7 @@ describe('re-running failed documents', () => {
     expect(res.json()).toMatchObject({ code: 'not_finished' });
   });
 
-  it('operators may re-run failed documents', async () => {
+  it('operators may re-run failed documents, as themselves', async () => {
     const c = await accessApp();
     await withTargets(c, c.adminCookie);
     const { cookie } = await signInNewUser(c.app, c.access, 'Olu', 'operator');
@@ -1298,8 +1302,8 @@ describe('re-running failed documents', () => {
       { itemIds: [items[0]!.id] },
       cookie,
     );
-    expect(res.statusCode).toBe(201);
-    expect(BatchDetailSchema.parse(res.json()).batch.createdBy.name).toBe('Olu');
+    expect(res.statusCode).toBe(200);
+    expect(jobOf(c, BatchDetailSchema.parse(res.json()).items[0]!)!.createdBy).toBe('Olu');
   });
 });
 

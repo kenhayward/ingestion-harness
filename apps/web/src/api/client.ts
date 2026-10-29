@@ -940,7 +940,10 @@ export interface Api {
   forceConversionItem(itemId: string): Promise<BatchDetail>;
   /** Updates the item's document, from the stored file or a replacement: a new batch of one. */
   redeliverConversionItem(itemId: string, file?: File): Promise<BatchDetail>;
-  /** Re-runs the chosen failed documents of a started batch, each from its stored file: a new batch. */
+  /**
+   * Re-runs the chosen failed documents of a started batch in place, each from its stored file:
+   * the batch as now.
+   */
   retryConversionItems(batchId: string, body: RetryItems): Promise<BatchDetail>;
   /** The stored original file of a batch item (a download link). */
   conversionSourceUrl(itemId: string): string;
