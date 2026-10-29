@@ -307,11 +307,15 @@
         </li>
         <li>
           A file is taken once it has stopped changing for 10 seconds. Hidden files and the lock
-          files left while a document is open (<code>~$…</code>) are skipped.
+          files left while a document is open (<code>~$…</code>) are skipped. A file the storage
+          will not let CT Studio read goes to <code>failed/</code> with its reason, and the files
+          behind it are still taken. A watch looks again as soon as one of its documents finishes,
+          so a long queue is worked through without waiting for the next look.
         </li>
         <li>
           <strong>Stop</strong> asks how: <em>Stop now</em> cancels the documents not yet handed to
-          the target, which count as failed, and leaves their files where they are;
+          the target, which count as failed, and leaves their files where they are (a document still
+          being delivered at the stop is filed once the watch is started again);
           <em>Drain</em> takes no new files but finishes the ones it already took.
           <strong>Start</strong> tries again any file it had given up moving.
         </li>
