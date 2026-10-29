@@ -8,7 +8,7 @@ from typing import Any
 
 from ingest_worker.decompose.model import Text
 from ingest_worker.decompose.pdf.layout import LayoutDoc, parse_docling
-from ingest_worker.decompose.pdf.pieces import Ledger, Piece, attach_text
+from ingest_worker.decompose.pdf.pieces import Ledger, Line, Piece, attach_text
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer, read_text_layer
 from tests.decompose.pdf import docling
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
@@ -64,6 +64,23 @@ def test_subscript_and_bold_marks() -> None:
     ]
 
 
+def test_a_small_char_lowered_half_a_point_is_a_subscript() -> None:
+    # As Word draws "IKr", and "Na" smaller on the line's baseline.
+    pieces, _ = attach(
+        [Run("The I", 72, 100, size=11), Run("Kr", 98, 100, size=7, rise=-0.5)],
+        [docling.text("text", 1, bl(60, 85, 200, 110))],
+    )
+    assert pieces[0].inlines() == [
+        Text(text="The I"),
+        Text(text="Kr", marks=frozenset({"subscript"})),
+    ]
+    pieces, _ = attach(
+        [Run("The I", 72, 100, size=11), Run("Na", 98, 100, size=7)],
+        [docling.text("text", 1, bl(60, 85, 200, 110))],
+    )
+    assert pieces[0].inlines() == [Text(text="The INa")]
+
+
 def test_lines_join_with_one_space_and_gaps_become_spaces() -> None:
     pieces, _ = attach(
         [Run("one", 72, 100), Run("two", 100, 100), Run("three", 72, 118)],
@@ -88,6 +105,24 @@ def test_separate_runs_get_one_space() -> None:
     assert [line.text for line in pieces[0].lines] == ["Total 12"]
 
 
+def test_words_drawn_apart_on_one_line_get_a_space() -> None:
+    # "data" ends one column and "gestation" starts the next; between them the PDF draws a line
+    # of the other column, so pdfium marks no gap before the "g".
+    def char(n: int, ch: str, x: float, baseline: float) -> Char:
+        return Char(
+            n, ch, "Helvetica", 11, False, False, x, baseline - 8, x + 6, baseline, baseline, True
+        )
+
+    data = [char(n, ch, 100 + 6 * n, 617) for n, ch in enumerate("data")]
+    above = char(4, "C", 247, 603)
+    gestation = [char(5 + n, ch, 247 + 6 * n, 617) for n, ch in enumerate("gest")]
+    assert Line(0, (*data, *gestation), (100, 609, 271, 617)).text == "data gest"
+    # Drawn one after the other, close up, they are one word.
+    close = [char(5 + n, ch, 124 + 6 * n, 617) for n, ch in enumerate("gest")]
+    assert Line(0, (*data, *close), (100, 609, 148, 617)).text == "datagest"
+    assert above.text == "C"
+
+
 def _table_page() -> tuple[list[Run], dict[str, Any]]:
     runs = [Run(f"R{r}C{c}", 78 + 100 * c, 219 + 30 * r) for r in range(2) for c in range(2)]
     table = docling.table(
@@ -105,6 +140,24 @@ def _table_page() -> tuple[list[Run], dict[str, Any]]:
             "coord_origin": "TOPLEFT",
         }
     return runs, table
+
+
+def test_a_char_in_no_cell_goes_to_the_cell_whose_box_is_nearest() -> None:
+    # A bullet just left of a wide cell, which hugs its text: the narrow cell's centre is nearer,
+    # but the wide cell's box is.
+    runs = [Run("Eye", 78, 219), Run("•", 120, 219), Run("Structurally mature", 126, 219)]
+    table = docling.table(1, bl(72, 200, 420, 230), [(0, 0), (0, 1)], rows=1, cols=2)
+    for cell, (left, right) in zip(
+        table["data"]["table_cells"], [(74, 100), (124, 418)], strict=True
+    ):
+        cell["bbox"] = {"l": left, "t": 205, "r": right, "b": 225, "coord_origin": "TOPLEFT"}
+    pieces, _ = attach(runs, [table])
+    cells = pieces[0].cells
+    assert cells is not None
+    assert [" ".join(line.text for line in cells[key]) for key in sorted(cells)] == [
+        "Eye",
+        "• Structurally mature",
+    ]
 
 
 def test_cells_get_their_own_lines() -> None:

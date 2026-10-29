@@ -7,9 +7,10 @@ and what is around it. So a picture on a born-digital page with no image object 
 for grids: its ruling lines in groups that touch, each group a grid if it has at least two rows
 and two columns, a border all round, and every merged cell is a rectangle. Its rows and columns are where its
 horizontal and vertical rules are, and two neighbouring cells are one where no rule parts them.
-A grid where Docling has a table already is that table; any other becomes a table marked
-`ruled`, which its flag says, and the text items inside it are dropped from the layout so its
-chars go to its cells. When every ruling line in the picture is in a grid, the picture was only
+A grid where Docling has a table already is that table, and the text items inside it are
+dropped too (Docling can give a table and a picture of it with the cells' text as the picture's
+items); any other becomes a table marked `ruled`, which its flag says, and the text items inside
+it are dropped from the layout so its chars go to its cells. When every ruling line in the picture is in a grid, the picture was only
 tables, and it is dropped; else it stays as it is, and so do its grids.
 
 A picture that stays over a table Docling did read, the same region, still had its text items
@@ -56,14 +57,18 @@ def tables_from_drawings(layout: LayoutDoc, text: TextLayer) -> LayoutDoc:
     pages = {p.index: p for p in text.pages if p.kind == "born_digital"}
     docling = [i for i in layout.items if isinstance(i, LayoutTable)]
     found: dict[str, list[LayoutTable]] = {}
+    #: Docling's tables a dropped picture's grids are: its text items in them go too.
+    drawn_again: list[LayoutTable] = []
     for item in layout.items:
         page = pages.get(item.page)
         if isinstance(item, LayoutPicture) and page is not None:
             tables = _tables(item, page)
             if tables is not None:
-                found[item.ref] = [
-                    t for t in tables if not any(_same(t, d) for d in docling if d.page == t.page)
+                same = [
+                    d for d in docling if d.page == item.page and any(_same(t, d) for t in tables)
                 ]
+                found[item.ref] = [t for t in tables if not any(_same(t, d) for d in same)]
+                drawn_again += same
     repeated = [
         d
         for d in docling
@@ -78,7 +83,7 @@ def tables_from_drawings(layout: LayoutDoc, text: TextLayer) -> LayoutDoc:
     if not found and not repeated:
         return layout
     boxes = [(t.page, t.bbox) for tables in found.values() for t in tables]
-    boxes += [(d.page, d.bbox) for d in repeated]
+    boxes += [(d.page, d.bbox) for d in [*repeated, *drawn_again]]
     items: list[LayoutItem] = []
     for item in layout.items:
         if item.ref in found:

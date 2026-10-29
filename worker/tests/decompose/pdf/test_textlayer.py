@@ -117,6 +117,12 @@ def test_chars_carry_the_way_their_text_runs(angle: int, rotate: int) -> None:
         assert len({round(c.baseline) for c in chars}) == 4
 
 
+def test_a_page_drawn_at_font_size_1_reads_at_its_printed_sizes() -> None:
+    # Some PDFs set every font at 1 point and give the size in the matrix: 12 and 8 points here.
+    chars = _chars(Run("Body", 72, 100, size=12, scale=12), Run("sub", 72, 120, size=8, scale=8))
+    assert [round(c.size, 1) for c in chars] == [12.0] * 4 + [8.0] * 3
+
+
 def test_a_char_drawn_at_another_scale_takes_the_page_s_size() -> None:
     # 320-point type shrunk 20 times beside 16-point type: both read as 16 points
     chars = _chars(Run("Final", 72, 100, size=16, scale=0.05), Run("Adopted", 72, 120, size=16))

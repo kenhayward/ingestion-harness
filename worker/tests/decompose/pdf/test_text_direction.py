@@ -78,6 +78,17 @@ def test_a_subscript_beside_its_word_stays_in_its_line() -> None:
     assert paragraphs(doc) == ["(d50)"]
 
 
+def test_a_subscript_on_a_page_drawn_at_font_size_1_stays_in_its_line() -> None:
+    # C at 12 points, "max" lowered 0.9 points at 8, as matrices on fonts set at 1 point.
+    runs = [
+        Run("AUC, C", 300, 525, size=12, scale=12),
+        Run("max", 341.6, 525.9, size=8, scale=8),
+        Run(", body", 355, 525, size=12, scale=12),
+    ]
+    doc = read(runs, [bl(295, 512, 420, 530)])
+    assert paragraphs(doc) == ["AUC, Cmax, body"]
+
+
 def test_a_word_printed_twice_in_one_place_is_read_once() -> None:
     # drawn apart: pdfium merges a copy drawn soon after the first itself
     between = [Run(word, 72, 400 + 12 * k) for k, word in enumerate(("One", "Two", "Six", "Ten"))]

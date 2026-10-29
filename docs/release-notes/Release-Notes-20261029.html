@@ -161,7 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 29 October 2026: failed documents re-run in their own batch, which shows them going
-        through, and an Auto approve choice when re-running. PR #361.
+        through, and an Auto approve choice when re-running. PR #361. Two more ICH guidelines read:
+        PR #362.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -170,6 +171,13 @@
           <li>
             <a href="#rerun-in-place">Re-running failed documents in their batch</a>
             <span>— Re-run Failures on the list's bar, and Auto approve in the dialog</span>
+          </li>
+        </ul>
+        <h4>Fixes</h4>
+        <ul>
+          <li>
+            <a href="#pdf-printed-size">ICH S5(R3) and S11 read</a>
+            <span>— printed text sizes, words drawn apart, and a table drawn as a picture</span>
           </li>
         </ul>
       </nav>
@@ -208,6 +216,42 @@
           Documents re-run before this change, in a batch of their own, still say
           <em>Re-run in batch</em> and are re-run from that batch. So are documents run again by
           Force-load, Redeliver or Load as a new document, which still make a batch of their own.
+        </li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="fixes">Fixes</h2>
+
+      <h3 id="pdf-printed-size">ICH S5(R3) and S11 read</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/362">#362</a>
+      </p>
+      <p>Two PDFs still failed after the last fixes. Once this is deployed, re-run them.</p>
+      <ul>
+        <li>
+          <strong>S5(R3)</strong> failed with <em>'C' missing</em>. Its fonts are all set at 1 point
+          with the size given by how the text is scaled, so the reader took its text for 1-point
+          type and read subscripts, such as the "max" of C<sub>max</sub>, as lines of their own.
+          Text is now read at the size it is printed. On the same document, two table columns drawn
+          one after the other ran their words together on a line ("datagestation"); words side by
+          side with a gap between them now get a space even when they were drawn apart.
+        </li>
+        <li>
+          <strong>S11</strong> failed with <em>'Neonate' moved out of table</em>. The layout
+          analysis gave Appendix A's table of age bars both as a table and as a picture, with the
+          table's text belonging to the picture. The picture was dropped but its text kept, so the
+          table's cells came out empty. Now that text goes too and the cells get their words. A
+          bullet in a wide cell also now stays in that cell, rather than going to the cell beside
+          it.
+        </li>
+        <li>
+          Reading text at its printed size also finds subscripts and superscripts it used to miss:
+          the "+" of Na<sup>+</sup> in S7B, and the C<sub>max</sub> and IC<sub>50</sub> of S10. Some
+          paragraphs that had been split a word at a time (in S4 and S6(R1), say) now read whole.
+        </li>
+        <li>
+          Other PDFs can read slightly differently where their text is scaled, so their decomposer
+          version changes (1009).
         </li>
       </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>

@@ -14,7 +14,6 @@ from __future__ import annotations
 import ctypes
 import math
 import re
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -29,8 +28,6 @@ _ITALIC = re.compile(r"italic|oblique", re.IGNORECASE)
 _INVISIBLE_RENDER_MODE = 3
 #: A glyph's box is compared to the nearest 1/this of a point to find one drawn twice.
 _OVERPRINT = 2
-#: A char's scale this close to its page's usual one keeps the size pdfium gives it.
-_SCALE_SLACK = 0.1
 #: A page with no visible text and at least this fraction covered by images is a scan.
 _SCANNED_IMAGE_AREA = 0.5
 #: So is a page one image covers this fraction of, with at most `_SCAN_MAX_WORDS` visible words
@@ -317,16 +314,12 @@ def _quarter_turn(dx: float, dy: float) -> int:
 
 
 def _sized(chars: list[Char], scales: list[float]) -> list[Char]:
-    """The chars with their sizes in one scale. pdfium gives a char's size as its font's, before
-    the matrix it is drawn with scales it: a PDF can draw text at 327 points shrunk 22 times
-    beside text at 16 points, as the same 12-point type. So a char whose scale is not the page's
-    usual one takes the size it would have at the usual scale."""
-    counts = Counter(round(s, 3) for s, c in zip(scales, chars, strict=True) if c.visible and s > 0)
-    if not counts:
-        return chars
-    usual = max(counts, key=lambda s: (counts[s], s))
+    """The chars at their printed sizes. pdfium gives a char's size as its font's, before the
+    matrix it is drawn with scales it: a PDF can draw text at 327 points shrunk 22 times beside
+    text at 16 points, as the same 16-point type, and some set every font at 1 point and give
+    the size in the matrix alone. So each char's size is its font's times its scale."""
     return [
-        replace(c, size=c.size * s / usual) if s > 0 and abs(s / usual - 1) > _SCALE_SLACK else c
+        replace(c, size=c.size * s) if s > 0 and s != 1 else c
         for c, s in zip(chars, scales, strict=True)
     ]
 
