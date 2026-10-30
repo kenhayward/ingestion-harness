@@ -77,6 +77,49 @@ conversionsContract('memory', async () => {
       waits: async (itemId, waitingSince, waitedMs) => {
         Object.assign(repo.conversionItems.get(itemId)!, { waitingSince, waitedMs });
       },
+      legacyRerun: async (of, objectKey) => {
+        const batchId = randomUUID();
+        const itemId = randomUUID();
+        const now = new Date().toISOString();
+        repo.conversionBatches.set(batchId, {
+          id: batchId,
+          targetId: 'manuals',
+          name: null,
+          createdBy: { id: null, name: null },
+          state: 'started',
+          force: true,
+          autoApprove: false,
+          createdAt: now,
+          startedAt: now,
+          watch: null,
+        });
+        repo.conversionItems.set(itemId, {
+          id: itemId,
+          batchId,
+          sourceKey: of.sourceKey,
+          filename: of.filename,
+          contentSha256: of.contentSha256,
+          sizeBytes: of.sizeBytes,
+          objectKey: objectKey ?? `decompositions/${batchId}/${itemId}.docx`,
+          jobId: null,
+          outcome: 'queued',
+          detail: null,
+          registerEntryId: null,
+          reportKey: null,
+          link: null,
+          redeliverOf: of.id,
+          startedAt: null,
+          finishedAt: null,
+          waitingSince: null,
+          waitedMs: 0,
+          flagCount: null,
+          held: false,
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNote: null,
+        });
+        return { batchId, itemId };
+      },
       dropEntry: async (entryId) => {
         repo.register.delete(entryId);
       },
@@ -429,6 +472,13 @@ describe('conversion batches', () => {
       const get = (url: string) => c.app.inject({ url, headers: { cookie } });
       expect((await get('/api/conversions/batches')).statusCode).toBe(200);
       expect((await get(`/api/conversions/batches/${batch.id}`)).statusCode).toBe(200);
+      const renamed = await c.app.inject({
+        method: 'PATCH',
+        url: `/api/conversions/batches/${batch.id}`,
+        headers: { cookie },
+        payload: { name: 'Mine' },
+      });
+      expect(renamed.statusCode, `${role} rename`).toBe(200);
       expect((await get(`/api/conversions/items/${item.id}/report`)).statusCode).toBe(404);
       const job = c.repo.backgroundJobs.find(
         (j) => (j.params as { itemId?: string }).itemId === item.id,
@@ -475,6 +525,38 @@ describe('conversion batches', () => {
       (await c.app.inject('/api/conversions/batches/00000000-0000-4000-8000-000000000000'))
         .statusCode,
     ).toBe(404);
+  });
+
+  it('renames a batch, trimmed, and clears its name; the list and the batch show it', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    expect(batch.name).toBeNull();
+    const rename = (name: unknown, id = batch.id) =>
+      c.app.inject({
+        method: 'PATCH',
+        url: `/api/conversions/batches/${id}`,
+        payload: { name },
+      });
+
+    const named = await rename('  QA SOPs, first pass ');
+    expect(named.statusCode).toBe(200);
+    expect(BatchSchema.parse(named.json())).toEqual({ ...batch, name: 'QA SOPs, first pass' });
+    const listed = (await c.app.inject('/api/conversions/batches')).json().batches;
+    expect(listed[0]).toMatchObject({ id: batch.id, name: 'QA SOPs, first pass' });
+    const read = await c.app.inject(`/api/conversions/batches/${batch.id}`);
+    expect(BatchDetailSchema.parse(read.json()).batch.name).toBe('QA SOPs, first pass');
+
+    expect((await rename('   ')).json().name).toBeNull();
+    expect((await rename('Again')).json().name).toBe('Again');
+    expect((await rename(null)).json().name).toBeNull();
+    for (const bad of ['x'.repeat(121), 7]) {
+      expect((await rename(bad)).statusCode, String(bad)).toBe(400);
+    }
+    expect((await rename('x', randomUUID())).statusCode).toBe(404);
+    expect((await rename('x', 'nope')).statusCode).toBe(404);
+    await c.app.inject({ method: 'DELETE', url: `/api/conversions/batches/${batch.id}` });
+    expect((await rename('Gone')).statusCode).toBe(404);
+    expect(takeViolations()).toEqual([]);
   });
 
   it('deletes a started batch once its documents have finished, with its files', async () => {

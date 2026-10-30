@@ -966,14 +966,19 @@ export interface Api {
    * finished (what it delivered stays in the target), an open one discarded.
    */
   deleteConversionBatch(batchId: string): Promise<void>;
+  /** Names a batch (trimmed; empty or null clears it): the batch as renamed. */
+  renameConversionBatch(batchId: string, name: string | null): Promise<Batch>;
   /** The newest batches, newest first, with their items counted per outcome. */
   listConversionBatches(): Promise<BatchSummary[]>;
   getConversionBatch(batchId: string): Promise<BatchDetail>;
   /** An item's decomposition report (its flags). */
   getConversionReport(itemId: string): Promise<Record<string, unknown>>;
-  /** Delivers the item's stored file again as an explicit update: a new batch of one. */
+  /** Delivers the item's stored file again as an explicit update, in its batch: the batch as now. */
   forceConversionItem(itemId: string): Promise<BatchDetail>;
-  /** Updates the item's document, from the stored file or a replacement: a new batch of one. */
+  /**
+   * Updates the item's document, from the stored file or a replacement, in its batch: the batch
+   * as now.
+   */
   redeliverConversionItem(itemId: string, file?: File): Promise<BatchDetail>;
   /**
    * Re-runs the chosen failed documents of a started batch in place, each from its stored file:
@@ -986,7 +991,7 @@ export interface Api {
   detachConversionItem(itemId: string): Promise<ConversionItem>;
   /**
    * Loads a document gone from the target as a new document: detaches it (if not yet) and
-   * creates it again from the stored file, in a new batch of one.
+   * creates it again from the stored file, in its batch: the batch as now.
    */
   reloadConversionItem(itemId: string): Promise<BatchDetail>;
   /** A held item as the review page reads it: the document, its pages and its images. */
@@ -2020,6 +2025,12 @@ export function createHttpApi(base = '/api'): Api {
           method: 'DELETE',
         }),
       ),
+    renameConversionBatch: (batchId, name) =>
+      apiFetch(`${base}/conversions/batches/${encodeURIComponent(batchId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      }).then(json<Batch>),
     listConversionBatches: () =>
       apiFetch(`${base}/conversions/batches`)
         .then(json<{ batches: BatchSummary[] }>)

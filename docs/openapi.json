@@ -12041,6 +12041,18 @@
                       "type": "string",
                       "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                     },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "createdBy": {
                       "type": "object",
                       "properties": {
@@ -12114,6 +12126,7 @@
                   "required": [
                     "id",
                     "targetId",
+                    "name",
                     "createdBy",
                     "state",
                     "force",
@@ -12337,6 +12350,18 @@
                             "type": "string",
                             "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                           },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "createdBy": {
                             "type": "object",
                             "properties": {
@@ -12458,6 +12483,7 @@
                         "required": [
                           "id",
                           "targetId",
+                          "name",
                           "createdBy",
                           "state",
                           "force",
@@ -13288,6 +13314,18 @@
                       "type": "string",
                       "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                     },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "createdBy": {
                       "type": "object",
                       "properties": {
@@ -13361,6 +13399,7 @@
                   "required": [
                     "id",
                     "targetId",
+                    "name",
                     "createdBy",
                     "state",
                     "force",
@@ -13824,6 +13863,18 @@
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                         },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdBy": {
                           "type": "object",
                           "properties": {
@@ -13897,6 +13948,7 @@
                       "required": [
                         "id",
                         "targetId",
+                        "name",
                         "createdBy",
                         "state",
                         "force",
@@ -14331,6 +14383,337 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "renameConversionBatch",
+        "summary": "Rename a batch",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Names the batch, open or started, as the batch list and the batch show it. The name is\ntrimmed; an empty name, or null, clears it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The batch id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch, renamed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdBy": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "started",
+                        "discarded"
+                      ]
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "autoApprove": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "watch": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "targetId",
+                    "name",
+                    "createdBy",
+                    "state",
+                    "force",
+                    "autoApprove",
+                    "createdAt",
+                    "startedAt",
+                    "watch"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The batch, renamed."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ name }`, or the name is longer than 120.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ name }`, or the name is longer than 120."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such batch, or it was discarded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such batch, or it was discarded."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/conversions/items/{id}/report": {
@@ -14560,6 +14943,18 @@
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                         },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "createdBy": {
                           "type": "object",
                           "properties": {
@@ -14633,6 +15028,7 @@
                       "required": [
                         "id",
                         "targetId",
+                        "name",
                         "createdBy",
                         "state",
                         "force",
@@ -17342,7 +17738,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Delivers the item's stored file again as an explicit update, in a new batch of one that\nstarts at once: an already loaded document is updated (after a better decomposer, say),\nand a duplicate is created as a second document of its own. The target's version check\nstill applies. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request makes one batch.",
+        "description": "Delivers the item's stored file again as an explicit update, in the item's own batch:\nthe item is queued again under its own id with a new job, its last run's detail,\nreport, link and times cleared, as a re-run does. An already loaded document is updated\n(after a better decomposer, say), and a duplicate is created as a second document of\nits own. The target's version check still applies. Refused while the item is\nunfinished, so a repeated request queues one job.",
         "parameters": [
           {
             "schema": {
@@ -17356,8 +17752,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "The new batch of one, started, and its item.",
+          "200": {
+            "description": "The batch as now, with all its items: the item is queued again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17373,6 +17769,18 @@
                         "targetId": {
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "createdBy": {
                           "type": "object",
@@ -17447,6 +17855,7 @@
                       "required": [
                         "id",
                         "targetId",
+                        "name",
                         "createdBy",
                         "state",
                         "force",
@@ -17754,7 +18163,7 @@
                     "items"
                   ],
                   "additionalProperties": false,
-                  "description": "The new batch of one, started, and its item."
+                  "description": "The batch as now, with all its items: the item is queued again."
                 }
               }
             }
@@ -17855,7 +18264,7 @@
             }
           },
           "409": {
-            "description": "The item never started, is still running, or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`).",
+            "description": "The item never started, or it or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -17888,7 +18297,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, is still running, or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`)."
+                  "description": "The item never started, or it or a rerun of it is still running (a repeated request) (`not_finished`), or it belongs to a watched folder (`watched`)."
                 }
               }
             }
@@ -17987,7 +18396,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Updates the item's document explicitly, in a new batch of one that starts at once\n(forced; the target's version check still applies). Send no body to deliver the stored\nfile again, or a `multipart/form-data` body with one `file` part, a replacement Word\ndocument (`.docx`) or PDF: it keeps the item's source key, so it updates the same document,\nwhich is how a renamed or moved file updates the right one. Only an item with a\nregister entry has a document to redeliver. Refused while an earlier rerun of the item\nis unfinished, so a repeated request makes one batch and stores one file.",
+        "description": "Updates the item's document explicitly, in the item's own batch: the item is queued\nagain under its own id with a new job, its last run cleared (forced; the target's\nversion check still applies). Send no body to deliver the stored file again, or a\n`multipart/form-data` body with one `file` part, a replacement Word document\n(`.docx`) or PDF: it becomes the item's file and keeps the item's source key, so it\nupdates the same document, which is how a renamed or moved file updates the right one.\nOnly an item with a register entry has a document to redeliver. Refused while the item\nis unfinished, so a repeated request queues one job and keeps no second file.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18019,8 +18428,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "The new batch of one, started, and its item.",
+          "200": {
+            "description": "The batch as now, with all its items: the item is queued again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18036,6 +18445,18 @@
                         "targetId": {
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "createdBy": {
                           "type": "object",
@@ -18110,6 +18531,7 @@
                       "required": [
                         "id",
                         "targetId",
+                        "name",
                         "createdBy",
                         "state",
                         "force",
@@ -18417,7 +18839,7 @@
                     "items"
                   ],
                   "additionalProperties": false,
-                  "description": "The new batch of one, started, and its item."
+                  "description": "The batch as now, with all its items: the item is queued again."
                 }
               }
             }
@@ -19245,7 +19667,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "For a document the target no longer has (the item's `gone`: the sink refused its\nupdate with the missing-document marker, `not_found` with details\n`reason: document_missing` naming that document; deleted there, say), or one whose\nregister entry is still the detached tombstone (no later create has replaced it), and\nonly when the row is not superseded (the item's `reloadable`): detaches its\nregister entry if it is not detached yet (recorded with who, when and\n`reason: gone`), then delivers the item's stored file as a plain create (not forced),\nin a new batch of one that starts at once. After the detach, that makes a **new**\ndocument in the target. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request (a double click) makes one batch.",
+        "description": "For a document the target no longer has (the item's `gone`: the sink refused its\nupdate with the missing-document marker, `not_found` with details\n`reason: document_missing` naming that document; deleted there, say), or one whose\nregister entry is still the detached tombstone (no later create has replaced it), and\nonly when the row is not superseded (the item's `reloadable`): detaches its\nregister entry if it is not detached yet (recorded with who, when and\n`reason: gone`), then delivers the item's stored file as a plain create (not forced),\nin the item's own batch: the item is queued again with a new job, its last run\ncleared. After the detach, that makes a **new** document in the target. Refused while\nthe item is unfinished, so a repeated request (a double click) queues one job.",
         "parameters": [
           {
             "schema": {
@@ -19259,8 +19681,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "The new batch of one, started, and its item.",
+          "200": {
+            "description": "The batch as now, with all its items: the item is queued again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19276,6 +19698,18 @@
                         "targetId": {
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "createdBy": {
                           "type": "object",
@@ -19350,6 +19784,7 @@
                       "required": [
                         "id",
                         "targetId",
+                        "name",
                         "createdBy",
                         "state",
                         "force",
@@ -19657,7 +20092,7 @@
                     "items"
                   ],
                   "additionalProperties": false,
-                  "description": "The new batch of one, started, and its item."
+                  "description": "The batch as now, with all its items: the item is queued again."
                 }
               }
             }

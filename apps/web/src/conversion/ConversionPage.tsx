@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react';
-import { ITEM_OUTCOMES, type BatchSummary, type ConversionTarget } from '@ih/shared';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  BATCH_NAME_MAX,
+  ITEM_OUTCOMES,
+  type BatchSummary,
+  type ConversionTarget,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { StatusGlyph } from '../jobs/JobStatusIcon.js';
 import { navigate } from '../router.js';
@@ -7,6 +12,7 @@ import { Avatar } from '../shell/Avatar.js';
 import { Dialog } from '../ui/Dialog.js';
 import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
+import { moveFocus, usePopover } from '../ui/usePopover.js';
 import { BatchView } from './BatchView.js';
 import { NewBatch } from './NewBatch.js';
 import { OUTCOME, UNFINISHED, batchState } from './outcomes.js';
@@ -79,8 +85,9 @@ export const unfinishedIn = (b: BatchSummary) =>
   [...UNFINISHED, 'awaiting_review' as const].reduce((n, o) => n + (b.counts[o] ?? 0), 0);
 
 /**
- * The batches started before, newest first, a page at a time, each a link to its view and with
- * a Delete… for one whose documents have all finished.
+ * The batches started before, newest first, a page at a time, each a link to its view, named
+ * by its name or else by when it was made, with who started it, and a menu to rename it or,
+ * once its documents have all finished, delete it.
  */
 function EarlierBatches({ api }: { api: Api }) {
   const [batches, setBatches] = useState<BatchSummary[] | null>(null);
@@ -88,6 +95,7 @@ function EarlierBatches({ api }: { api: Api }) {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [deleting, setDeleting] = useState<BatchSummary | null>(null);
+  const [renaming, setRenaming] = useState<BatchSummary | null>(null);
 
   useEffect(() => {
     api.listConversionBatches().then(
@@ -144,8 +152,8 @@ function EarlierBatches({ api }: { api: Api }) {
         <table className="batch-list" aria-label="Earlier batches">
           <colgroup>
             <col className="status-col" />
-            <col className="when-col" />
-            <col />
+            <col className="name-col" />
+            <col className="target-col" />
             <col className="docs-col" />
             <col className="outcomes-col" />
             <col className="by-col" />
@@ -170,8 +178,9 @@ function EarlierBatches({ api }: { api: Api }) {
                   </td>
                   <td className="when-cell">
                     <a href={href} title={fullWhen(b.createdAt)}>
-                      {batchDay(b.createdAt)}
+                      {b.name ?? batchDay(b.createdAt)}
                     </a>
+                    {b.name && <span className="muted"> · {batchDay(b.createdAt)}</span>}
                   </td>
                   <td className="target-cell">
                     {target ? `${target.label} · ${target.sinkName}` : b.targetId}
@@ -183,16 +192,20 @@ function EarlierBatches({ api }: { api: Api }) {
                   <td className="outcomes-cell">
                     <OutcomeChips batch={b} />
                   </td>
-                  <td className="by-cell">
+                  <td className="by-cell" title={startedBy(b)}>
                     {b.createdBy.name && (
                       <>
                         <Avatar name={b.createdBy.name} />
-                        {b.createdBy.name}
+                        <span className="by-name">{b.createdBy.name}</span>
                       </>
                     )}
                   </td>
                   <td className="act-cell">
-                    <DeleteButton batch={b} onDelete={() => setDeleting(b)} />
+                    <BatchMenu
+                      batch={b}
+                      onRename={() => setRenaming(b)}
+                      onDelete={() => setDeleting(b)}
+                    />
                   </td>
                   <td className="go-cell" aria-hidden="true">
                     <Icon name="chevronRight" size={14} />
@@ -202,6 +215,19 @@ function EarlierBatches({ api }: { api: Api }) {
             })}
           </tbody>
         </table>
+      )}
+      {renaming && (
+        <RenameBatchDialog
+          api={api}
+          batch={renaming}
+          onClose={() => setRenaming(null)}
+          onRenamed={(name) => {
+            setBatches(
+              (list) => list?.map((x) => (x.id === renaming.id ? { ...x, name } : x)) ?? null,
+            );
+            setRenaming(null);
+          }}
+        />
       )}
       {deleting && (
         <DeleteBatchDialog
@@ -218,21 +244,151 @@ function EarlierBatches({ api }: { api: Api }) {
   );
 }
 
-/** A row's Delete…: off, saying why, while the batch has documents not finished. */
-function DeleteButton({ batch, onDelete }: { batch: BatchSummary; onDelete: () => void }) {
+/** "Started by Ada" (or "Created by", never started), for a row's hover. */
+const startedBy = (b: BatchSummary) =>
+  b.createdBy.name
+    ? `${b.state === 'started' ? 'Started' : 'Created'} by ${b.createdBy.name}`
+    : undefined;
+
+/** The batch named in a menu or a dialog: its name, else when it was made. */
+const batchLabel = (b: BatchSummary) => b.name ?? `the batch of ${fullWhen(b.createdAt)}`;
+
+/**
+ * A row's `⋯` menu: Rename…, and Delete…, off (saying why) while the batch has documents not
+ * finished. It opens upward when it would run past the bottom of the window.
+ */
+function BatchMenu({
+  batch,
+  onRename,
+  onDelete,
+}: {
+  batch: BatchSummary;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const p = usePopover();
+  const menu = useRef<HTMLDivElement>(null);
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    if (p.open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [p.open]);
+  useLayoutEffect(() => {
+    if (!p.open || !menu.current) {
+      setUp(false);
+      return;
+    }
+    setUp(menu.current.getBoundingClientRect().bottom > window.innerHeight);
+  }, [p.open]);
   const unfinished = unfinishedIn(batch);
-  const why = unfinished > 0 ? `${plural(unfinished, 'document')} not finished yet` : null;
+  const why = unfinished > 0 ? `${plural(unfinished, 'document')} not finished yet` : undefined;
+  const name = `Actions for ${batchLabel(batch)}`;
+  const run = (f: () => void) => () => {
+    p.close();
+    f();
+  };
   return (
-    <button
-      type="button"
-      className="icon-button danger"
-      disabled={why !== null}
-      aria-label={`Delete the batch of ${fullWhen(batch.createdAt)}`}
-      title={why ?? 'Delete…'}
-      onClick={onDelete}
+    <div className="popover-anchor" ref={p.box} onKeyDown={p.onKeyDown}>
+      <button
+        type="button"
+        ref={p.trigger}
+        className="icon"
+        aria-label={name}
+        title="Actions"
+        aria-haspopup="menu"
+        aria-expanded={p.open}
+        onClick={() => p.setOpen(!p.open)}
+      >
+        <Icon name="more" size={18} strokeWidth={3} />
+      </button>
+      {p.open && (
+        <div
+          ref={menu}
+          role="menu"
+          aria-label={name}
+          className={`menu-popover row-menu${up ? ' opens-up' : ''}`}
+          onKeyDown={(e) => moveFocus(e, menu.current, '[role="menuitem"]:not(:disabled)')}
+        >
+          <button type="button" role="menuitem" onClick={run(onRename)}>
+            Rename…
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="danger-item"
+            disabled={why !== undefined}
+            title={why}
+            onClick={run(onDelete)}
+          >
+            Delete…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Naming a batch: its name, trimmed; an empty one clears it, and the list shows when it was made. */
+function RenameBatchDialog({
+  api,
+  batch,
+  onClose,
+  onRenamed,
+}: {
+  api: Api;
+  batch: BatchSummary;
+  onClose: () => void;
+  onRenamed: (name: string | null) => void;
+}) {
+  const formId = useId();
+  const [name, setName] = useState(batch.name ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const trimmed = name.trim();
+  const unchanged = trimmed === (batch.name ?? '');
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (unchanged || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onRenamed((await api.renameConversionBatch(batch.id, trimmed || null)).name);
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title="Rename batch"
+      onClose={onClose}
+      actions={
+        <button type="submit" form={formId} className="primary" disabled={busy || unchanged}>
+          Rename
+        </button>
+      }
     >
-      <Icon name="trash" />
-    </button>
+      <form
+        id={formId}
+        className="dialog-form"
+        aria-label="Rename batch"
+        onSubmit={(e) => void submit(e)}
+      >
+        <label>
+          Name
+          <input
+            value={name}
+            maxLength={BATCH_NAME_MAX}
+            placeholder={batchDay(batch.createdAt)}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <p className="muted">
+          The batch of {fullWhen(batch.createdAt)}. Leave the name empty to list it by when it was
+          made.
+        </p>
+        {error && <p role="alert">{error}</p>}
+      </form>
+    </Dialog>
   );
 }
 
@@ -272,8 +428,9 @@ function DeleteBatchDialog({
       }
     >
       <p>
-        The batch of {fullWhen(batch.createdAt)}, {plural(batch.itemCount, 'document')}, leaves this
-        list, with its uploaded files and reports.
+        {batch.name ? `${batch.name}, the batch of ` : 'The batch of '}
+        {fullWhen(batch.createdAt)}, {plural(batch.itemCount, 'document')}, leaves this list, with
+        its uploaded files and reports.
         {batch.state === 'started' &&
           ' The documents it delivered stay in the target, and are still found there when loaded again.'}
       </p>

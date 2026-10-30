@@ -10,6 +10,7 @@ import {
   AcceptedTargetStateSchema,
   AcceptPreviewSchema,
   AcceptTargetStateSchema,
+  BATCH_NAME_MAX,
   BatchDetailSchema,
   BatchSchema,
   BatchSummarySchema,
@@ -25,6 +26,7 @@ import {
   ItemSchema,
   MAX_SOURCE_KEY,
   RejectDecisionSchema,
+  RenameBatchSchema,
   RetryItemsSchema,
   ReviewDecisionSchema,
   sourceKeyProblem,
@@ -476,6 +478,38 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  app.patch<{ Params: { id: string } }>(
+    '/conversions/batches/:id',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'renameConversionBatch',
+        summary: 'Rename a batch',
+        description: md`
+          Names the batch, open or started, as the batch list and the batch show it. The name is
+          trimmed; an empty name, or null, clears it.
+        `,
+        params: BatchParams,
+        body: RenameBatchSchema,
+        response: {
+          200: res('The batch, renamed.', BatchSchema),
+          400: error(`The body is not \`{ name }\`, or the name is longer than ${BATCH_NAME_MAX}.`),
+          404: error('No such batch, or it was discarded.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = RenameBatchSchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (!UUID.safeParse(req.params.id).success) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const batch = await app.deps.repo.renameBatch(req.params.id, body.data.name || null);
+      if (!batch) return reply.code(404).send({ error: 'not found' });
+      return batch;
+    },
+  );
+
   app.get<{ Params: { id: string } }>(
     '/conversions/items/:id/report',
     {
@@ -548,27 +582,14 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
   const watched = (reply: FastifyReply) =>
     reply.code(409).send({ error: WATCHED_REFUSAL, code: 'watched' });
 
-  /** A new batch of one, forced and started, rerunning `of` with `source` (R6). */
-  const rerun = (
-    req: FastifyRequest,
-    ids: { batchId: string; itemId: string },
-    of: Item,
-    batch: Batch,
-    source: Rerun['source'],
-  ) =>
-    app.deps.repo.rerunItem({
-      ...ids,
-      of,
-      targetId: batch.targetId,
-      createdBy: batchCreator(creatorOf(req)),
-      by: creatorOf(req),
-      source,
-    });
+  /** Runs `of` again in place, in its own batch, forced, with `source` (R6). */
+  const rerun = (req: FastifyRequest, of: Item, batch: Batch, source: Rerun['source']) =>
+    app.deps.repo.rerunItem({ of, targetId: batch.targetId, by: creatorOf(req), source });
 
-  /** A rerun's answer: the new batch of one, or 409 while an earlier rerun is unfinished. */
-  const rerunReply = (reply: FastifyReply, done: RerunResult) =>
+  /** A rerun's answer: the item's batch as now, or 409 while it, or a rerun of it, is unfinished. */
+  const rerunReply = async (reply: FastifyReply, batch: Batch, done: RerunResult) =>
     done.ok
-      ? reply.code(201).send({ batch: done.batch, items: [done.item] })
+      ? reply.code(200).send({ batch, items: await app.deps.repo.listItems(batch.id) })
       : reply.code(409).send({ error: RERUN_RUNNING, code: 'not_finished' });
 
   /** The stored source an item delivered, for a rerun that sends no replacement. */
@@ -580,11 +601,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
   });
 
   const RerunResponses = {
-    201: res('The new batch of one, started, and its item.', BatchDetailSchema),
+    200: res('The batch as now, with all its items: the item is queued again.', BatchDetailSchema),
     404: error('No such item.'),
     409: res(
-      'The item never started, is still running, or a rerun of it is still running (a repeated ' +
-        'request) (`not_finished`), or it belongs to a watched folder (`watched`).',
+      'The item never started, or it or a rerun of it is still running (a repeated request) ' +
+        '(`not_finished`), or it belongs to a watched folder (`watched`).',
       ErrorBody.extend({ code: z.enum(['not_finished', 'watched']) }),
     ),
     422: CodedError("The batch's target no longer takes documents.", 'target_takes_no_documents'),
@@ -996,12 +1017,12 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'forceLoadConversionItem',
         summary: 'Force-load an item',
         description: md`
-          Delivers the item's stored file again as an explicit update, in a new batch of one that
-          starts at once: an already loaded document is updated (after a better decomposer, say),
-          and a duplicate is created as a second document of its own. The target's version check
-          still applies. The new item keeps the source key and names the item it reruns
-          (\`redeliverOf\`). Refused while an earlier rerun of the item is unfinished, so a
-          repeated request makes one batch.
+          Delivers the item's stored file again as an explicit update, in the item's own batch:
+          the item is queued again under its own id with a new job, its last run's detail,
+          report, link and times cleared, as a re-run does. An already loaded document is updated
+          (after a better decomposer, say), and a duplicate is created as a second document of
+          its own. The target's version check still applies. Refused while the item is
+          unfinished, so a repeated request queues one job.
         `,
         params: ItemParams,
         response: RerunResponses,
@@ -1017,8 +1038,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       if (!(await takesDocuments(app, batch.targetId))) {
         return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
       }
-      const ids = { batchId: randomUUID(), itemId: randomUUID() };
-      return rerunReply(reply, await rerun(req, ids, item, batch, storedSource(item)));
+      return rerunReply(reply, batch, await rerun(req, item, batch, storedSource(item)));
     },
   );
 
@@ -1031,13 +1051,14 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         summary: "Redeliver an item's document",
         consumes: ['multipart/form-data'],
         description: md`
-          Updates the item's document explicitly, in a new batch of one that starts at once
-          (forced; the target's version check still applies). Send no body to deliver the stored
-          file again, or a \`multipart/form-data\` body with one \`file\` part, a replacement Word
-          document (\`.docx\`) or PDF: it keeps the item's source key, so it updates the same document,
-          which is how a renamed or moved file updates the right one. Only an item with a
-          register entry has a document to redeliver. Refused while an earlier rerun of the item
-          is unfinished, so a repeated request makes one batch and stores one file.
+          Updates the item's document explicitly, in the item's own batch: the item is queued
+          again under its own id with a new job, its last run cleared (forced; the target's
+          version check still applies). Send no body to deliver the stored file again, or a
+          \`multipart/form-data\` body with one \`file\` part, a replacement Word document
+          (\`.docx\`) or PDF: it becomes the item's file and keeps the item's source key, so it
+          updates the same document, which is how a renamed or moved file updates the right one.
+          Only an item with a register entry has a document to redeliver. Refused while the item
+          is unfinished, so a repeated request queues one job and keeps no second file.
         `,
         params: ItemParams,
         body: multipart({}, [], 'The replacement Word document or PDF (optional).', {
@@ -1078,9 +1099,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       if (!(await takesDocuments(app, batch.targetId))) {
         return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
       }
-      const ids = { batchId: randomUUID(), itemId: randomUUID() };
       if (!req.isMultipart()) {
-        return rerunReply(reply, await rerun(req, ids, item, batch, storedSource(item)));
+        return rerunReply(reply, batch, await rerun(req, item, batch, storedSource(item)));
       }
 
       const file = await req.file({ limits: { files: 1, fileSize: maxUploadBytes } });
@@ -1094,7 +1114,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const source = checkSource(body);
       if (!source.ok && source.code === 422) return reply.code(422).send({ error: source.error });
       if (!source.ok) return reply.code(415).send({ error: NOT_WORD_OR_PDF });
-      const objectKey = decompositionSourceKey(ids.batchId, ids.itemId, source.ext);
+      // Under the batch, beside the file it replaces: deleting the batch deletes it too.
+      const objectKey = decompositionSourceKey(batch.id, randomUUID(), source.ext);
       await store.put(buckets.runs, objectKey, body, source.contentType);
       // Whatever happens to the rerun (refused, or the database fails), no file is left behind.
       const unstore = async () => {
@@ -1106,7 +1127,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       };
       let done: RerunResult;
       try {
-        done = await rerun(req, ids, item, batch, {
+        done = await rerun(req, item, batch, {
           filename: file.filename,
           contentSha256: createHash('sha256').update(body).digest('hex'),
           sizeBytes: body.length,
@@ -1117,7 +1138,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       }
       if (!done.ok) await unstore();
-      return rerunReply(reply, done);
+      return rerunReply(reply, batch, done);
     },
   );
 
@@ -1201,10 +1222,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           only when the row is not superseded (the item's \`reloadable\`): detaches its
           register entry if it is not detached yet (recorded with who, when and
           \`reason: gone\`), then delivers the item's stored file as a plain create (not forced),
-          in a new batch of one that starts at once. After the detach, that makes a **new**
-          document in the target. The new item keeps the source key and names the item it reruns
-          (\`redeliverOf\`). Refused while an earlier rerun of the item is unfinished, so a
-          repeated request (a double click) makes one batch.
+          in the item's own batch: the item is queued again with a new job, its last run
+          cleared. After the detach, that makes a **new** document in the target. Refused while
+          the item is unfinished, so a repeated request (a double click) queues one job.
         `,
         params: ItemParams,
         response: {
@@ -1260,13 +1280,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
         }
       }
-      const ids = { batchId: randomUUID(), itemId: randomUUID() };
-      // The tombstone is checked again with the batch insert, in one transaction.
+      // The tombstone is checked again with the job insert, in one transaction.
       const done = await app.deps.repo.rerunItem({
-        ...ids,
         of: item,
         targetId: batch.targetId,
-        createdBy: batchCreator(creatorOf(req)),
         by: creatorOf(req),
         source: storedSource(item),
         force: false,
@@ -1275,7 +1292,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       if (!done.ok && done.reason === 'not_detached') {
         return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
       }
-      return rerunReply(reply, done);
+      return rerunReply(reply, batch, done);
     },
   );
 

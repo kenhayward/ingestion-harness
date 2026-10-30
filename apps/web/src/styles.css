@@ -8108,8 +8108,16 @@ button.evidence-chip[aria-expanded='true'] {
 }
 
 /* Earlier batches: one line a batch, the whole row a link to it. */
+/* The list narrows with its card (the container its columns give way to). */
 .earlier-batches {
-  overflow: hidden;
+  container-type: inline-size;
+}
+/* A row's menu runs past the card's edge, so the card clips nothing: its last row rounds. */
+.batch-list tr:last-child td:first-child {
+  border-bottom-left-radius: 14px;
+}
+.batch-list tr:last-child td:last-child {
+  border-bottom-right-radius: 14px;
 }
 .earlier-batches-bar {
   display: flex;
@@ -8151,17 +8159,17 @@ button.evidence-chip[aria-expanded='true'] {
 .batch-list .status-col {
   width: 40px;
 }
-.batch-list .when-col {
-  width: 140px;
+.batch-list .name-col {
+  width: 24%;
 }
 .batch-list .docs-col {
   width: 76px;
 }
 .batch-list .outcomes-col {
-  width: 38%;
+  width: 28%;
 }
 .batch-list .by-col {
-  width: 170px;
+  width: 150px;
 }
 .batch-list .act-col {
   width: 44px;
@@ -8169,21 +8177,20 @@ button.evidence-chip[aria-expanded='true'] {
 .batch-list .go-col {
   width: 34px;
 }
-/* A row's Delete…, as the ontology list's row actions. */
+/* A row's `⋯` menu (Rename…, Delete…), which runs past the cell. */
 .batch-list .act-cell {
   padding: 0 4px;
+  overflow: visible;
   text-align: right;
 }
-.batch-list .act-cell .icon-button {
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  min-height: 0;
-  padding: 0;
-  border-radius: var(--ih-radius-sm);
+.batch-list .act-cell .popover-anchor {
+  display: inline-block;
 }
-.batch-list .act-cell .icon-button:disabled {
+.batch-list .act-cell .menu-popover {
+  text-align: left;
+  white-space: nowrap;
+}
+.batch-list .act-cell [role='menuitem']:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -8227,15 +8234,28 @@ button.evidence-chip[aria-expanded='true'] {
   font-size: 9px;
   vertical-align: middle;
 }
-@container (max-width: 820px) {
-  .batch-list .by-col,
+/* Narrow, the target and the count give way first: who started a batch stays. */
+@container (max-width: 960px) {
+  .batch-list .name-col {
+    width: auto;
+  }
+  .batch-list .target-col,
   .batch-list .docs-col {
     width: 0;
   }
+  .batch-list .target-cell,
+  .batch-list .docs-cell {
+    padding: 0;
+  }
 }
 @media (max-width: 760px) {
-  .batch-list .target-cell,
-  .batch-list .by-cell {
+  .batch-list .by-col {
+    width: 52px;
+  }
+  .batch-list .by-cell .avatar {
+    margin-right: 0;
+  }
+  .batch-list .by-name {
     display: none;
   }
 }

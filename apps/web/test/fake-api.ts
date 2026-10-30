@@ -882,6 +882,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     deleteConversionBatch: vi.fn(async () => {
       throw new Error('deleteConversionBatch not stubbed');
     }),
+    renameConversionBatch: vi.fn(async () => {
+      throw new Error('renameConversionBatch not stubbed');
+    }),
     getConversionBatch: vi.fn(async () => {
       throw new Error('getConversionBatch not stubbed');
     }),
@@ -933,6 +936,7 @@ export function conversionBatch(o: Partial<Batch> = {}): Batch {
   return {
     id: '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11',
     targetId: 'documents',
+    name: null,
     createdBy: { id: null, name: 'Ken' },
     state: 'open',
     force: false,

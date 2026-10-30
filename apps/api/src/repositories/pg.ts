@@ -253,6 +253,7 @@ const toReference = (r: ReferenceRow): Reference => ({
 interface BatchRow {
   id: string;
   target_id: string;
+  name: string | null;
   created_by: Batch['createdBy'];
   state: Batch['state'];
   force: boolean;
@@ -263,13 +264,14 @@ interface BatchRow {
 }
 
 /** A batch's columns; `watch` names the watched folder that owns it (a scalar subselect, so it also works in RETURNING). */
-const BATCH_COLUMNS = `id, target_id, created_by, state, force, auto_approve, created_at, started_at,
+const BATCH_COLUMNS = `id, target_id, name, created_by, state, force, auto_approve, created_at, started_at,
   (SELECT json_build_object('id', w.id, 'name', w.name) FROM watched_folders w
     WHERE w.id = decomposition_batches.watch_id) AS watch`;
 
 const toBatch = (r: BatchRow): Batch => ({
   id: r.id,
   targetId: r.target_id,
+  name: r.name,
   createdBy: r.created_by,
   state: r.state,
   force: r.force,
@@ -387,6 +389,15 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
      FROM decomposition_items n JOIN decomposition_batches b ON b.id = n.batch_id
     WHERE n.redeliver_of = decomposition_items.id
     ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS rerun_at`;
+
+/**
+ * An item run again in place (Re-run, force-load, redeliver, reload): `queued` under the job in
+ * `$2`, its last run's detail, report, link, times, waits and review cleared.
+ */
+const RUN_AGAIN = `outcome = 'queued', job_id = $2, detail = NULL, report_key = NULL, link = NULL,
+  started_at = NULL, finished_at = NULL, waiting_since = NULL, waited_ms = 0, flag_count = NULL,
+  held_sha256 = NULL, held_entry = NULL, reviewed_by = NULL, reviewed_at = NULL,
+  review_note = NULL`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -1548,6 +1559,15 @@ export class PgRepo implements IngestionRepo {
     });
   }
 
+  async renameBatch(id: string, name: string | null): Promise<Batch | null> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `UPDATE decomposition_batches SET name = $2 WHERE id = $1 AND state <> 'discarded'
+       RETURNING ${BATCH_COLUMNS}`,
+      [id, name],
+    );
+    return rows[0] ? toBatch(rows[0]) : null;
+  }
+
   async discardBatch(id: string): Promise<DiscardBatchResult> {
     return this.inTransaction(async (client) => {
       const locked = await client.query<{ state: Batch['state'] }>(
@@ -1641,18 +1661,15 @@ export class PgRepo implements IngestionRepo {
   }
 
   async rerunItem({
-    batchId,
-    itemId,
     of,
     targetId,
-    createdBy,
     by,
     source,
     force = true,
     whileDetached,
   }: Rerun): Promise<RerunResult> {
     return this.inTransaction(async (client) => {
-      // The item rerun, locked: a repeated request waits here, then finds the first's rerun.
+      // The item rerun, locked: a repeated request waits here, then finds it queued.
       await client.query('SELECT 1 FROM decomposition_items WHERE id = $1 FOR UPDATE', [of.id]);
       const running = await client.query(
         `SELECT 1 FROM decomposition_items
@@ -1661,7 +1678,7 @@ export class PgRepo implements IngestionRepo {
       );
       if (running.rowCount) return { ok: false, reason: 'running' };
       if (whileDetached !== undefined) {
-        // Still the tombstone, held until the batch is in: the worker's create, which replaces
+        // Still the tombstone, held until the job is in: the worker's create, which replaces
         // it, waits on this row lock.
         const tombstone = await client.query(
           `SELECT 1 FROM decomposition_register WHERE id = $1 AND state = 'detached' FOR UPDATE`,
@@ -1669,12 +1686,6 @@ export class PgRepo implements IngestionRepo {
         );
         if (!tombstone.rowCount) return { ok: false, reason: 'not_detached' };
       }
-      const batch = await client.query<BatchRow>(
-        `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
-         VALUES ($1, $2, $4, $3, 'started', now())
-         RETURNING ${BATCH_COLUMNS}`,
-        [batchId, targetId, JSON.stringify(createdBy), force],
-      );
       const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
       const job = await client.query<{ id: string }>(
         `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
@@ -1682,30 +1693,34 @@ export class PgRepo implements IngestionRepo {
         [
           priority,
           maxAttempts,
-          JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force }),
+          JSON.stringify({
+            batchId: of.batchId,
+            itemId: of.id,
+            targetId,
+            sourceKey: of.sourceKey,
+            force,
+          }),
           by?.name ?? null,
           by?.userId ?? null,
         ],
       );
-      const item = await client.query<ItemRow>(
-        `INSERT INTO decomposition_items
-           (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key, job_id,
-            redeliver_of)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING ${ITEM_COLUMNS}`,
+      // Its register entry is kept: the run finds it by the source key, as any run does.
+      const { rows } = await client.query<ItemRow>(
+        `UPDATE decomposition_items
+            SET ${RUN_AGAIN}, filename = $3, content_sha256 = $4, size_bytes = $5,
+                object_key = $6
+          WHERE id = $1
+          RETURNING ${ITEM_COLUMNS}`,
         [
-          itemId,
-          batchId,
-          of.sourceKey,
+          of.id,
+          job.rows[0]!.id,
           source.filename,
           source.contentSha256,
           source.sizeBytes,
           source.objectKey,
-          job.rows[0]!.id,
-          of.id,
         ],
       );
-      return { ok: true, batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+      return { ok: true, item: toItem(rows[0]!) };
     });
   }
 
@@ -1719,7 +1734,9 @@ export class PgRepo implements IngestionRepo {
         target_id: string;
         force: boolean;
       }>(
-        `SELECT i.batch_id, i.source_key, i.outcome, b.target_id, b.force
+        `SELECT i.batch_id, i.source_key, i.outcome, b.target_id,
+                COALESCE((SELECT (j.params->>'force')::boolean FROM jobs j WHERE j.id = i.job_id),
+                         b.force) AS force
            FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
           WHERE i.id = $1 FOR UPDATE OF i`,
         [id],
@@ -1837,12 +1854,7 @@ export class PgRepo implements IngestionRepo {
         );
         // Its register entry is kept: the run finds it by the source key, as any run does.
         const { rows } = await client.query<ItemRow>(
-          `UPDATE decomposition_items
-              SET outcome = 'queued', job_id = $2, detail = NULL, report_key = NULL, link = NULL,
-                  started_at = NULL, finished_at = NULL, flag_count = NULL, held_sha256 = NULL,
-                  held_entry = NULL, reviewed_by = NULL, reviewed_at = NULL, review_note = NULL
-            WHERE id = $1
-            RETURNING ${ITEM_COLUMNS}`,
+          `UPDATE decomposition_items SET ${RUN_AGAIN} WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
           [of.id, job.rows[0]!.id],
         );
         made.push(toItem(rows[0]!));

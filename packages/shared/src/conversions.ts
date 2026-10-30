@@ -36,10 +36,15 @@ export const BatchCreatorSchema = z
   .object({ id: z.string().nullable(), name: z.string().nullable() })
   .strict();
 
+/** The longest name a batch takes. */
+export const BATCH_NAME_MAX = 120;
+
 export const BatchSchema = z
   .object({
     id: z.string().uuid(),
     targetId: TargetIdSchema,
+    /** What the batch is called (Rename on the batch list); null until it is named. */
+    name: z.string().min(1).max(BATCH_NAME_MAX).nullable(),
     createdBy: BatchCreatorSchema,
     state: BatchStateSchema,
     force: z.boolean(),
@@ -89,6 +94,11 @@ export const ItemSchema = z
     registerEntryId: z.string().uuid().nullable(),
     reportKey: z.string().nullable(),
     link: z.string().nullable(),
+    /**
+     * The item this one re-ran, from before force-load, redeliver and reload ran a document again
+     * in its own batch (owner's call 2026-10-30): such an item is the only one of a batch of one.
+     * Null for every item since.
+     */
     redeliverOf: z.string().uuid().nullable(),
     resolution: ItemResolutionSchema.nullable(),
     /**
@@ -137,8 +147,9 @@ export const ItemSchema = z
      */
     reloadable: z.boolean(),
     /**
-     * The batch this item was last run again in (an item naming it as `redeliverOf`: a re-run,
-     * force-load, redeliver or reload), and when that batch started; null when it never was.
+     * The batch this item was last run again in (an item naming it as `redeliverOf`: a
+     * force-load, redeliver or reload from before they ran a document again in its own batch),
+     * and when that batch started; null when it never was.
      * Re-running failed documents (`POST /api/conversions/batches/{id}/retry`) takes an item
      * only while this is null: a failed re-run is re-run from its own batch.
      */
@@ -341,6 +352,20 @@ export const RetryItemsSchema = z
   })
   .strict();
 export type RetryItems = z.infer<typeof RetryItemsSchema>;
+
+/**
+ * `PATCH /api/conversions/batches/:id`: the batch's new name, trimmed; empty or null clears it.
+ */
+export const RenameBatchSchema = z
+  .object({
+    name: z
+      .string()
+      .transform((n) => n.trim())
+      .pipe(z.string().max(BATCH_NAME_MAX))
+      .nullable(),
+  })
+  .strict();
+export type RenameBatch = z.infer<typeof RenameBatchSchema>;
 
 /**
  * One component a `changed_in_target` refusal lists (bridge contract `changedInTargetDetails`):
