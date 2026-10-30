@@ -125,6 +125,56 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.getConversionBatch).toHaveBeenCalledWith(BATCH_ID);
   });
 
+  it('adds documents to a started batch, naming what it could not add', async () => {
+    const items = [item('a.docx', 'created')];
+    const api = batchApi(items, {
+      getConversionBatch: vi.fn(async () => detailOf([...items])),
+      uploadConversionItem: vi.fn(async (_batchId: string, file: File, sourceKey: string) => {
+        if (sourceKey === 'bad.pdf')
+          throw new Error('the file is neither a Word document nor a PDF');
+        const added = item(sourceKey, 'queued');
+        items.push(added);
+        return added;
+      }),
+    });
+    view(api);
+    await findRow('a.docx');
+    const reads = vi.mocked(api.getConversionBatch).mock.calls.length;
+    const file = (name: string) => new File(['x'], name, { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText(/Add Documents/), [
+      file('new.pdf'),
+      file('a.docx'),
+      file('bad.pdf'),
+    ]);
+    const action = await screen.findByRole('alert', { name: 'Action' });
+    expect(action).toHaveTextContent('Added 1 document to the batch.');
+    expect(action).toHaveTextContent('a.docx: already in the batch');
+    expect(action).toHaveTextContent('bad.pdf: the file is neither a Word document nor a PDF');
+    expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => [c[0], c[2]])).toEqual([
+      [BATCH_ID, 'new.pdf'],
+      [BATCH_ID, 'bad.pdf'],
+    ]);
+    await findRow('new.pdf');
+    expect(vi.mocked(api.getConversionBatch).mock.calls.length).toBeGreaterThan(reads);
+  });
+
+  it("offers no Add Documents on a watched folder's batch", async () => {
+    view(
+      batchApi([], {
+        getConversionBatch: vi.fn(async () => ({
+          batch: conversionBatch({
+            id: BATCH_ID,
+            ...STARTED,
+            watch: { id: NEW_BATCH_ID, name: 'Inbox' },
+          }),
+          items: [item('a.docx', 'created')],
+        })),
+      }),
+    );
+    await findRow('a.docx');
+    expect(screen.queryByLabelText(/Add Documents/)).not.toBeInTheDocument();
+  });
+
   it('shows a held document as awaiting review, needing attention', async () => {
     view(
       batchApi([item('ok.pdf', 'created'), item('held.pdf', 'awaiting_review', { held: true })]),

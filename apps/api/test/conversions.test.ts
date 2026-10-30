@@ -351,7 +351,60 @@ describe('conversion batches', () => {
     // Started once; the Jobs list (document jobs) is not cluttered by them.
     expect((await start(c.app, batch.id)).statusCode).toBe(409);
     expect((await c.app.inject('/api/jobs')).json()).toEqual([]);
-    expect((await upload(c.app, batch.id, 'f/c.docx')).statusCode).toBe(409);
+  });
+
+  it('a started batch takes more documents and queues each at once (Add Documents)', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse(
+      (await newBatch(c.app, { targetId: 'manuals', force: true, autoApprove: true })).json(),
+    );
+    await upload(c.app, batch.id, 'f/a.docx');
+    expect((await start(c.app, batch.id)).statusCode).toBe(200);
+    const before = c.repo.backgroundJobs.filter((j) => j.task === 'decompose').length;
+
+    const res = await upload(c.app, batch.id, 'f/c.pdf');
+    expect(res.statusCode).toBe(201);
+    const added = ItemSchema.parse(res.json());
+    expect(added).toMatchObject({ batchId: batch.id, sourceKey: 'f/c.pdf', outcome: 'queued' });
+    const jobs = c.repo.backgroundJobs.filter((j) => j.task === 'decompose');
+    expect(jobs).toHaveLength(before + 1);
+    const job = jobs.at(-1)!;
+    expect(added.jobId).toBe(job.id);
+    expect(DecomposeParamsSchema.parse(job.params)).toEqual({
+      batchId: batch.id,
+      itemId: added.id,
+      targetId: 'manuals',
+      sourceKey: 'f/c.pdf',
+      force: true,
+      autoApprove: true,
+    });
+    const detail = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
+    );
+    expect(detail.batch.state).toBe('started');
+    expect(detail.items.map((i) => i.sourceKey)).toEqual(['f/a.docx', 'f/c.pdf']);
+
+    const again = await upload(c.app, batch.id, 'f/a.docx');
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toMatch(/already in the batch/);
+    expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(before + 1);
+  });
+
+  it("a watched folder's batch and a discarded batch take no uploads", async () => {
+    const c = await setup();
+    const watched = BatchSchema.parse((await newBatch(c.app)).json());
+    await upload(c.app, watched.id, 'a.docx');
+    await start(c.app, watched.id);
+    c.repo.markWatchBatch(watched.id, { id: randomUUID(), name: 'Inbox' });
+    const res = await upload(c.app, watched.id, 'b.docx');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/watched folder/);
+
+    const gone = BatchSchema.parse((await newBatch(c.app)).json());
+    await c.app.inject({ method: 'DELETE', url: `/api/conversions/batches/${gone.id}` });
+    const late = await upload(c.app, gone.id, 'a.docx');
+    expect(late.statusCode).toBe(409);
+    expect(late.json().error).toMatch(/discarded/);
   });
 
   it('operators may convert', async () => {

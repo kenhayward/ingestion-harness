@@ -175,6 +175,9 @@ def test_private_use_codes(cmap: str, codes: set[int]) -> None:
         (0xF06C, "wingdings", "●"),
         (0xF0A7, "wingdings", "▪"),
         (0xF0D8, "wingdings", "➢"),
+        (0xF0E2, "wingdings", "⬇"),
+        (0xF0E0, "wingdings", "➡"),
+        (0xF0F0, "wingdings", "⇨"),
     ],
 )
 def test_translation(code: int, family: str, char: str) -> None:

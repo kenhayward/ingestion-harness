@@ -8380,6 +8380,21 @@ button.evidence-chip[aria-expanded='true'] {
   min-width: 120px;
   min-height: 30px;
 }
+.batch-add-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  font-size: var(--ih-text-sm);
+  white-space: nowrap;
+}
+.batch-add input:focus-visible + .batch-add-button {
+  outline: 2px solid var(--ih-accent);
+}
+.batch-add-button[aria-disabled] {
+  opacity: 0.6;
+  pointer-events: none;
+}
 .batch-rerun {
   min-height: 30px;
   font-size: var(--ih-text-sm);
