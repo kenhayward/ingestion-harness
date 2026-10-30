@@ -384,6 +384,22 @@ def test_a_paragraph_that_is_not_a_lists_title_is_kept(body: str, kept: str) -> 
     assert check(doc, pkg, ctx) is None
 
 
+def test_a_figure_laid_out_as_a_table_is_referenced_on_both_sides() -> None:
+    body = (
+        heading("Methodology")
+        + para(run("Typed: Figure 2. Field: "), field("REF _Ref9 \\h", "Figure 2"), run("."))
+        + seq_caption("Figure", 2, "Summary").replace("<w:r>", bookmark("_Ref9") + "<w:r>", 1)
+        + tbl(tr(tc("Evaluate"), tc("Knowledge")), tr(tc("Assess"), tc("Risk")), cols=[1, 1])
+    )
+    doc, pkg, ctx = decompose(body)
+    (lead, table) = doc.sections[0].blocks
+    assert isinstance(table, Table) and table.caption == [Text(text="Summary")]
+    refs = [i for i in lead.inlines if isinstance(i, XRef)]  # type: ignore[union-attr]
+    assert [(r.target_id, r.text) for r in refs] == [(table.id, "Figure 2"), (table.id, "Figure 2")]
+    assert not [f for f in doc.report if f.code in ("xref_unmatched", "caption_not_found")]
+    assert check(doc, pkg, ctx) is None
+
+
 def test_text_moved_between_cells_fails() -> None:
     body = heading("Data") + tbl(tr(tc("A"), tc("")), tr(tc("B"), tc("C")), cols=[1, 1])
     doc, pkg, ctx = decompose(body)
