@@ -146,7 +146,10 @@ existing Word-to-PDF conversion, which stays as it is for extraction jobs. **[ca
   cropped to its bounds. A fallback picture stored in the file is used if the rendering fails.
   Rendered images are flagged. **[call]** A drawing's own text (in text boxes, SmartArt, chart
   titles and labels, and labelled shapes) is carried as the image's alt text, in reading order, so
-  it stays searchable and is counted by the fidelity check. **[owner]**
+  it stays searchable and is counted by the fidelity check. **[owner]** (2026-10-30) A shape that
+  shows nothing, with no fill, no line, no text, no picture and no alt text (an empty text box left
+  behind in a caption, found in use), is not a drawing: rendered it is a blank page. It is left out
+  on both sides of the check instead of failing the document. **[call]**
 - **EMF and WMF images** are converted to PNG at print resolution, with the original kept beside
   it, and flagged. **[call]**
 

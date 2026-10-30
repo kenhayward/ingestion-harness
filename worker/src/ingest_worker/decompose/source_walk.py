@@ -11,7 +11,7 @@ It applies only the documented drops and conversions: tracked changes accepted; 
 contents and lists of tables and figures, hidden text, comments, headers and footers, deleted
 text dropped; caption number prefixes (and the `SEQ` result in them) removed; note rows and notes
 tables as `marker: text`; symbols to Unicode, tabs to spaces; a drawing's text at its place as
-its image's alt text; images, note references, equations and cross-references (fields, internal
+its image's alt text, and a shape that shows nothing dropped; images, note references, equations and cross-references (fields, internal
 hyperlinks and typed references) as the tokens of the text form, resolved from the same
 bookmarks and caption numbers (the walk finds caption numbers and typed references with its own
 patterns, and only looks their targets up in the map). Pure readers are shared: styles (marks,

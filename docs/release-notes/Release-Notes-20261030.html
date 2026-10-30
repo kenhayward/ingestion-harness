@@ -162,7 +162,8 @@
       <p class="subtitle">
         Friday 30 October 2026: a document's conversion time leaves out its waits, so long and short
         documents compare: PR #371. Word tables whose header is merged down over an empty row are
-        delivered: PR #372.
+        delivered: PR #372. Word documents with an empty, invisible shape left in them convert: PR
+        #373.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -178,6 +179,10 @@
           <li>
             <a href="#merged-empty-row">Word tables with a header merged over an empty row</a>
             <span>— the empty row is left out, so the target takes the table</span>
+          </li>
+          <li>
+            <a href="#invisible-shape">Word documents with an invisible shape</a>
+            <span>— a shape that shows nothing is left out instead of failing the document</span>
           </li>
         </ul>
       </nav>
@@ -236,6 +241,22 @@
         now left out and the merged cells are one row shorter; the table reads the same, and the
         check against the source leaves the row out the same way. Re-run the document once this is
         deployed.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="invisible-shape">Word documents with an invisible shape</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/373">#373</a>
+      </p>
+      <p>
+        A Word document (32P23 Process Characterization) failed with
+        <em>drawing … could not be rendered</em>. Its Table 3 caption holds a tiny rectangle with no
+        fill, no outline and an empty text box, the kind of leftover Word keeps after an edit.
+        Rendered, it is a blank page, so there was no picture to keep and the document failed. A
+        shape like this, which shows nothing (no fill, no line, no text, no picture and no alt
+        text), is now left out, and the check against the source leaves it out the same way. A shape
+        with any fill, line, text or alt text is still rendered as before. Re-run the document once
+        this is deployed.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
