@@ -8,7 +8,7 @@ containers it doesn't know, so text the decomposer skips becomes a difference ra
 mirrored silence.
 
 It applies only the documented drops and conversions: tracked changes accepted; tables of
-contents and lists of tables and figures, hidden text, comments, headers and footers, deleted
+contents and lists of tables and figures, hidden text, tables Word shows nothing of, comments, headers and footers, deleted
 text dropped; caption number prefixes (and the `SEQ` result in them) removed; note rows and notes
 tables as `marker: text`; symbols to Unicode, tabs to spaces; a drawing's text at its place as
 its image's alt text, and a shape that shows nothing dropped; images, note references, equations and cross-references (fields, internal
@@ -51,6 +51,7 @@ from .tables import (
     cell_span,
     cells_of,
     count_slots,
+    hidden_table,
     note_markers,
     notes_table,
     row_gaps,
@@ -686,6 +687,8 @@ class _Walk:
         """The paragraphs and tables under `parent`, through any container."""
         for child in parent:
             tag = child.tag
+            if tag == f"{W}tbl" and hidden_table(child, self.ctx.styles):
+                continue
             if tag in (f"{W}p", f"{W}tbl"):
                 yield child
             elif tag in _NO_CONTENT or tag in _REJECTED:

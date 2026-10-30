@@ -137,7 +137,10 @@ existing Word-to-PDF conversion, which stays as it is for extraction jobs. **[ca
   - caption-number fields are dropped (the target numbers captions);
   - cross-reference fields become cross-references (§5.6).
 - **Content controls and form fields** are replaced by their content.
-- **Hidden text** is dropped.
+- **Hidden text** is dropped. (2026-10-30) A table Word shows nothing of, every row's end mark
+  hidden (`w:trPr/w:hidden`) and every paragraph mark and run in it hidden, is dropped whole on
+  both sides of the check, not kept as an empty grid (template guidance hidden from print, found
+  in use). **[call]**
 - **Headers and footers** are not content. Fields found in them become document properties
   (§5.8).
 - **Drawings** (shapes, groups, canvases, text boxes, SmartArt and native charts) are rendered to

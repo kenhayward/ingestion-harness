@@ -68,6 +68,7 @@ from .tables import (
     caption_key,
     caption_parts,
     flag_unrecognised_notes,
+    hidden_table,
     notes_of_table,
     notes_table,
     register_caption,
@@ -361,7 +362,8 @@ class _Flow:
     def element(self, el: Element) -> None:
         """A paragraph, table or bookmark of the flow."""
         if el.tag == f"{W}tbl":
-            self.table(el)
+            if not hidden_table(el, self.ctx.styles):
+                self.table(el)
         elif el.tag == _BOOKMARK_START:
             _pend_bookmark(el, self.ctx)
         elif el.tag in EMBEDDED_DOCUMENT_TAGS:

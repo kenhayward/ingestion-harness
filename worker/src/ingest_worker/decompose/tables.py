@@ -9,7 +9,8 @@ such a merge covers has no cell of its own and is left out, its merges one row s
 sink refuses an empty row); the fidelity check's source walk leaves it out the same way. A continue cell under no merge is a cell of its own; one that overlaps a merge above without lining up
 with it is ambiguous and refused. Slots a row leaves empty (`w:gridBefore`, `w:gridAfter`, or a
 row short of the grid) become empty cells, one per slot. A row deleted by a tracked change is
-dropped; tracked cell-level changes and legacy horizontal merges are refused.
+dropped; tracked cell-level changes and legacy horizontal merges are refused. A table Word shows
+nothing of (`hidden_table`) is no table at all, on both sides of the fidelity check.
 
 `source_grid` resolves the grid slot by slot from the raw XML, and `table_of` builds cells with
 their spans; the two share only the reading of single elements, so a mistake in either one's
@@ -108,6 +109,49 @@ def _int_val(el: Element | None, default: int) -> int:
         return int(el.get(f"{W}val", ""))
     except ValueError:
         return default
+
+
+def hidden_table(tbl: Element, styles: RunStyles) -> bool:
+    """Whether Word shows nothing of the table: every row's end mark is hidden
+    (`w:trPr/w:hidden`), and so is everything in it, every paragraph mark and every run.
+
+    Such a table (template guidance hidden from print, found in use) is left out: its text is
+    hidden text, which is dropped, and what would be left is an empty grid Word never shows.
+    """
+    rows = list(unwrapped(tbl, f"{W}tr"))
+    if not rows or not all(_on(tr.find(f"{W}trPr/{W}hidden")) for tr in rows):
+        return False
+    return all(_hidden_paragraph(p, styles) for p in tbl.iter(f"{W}p"))
+
+
+def _on(el: Element | None) -> bool:
+    return el is not None and el.get(f"{W}val", "1").lower() not in _OFF
+
+
+def _hidden_paragraph(p: Element, styles: RunStyles) -> bool:
+    style_el = p.find(f"{W}pPr/{W}pStyle")
+    style = style_el.get(f"{W}val") if style_el is not None else None
+    if not styles.resolve(style, None, p.find(f"{W}pPr/{W}rPr"))["hidden"]:
+        return False
+    return all(_hidden_run(r, style, styles) for r in _runs(p))
+
+
+def _runs(el: Element) -> Iterator[Element]:
+    """The runs under `el` that Word shows were they not hidden: not deleted or moved away."""
+    for child in el:
+        if child.tag == f"{W}r":
+            yield child
+        elif child.tag not in (f"{W}del", f"{W}moveFrom", f"{W}pPr"):
+            yield from _runs(child)
+
+
+def _hidden_run(run: Element, paragraph_style: str | None, styles: RunStyles) -> bool:
+    rpr = run.find(f"{W}rPr")
+    if all(child is rpr for child in run):
+        return True  # nothing to show
+    style_el = rpr.find(f"{W}rStyle") if rpr is not None else None
+    char_style = style_el.get(f"{W}val") if style_el is not None else None
+    return styles.resolve(paragraph_style, char_style, rpr)["hidden"]
 
 
 def rows_of(tbl: Element) -> list[Element]:
