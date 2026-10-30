@@ -87,6 +87,9 @@ So:
    (§12). The target must be one whose sink can take decomposed documents (§9). Every document in
    the batch goes to the one destination chosen on that target. **[owner]** (files or folders, S3
    later); **[call]** (one destination per batch: the source's own subfolders are not mirrored).
+   (owner, 2026-10-30) A started batch takes more files (**Add Documents**): each is queued at
+   once with the batch's own force and auto-approve, named by its file name, which must be new in
+   the batch. A watched folder's batch takes only what its folder sends. **[owner]**
 2. Each document is one job, decomposed by the worker (§4, §5).
 3. The decomposer runs its fidelity checks (§7). A document that fails them stops here.
 4. CT Studio checks the **register** (§8) to decide whether this is a new document, an update, a

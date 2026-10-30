@@ -80,6 +80,10 @@ export function ConversionHelp() {
         someone to check, such as an empty heading it left out or a table with no caption), the
         document in the target, and the actions that apply to it. At first the panel shows the first
         document needing attention. <strong>Find a document</strong> narrows the list by its path.{' '}
+        <strong>Add Documents</strong>, beside it, adds more Word documents or PDFs to the batch
+        while you work on it: each starts converting at once, with the batch&apos;s own settings,
+        and appears as Queued. A file whose name the batch already holds is not added (re-run or
+        reload that document instead). A watched folder&apos;s batch has no such button.{' '}
         <strong>For review</strong> shows only the PDFs awaiting review, with{' '}
         <strong>Review</strong> in the same place on each line. <strong>Needs attention</strong>{' '}
         shows only the documents someone should look at, <strong>Failed</strong> the ones that

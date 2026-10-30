@@ -71,6 +71,7 @@ const notOpen = (batch: Batch | null) =>
 /** The most batches `GET /api/conversions/batches` lists. */
 const LISTED_BATCHES = 100;
 const BAD_FILENAME = 'the file name holds a control character';
+const WATCHED_BATCH = "a watched folder's batch takes only the files its folder sends";
 const NO_ENTRY = 'the item has no register entry: it was never delivered, or was detached';
 const IN_FLIGHT = 'a delivery of this document, or a run of its file, is in flight';
 const RERUN_RUNNING = 'a rerun of this item is still running';
@@ -215,7 +216,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         tags: ['Conversions'],
         operationId: 'uploadConversionItem',
-        summary: 'Upload one file to an open batch',
+        summary: 'Upload one file to a batch',
         consumes: ['multipart/form-data'],
         description: md`
           One Word document (\`.docx\`) or PDF per request, so a large folder never meets the
@@ -231,6 +232,12 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           document nor a PDF (a \`.doc\`, a damaged file) is refused (415) and a Word document
           with tracked changes (422); the batch stays open for the others. A PDF is held for
           review once converted (\`awaiting_review\`).
+
+          An open batch keeps the file until it starts. A started batch (Add Documents) queues
+          it at once, as the start queued the others, with the batch's \`force\` and
+          \`autoApprove\`, the uploader as the job's creator; the item comes back \`queued\`
+          with its \`jobId\`. A watched folder's batch takes only the files its folder sends
+          (409), and a discarded batch nothing (409).
         `,
         params: BatchParams,
         body: multipart(
@@ -248,7 +255,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           400: error('A missing `file` part (the part must be named `file`) or `sourceKey`.'),
           404: NOT_FOUND,
           406: error('The request is not `multipart/form-data`.'),
-          409: error('The batch is not open, or the source key is already in it.'),
+          409: error(
+            "The batch was discarded or is a watched folder's, or the source key is already in it.",
+          ),
           413: error('The file is larger than the upload limit.'),
           415: error(`\`${NOT_WORD_OR_PDF}\`.`),
           422: res(
@@ -265,7 +274,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const batchId = req.params.id;
       const batch = UUID.safeParse(batchId).success ? await repo.getBatch(batchId) : null;
       if (!batch) return reply.code(404).send({ error: 'not found' });
-      if (batch.state !== 'open') return reply.code(409).send({ error: notOpen(batch) });
+      if (batch.state === 'discarded') return reply.code(409).send({ error: notOpen(batch) });
+      if (batch.state === 'started' && batch.watch) {
+        return reply.code(409).send({ error: WATCHED_BATCH });
+      }
 
       const file = await req.file({ limits: { files: 1, fileSize: maxUploadBytes } });
       if (!file || file.fieldname !== 'file') {
@@ -290,15 +302,18 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       // Whatever happens to the item (refused, or the database fails), no file is left behind.
       let added: AddItemResult;
       try {
-        added = await repo.addItem({
-          id,
-          batchId,
-          sourceKey,
-          filename: file.filename,
-          contentSha256: createHash('sha256').update(body).digest('hex'),
-          sizeBytes: body.length,
-          objectKey,
-        });
+        added = await repo.addItem(
+          {
+            id,
+            batchId,
+            sourceKey,
+            filename: file.filename,
+            contentSha256: createHash('sha256').update(body).digest('hex'),
+            sizeBytes: body.length,
+            objectKey,
+          },
+          creatorOf(req),
+        );
       } catch (err) {
         await store.delete(buckets.runs, objectKey);
         throw err;
@@ -309,6 +324,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       if (added.reason === 'not_open') {
         return reply.code(409).send({ error: notOpen(await repo.getBatch(batchId)) });
       }
+      if (added.reason === 'watched') return reply.code(409).send({ error: WATCHED_BATCH });
       return reply.code(409).send({ error: `${sourceKey} is already in the batch` });
     },
   );
