@@ -12576,11 +12576,11 @@
     "/api/conversions/batches/{id}/items": {
       "post": {
         "operationId": "uploadConversionItem",
-        "summary": "Upload one file to an open batch",
+        "summary": "Upload one file to a batch",
         "tags": [
           "Conversions"
         ],
-        "description": "One Word document (`.docx`) or PDF per request, so a large folder never meets the\nupload limit in one go. `sourceKey` names the document: the file's path in its folder, or\nits name. It must be new in the batch: the same source key twice is refused (409).\nSend it **before** the file part. A source key is relative and `/`-separated\n(at most 1024 characters; no control characters, backslashes, empty,\n`.` or `..` parts, or `/` at either end) and is stored in its NFC form.\nAnother is refused (422 `bad_source_key`), as is a file name with a control\ncharacter (422 `bad_filename`).\n\nThe file's bytes decide what it is, never its name. A file that is neither a Word\ndocument nor a PDF (a `.doc`, a damaged file) is refused (415) and a Word document\nwith tracked changes (422); the batch stays open for the others. A PDF is held for\nreview once converted (`awaiting_review`).",
+        "description": "One Word document (`.docx`) or PDF per request, so a large folder never meets the\nupload limit in one go. `sourceKey` names the document: the file's path in its folder, or\nits name. It must be new in the batch: the same source key twice is refused (409).\nSend it **before** the file part. A source key is relative and `/`-separated\n(at most 1024 characters; no control characters, backslashes, empty,\n`.` or `..` parts, or `/` at either end) and is stored in its NFC form.\nAnother is refused (422 `bad_source_key`), as is a file name with a control\ncharacter (422 `bad_filename`).\n\nThe file's bytes decide what it is, never its name. A file that is neither a Word\ndocument nor a PDF (a `.doc`, a damaged file) is refused (415) and a Word document\nwith tracked changes (422); the batch stays open for the others. A PDF is held for\nreview once converted (`awaiting_review`).\n\nAn open batch keeps the file until it starts. A started batch (Add Documents) queues\nit at once, as the start queued the others, with the batch's `force` and\n`autoApprove`, the uploader as the job's creator; the item comes back `queued`\nwith its `jobId`. A watched folder's batch takes only the files its folder sends\n(409), and a discarded batch nothing (409).",
         "requestBody": {
           "required": true,
           "content": {
@@ -13073,7 +13073,7 @@
             }
           },
           "409": {
-            "description": "The batch is not open, or the source key is already in it.",
+            "description": "The batch was discarded or is a watched folder's, or the source key is already in it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13098,7 +13098,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "The batch is not open, or the source key is already in it."
+                  "description": "The batch was discarded or is a watched folder's, or the source key is already in it."
                 }
               }
             }

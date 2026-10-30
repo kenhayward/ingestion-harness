@@ -1427,15 +1427,24 @@ export class PgRepo implements IngestionRepo {
     return rows[0] ? toItem(rows[0]) : null;
   }
 
-  async addItem(item: NewItem): Promise<AddItemResult> {
+  async addItem(item: NewItem, by: Creator | null = null): Promise<AddItemResult> {
     return this.inTransaction(async (client) => {
-      // Shared: uploads go in side by side, while a start or a discard waits for them.
-      const batch = await client.query<{ state: Batch['state'] }>(
-        'SELECT state FROM decomposition_batches WHERE id = $1 FOR SHARE',
+      // Shared: uploads go in side by side, while a start, a discard or a delete waits for them.
+      const batch = await client.query<{
+        state: Batch['state'];
+        watch_id: string | null;
+        target_id: string;
+        force: boolean;
+        auto_approve: boolean;
+      }>(
+        `SELECT state, watch_id, target_id, force, auto_approve
+           FROM decomposition_batches WHERE id = $1 FOR SHARE`,
         [item.batchId],
       );
-      if (!batch.rows[0]) return { ok: false, reason: 'missing' };
-      if (batch.rows[0].state !== 'open') return { ok: false, reason: 'not_open' };
+      const locked = batch.rows[0];
+      if (!locked) return { ok: false, reason: 'missing' };
+      if (locked.state === 'discarded') return { ok: false, reason: 'not_open' };
+      if (locked.state === 'started' && locked.watch_id) return { ok: false, reason: 'watched' };
       const { rows } = await client.query<ItemRow>(
         `INSERT INTO decomposition_items
            (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key)
@@ -1452,7 +1461,37 @@ export class PgRepo implements IngestionRepo {
           item.objectKey,
         ],
       );
-      return rows[0] ? { ok: true, item: toItem(rows[0]) } : { ok: false, reason: 'duplicate' };
+      if (!rows[0]) return { ok: false, reason: 'duplicate' };
+      if (locked.state === 'open') return { ok: true, item: toItem(rows[0]) };
+      // A started batch: the document is queued now, as the start queued the others.
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+         VALUES ('decompose', $1, $2,
+                 jsonb_build_object('batchId', $3::uuid, 'itemId', $4::uuid, 'targetId', $5::text,
+                                    'sourceKey', $6::text, 'force', $7::boolean)
+                   || CASE WHEN $8::boolean THEN '{"autoApprove": true}'::jsonb
+                           ELSE '{}'::jsonb END,
+                 $9, $10)
+         RETURNING id`,
+        [
+          priority,
+          maxAttempts,
+          item.batchId,
+          item.id,
+          locked.target_id,
+          item.sourceKey,
+          locked.force,
+          locked.auto_approve,
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      const queued = await client.query<ItemRow>(
+        `UPDATE decomposition_items SET job_id = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
+        [item.id, job.rows[0]!.id],
+      );
+      return { ok: true, item: toItem(queued.rows[0]!) };
     });
   }
 

@@ -1445,10 +1445,11 @@ export class MemoryRepo implements IngestionRepo {
     return item ? this.withResolution(item) : null;
   }
 
-  async addItem(item: NewItem): Promise<AddItemResult> {
+  async addItem(item: NewItem, by: Creator | null = null): Promise<AddItemResult> {
     const batch = this.conversionBatches.get(item.batchId);
     if (!batch) return { ok: false, reason: 'missing' };
-    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    if (batch.state === 'discarded') return { ok: false, reason: 'not_open' };
+    if (batch.state === 'started' && batch.watch) return { ok: false, reason: 'watched' };
     const items = [...this.conversionItems.values()];
     if (items.some((i) => i.batchId === item.batchId && i.sourceKey === item.sourceKey)) {
       return { ok: false, reason: 'duplicate' };
@@ -1468,6 +1469,21 @@ export class MemoryRepo implements IngestionRepo {
       ...NOT_WAITED,
     };
     this.conversionItems.set(row.id, row);
+    if (batch.state === 'started') {
+      row.jobId = this.queueBackground(
+        'decompose',
+        {
+          batchId: batch.id,
+          itemId: row.id,
+          targetId: batch.targetId,
+          sourceKey: row.sourceKey,
+          force: batch.force,
+          ...(batch.autoApprove ? { autoApprove: true } : {}),
+        },
+        by?.name ?? null,
+        by?.userId ?? null,
+      );
+    }
     return { ok: true, item: this.withResolution(row) };
   }
 

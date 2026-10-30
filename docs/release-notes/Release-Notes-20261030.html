@@ -165,6 +165,7 @@
         delivered: PR #372. Word documents with an empty, invisible shape left in them convert: PR
         #373. A Word table hidden in the document no longer arrives as an empty grid: PR #374. The
         titles of a removed table of contents and lists of tables and figures go with them: PR #375.
+        A started batch takes more documents with <em>Add Documents</em>: PR #376.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -173,6 +174,10 @@
           <li>
             <a href="#working-time">A document's time leaves out its waits</a>
             <span>— the time to convert and deliver it, not the time it waited for its turn</span>
+          </li>
+          <li>
+            <a href="#add-documents">Add Documents to a batch</a>
+            <span>— add files to a batch you are already working on</span>
           </li>
         </ul>
         <h4>Fixes</h4>
@@ -235,6 +240,31 @@
           once its delivery starts.
         </li>
         <li>Documents converted before this change have no waits recorded, so their times stay.</li>
+      </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="add-documents">Add Documents to a batch</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/376">#376</a>
+      </p>
+      <p>
+        While you work through a batch, correcting failures and checking progress, you can now add
+        more documents to it. <strong>Add Documents</strong>, beside <em>Find a document</em>, picks
+        one or more Word documents or PDFs; each is uploaded and starts converting at once, with the
+        batch's own <em>Force-load</em> and <em>Auto approve</em> settings, and appears in the list
+        as Queued.
+      </p>
+      <ul>
+        <li>
+          Each document is named by its file name. A name the batch already holds is not added
+          (re-run or reload that document instead), and the message names any file that was not
+          added and why; the others still go.
+        </li>
+        <li>A watched folder's batch takes only what its folder sends, so it has no button.</li>
+        <li>
+          For integrations: <code>POST /api/conversions/batches/{id}/items</code> now takes a file
+          for a started batch too, and queues it at once.
+        </li>
       </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
