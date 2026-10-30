@@ -294,6 +294,51 @@ def test_a_row_of_only_continue_cells_is_left_out_on_both_sides() -> None:
     assert check(doc, pkg, ctx) is None
 
 
+HIDDEN = "<w:vanish/>"
+
+
+def hidden_para(text: str, *, mark: str = HIDDEN, props: str = HIDDEN) -> str:
+    return f"<w:p><w:pPr><w:rPr>{mark}</w:rPr></w:pPr>{run(text, props)}</w:p>"
+
+
+def hidden_rows_table(*rows: tuple[str, str], marker: str = "<w:hidden/>") -> str:
+    return tbl(*(tr(cell(a), cell(b), trpr=marker) for a, b in rows), cols=[1, 1])
+
+
+def test_a_table_word_shows_nothing_of_is_left_out_on_both_sides() -> None:
+    """Template guidance: every row's end mark hidden, and all its text and marks too."""
+    body = (
+        heading("Summary")
+        + para(run("Characterized."))
+        + hidden_para("Verification of Data")
+        + hidden_rows_table(
+            (hidden_para("Data"), hidden_para("Source")),
+            (hidden_para(""), "<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr></w:p>"),
+        )
+    )
+    doc, pkg, ctx = decompose(body)
+    assert [b.kind for b in doc.sections[0].blocks] == ["paragraph"]
+    assert check(doc, pkg, ctx) is None
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        hidden_rows_table((hidden_para("Data"), hidden_para("Shown", props=""))),
+        hidden_rows_table((hidden_para("Data"), hidden_para("Source", mark=""))),
+        hidden_rows_table((hidden_para("Data"), hidden_para("Source")), marker=""),
+        hidden_rows_table(
+            (hidden_para("Data"), hidden_para("Source")), marker='<w:hidden w:val="0"/>'
+        ),
+    ],
+    ids=["shown-run", "shown-mark", "row-shown", "row-marker-off"],
+)
+def test_a_table_with_anything_shown_is_kept(table: str) -> None:
+    doc, pkg, ctx = decompose(heading("Summary") + table)
+    assert [b.kind for b in doc.sections[0].blocks] == ["table"]
+    assert check(doc, pkg, ctx) is None
+
+
 def test_text_moved_between_cells_fails() -> None:
     body = heading("Data") + tbl(tr(tc("A"), tc("")), tr(tc("B"), tc("C")), cols=[1, 1])
     doc, pkg, ctx = decompose(body)
