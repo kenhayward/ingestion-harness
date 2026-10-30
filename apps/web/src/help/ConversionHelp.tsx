@@ -61,11 +61,12 @@ export function ConversionHelp() {
         A batch opens with where it went, who started it, how long it took and whether it was
         force-loaded, then its totals: documents, created or updated, already loaded, needing
         attention and failed, with a bar of the outcomes. Below, each document is one line: its
-        state, its path, its outcome, a line saying more, how long it took (or has run so far),{' '}
-        <strong>Open</strong> for the document in the target once it is there, and a{' '}
-        <strong>⋯</strong> menu. The lines are as many as fit the window, with{' '}
-        <strong>‹ Prev</strong> and <strong>Next ›</strong> between pages. While any document is
-        still queued, decomposing, waiting to deliver or delivering, the lines refresh every few
+        state, its path, its outcome, a line saying more, how long it took to convert and deliver
+        (or has so far; waits for a lane or a review are left out and shown as{' '}
+        <strong>Waited</strong> in its panel), <strong>Open</strong> for the document in the target
+        once it is there, and a <strong>⋯</strong> menu. The lines are as many as fit the window,
+        with <strong>‹ Prev</strong> and <strong>Next ›</strong> between pages. While any document
+        is still queued, decomposing, waiting to deliver or delivering, the lines refresh every few
         seconds.
       </p>
       <p>

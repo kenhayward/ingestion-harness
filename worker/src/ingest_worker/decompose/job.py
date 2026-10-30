@@ -451,6 +451,7 @@ def _from_wait(
         and deps.store.get_optional(deps.runs_bucket, manifest_key) is None
     ):
         return Complete(note="delivery already handed over")
+    deps.items.resume(item.id)  # the wait for a lane is over: its time is not working time
     deps.queue.event(job.id, "info", "lane free: delivering", {"itemId": item.id})
 
     def deliver() -> Outcome:

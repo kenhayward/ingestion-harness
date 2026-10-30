@@ -28,6 +28,7 @@ import {
   isFailed,
   isUnfinished,
   itemTiming,
+  itemWait,
   needsAttention,
   spokenDuration,
   spokenSize,
@@ -789,6 +790,7 @@ function DocumentPanel({
 }: RowProps) {
   const link = webLink(item.link);
   const timing = itemTiming(item, Date.now());
+  const wait = itemWait(item, Date.now());
   const folder = folderOf(item.sourceKey);
   const rejected = item.outcome === 'rejected';
   const why = rejected
@@ -852,6 +854,12 @@ function DocumentPanel({
           <>
             <dt>Running</dt>
             <dd>{timing}</dd>
+          </>
+        )}
+        {wait && (
+          <>
+            <dt>Waited</dt>
+            <dd title="Waiting for a lane or a review: left out of the time it took">{wait}</dd>
           </>
         )}
         {flagsOf(item) && (

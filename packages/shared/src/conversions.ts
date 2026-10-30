@@ -152,6 +152,15 @@ export const ItemSchema = z
     startedAt: z.string().nullable(),
     finishedAt: z.string().nullable(),
     /**
+     * The item's waits between decomposing and delivering (a free lane of its tenant, a review
+     * of a held PDF; migration 202610300930), which its working time leaves out: since when it
+     * waits now (null: it doesn't), and how long its waits already over took, in milliseconds.
+     * A wait never ended (a rejected hold) lasts until `finishedAt`. Items converted before
+     * have no waits recorded.
+     */
+    waitingSince: z.string().nullable(),
+    waitedMs: z.number().int().nonnegative(),
+    /**
      * How many flags the decomposition report holds (null until the worker wrote the report, and
      * for items converted before migration 202610271200): a Word row says it, and a PDF is held
      * for review whatever it is.

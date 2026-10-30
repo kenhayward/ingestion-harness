@@ -12809,6 +12809,16 @@
                         "null"
                       ]
                     },
+                    "waitingSince": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "waitedMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "flagCount": {
                       "anyOf": [
                         {
@@ -12891,6 +12901,8 @@
                     "rerunAt",
                     "startedAt",
                     "finishedAt",
+                    "waitingSince",
+                    "waitedMs",
                     "flagCount",
                     "held",
                     "reviewedBy",
@@ -14083,6 +14095,16 @@
                               "null"
                             ]
                           },
+                          "waitingSince": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "waitedMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "flagCount": {
                             "anyOf": [
                               {
@@ -14165,6 +14187,8 @@
                           "rerunAt",
                           "startedAt",
                           "finishedAt",
+                          "waitingSince",
+                          "waitedMs",
                           "flagCount",
                           "held",
                           "reviewedBy",
@@ -14807,6 +14831,16 @@
                               "null"
                             ]
                           },
+                          "waitingSince": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "waitedMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "flagCount": {
                             "anyOf": [
                               {
@@ -14889,6 +14923,8 @@
                           "rerunAt",
                           "startedAt",
                           "finishedAt",
+                          "waitingSince",
+                          "waitedMs",
                           "flagCount",
                           "held",
                           "reviewedBy",
@@ -15570,6 +15606,16 @@
                             "null"
                           ]
                         },
+                        "waitingSince": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "waitedMs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
                         "flagCount": {
                           "anyOf": [
                             {
@@ -15652,6 +15698,8 @@
                         "rerunAt",
                         "startedAt",
                         "finishedAt",
+                        "waitingSince",
+                        "waitedMs",
                         "flagCount",
                         "held",
                         "reviewedBy",
@@ -16968,6 +17016,16 @@
                         "null"
                       ]
                     },
+                    "waitingSince": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "waitedMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "flagCount": {
                       "anyOf": [
                         {
@@ -17050,6 +17108,8 @@
                     "rerunAt",
                     "startedAt",
                     "finishedAt",
+                    "waitingSince",
+                    "waitedMs",
                     "flagCount",
                     "held",
                     "reviewedBy",
@@ -17585,6 +17645,16 @@
                               "null"
                             ]
                           },
+                          "waitingSince": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "waitedMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "flagCount": {
                             "anyOf": [
                               {
@@ -17667,6 +17737,8 @@
                           "rerunAt",
                           "startedAt",
                           "finishedAt",
+                          "waitingSince",
+                          "waitedMs",
                           "flagCount",
                           "held",
                           "reviewedBy",
@@ -18236,6 +18308,16 @@
                               "null"
                             ]
                           },
+                          "waitingSince": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "waitedMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "flagCount": {
                             "anyOf": [
                               {
@@ -18318,6 +18400,8 @@
                           "rerunAt",
                           "startedAt",
                           "finishedAt",
+                          "waitingSince",
+                          "waitedMs",
                           "flagCount",
                           "held",
                           "reviewedBy",
@@ -18864,6 +18948,16 @@
                         "null"
                       ]
                     },
+                    "waitingSince": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "waitedMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "flagCount": {
                       "anyOf": [
                         {
@@ -18946,6 +19040,8 @@
                     "rerunAt",
                     "startedAt",
                     "finishedAt",
+                    "waitingSince",
+                    "waitedMs",
                     "flagCount",
                     "held",
                     "reviewedBy",
@@ -19452,6 +19548,16 @@
                               "null"
                             ]
                           },
+                          "waitingSince": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "waitedMs": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
                           "flagCount": {
                             "anyOf": [
                               {
@@ -19534,6 +19640,8 @@
                           "rerunAt",
                           "startedAt",
                           "finishedAt",
+                          "waitingSince",
+                          "waitedMs",
                           "flagCount",
                           "held",
                           "reviewedBy",
@@ -20218,6 +20326,16 @@
                             "null"
                           ]
                         },
+                        "waitingSince": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "waitedMs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
                         "flagCount": {
                           "anyOf": [
                             {
@@ -20300,6 +20418,8 @@
                         "rerunAt",
                         "startedAt",
                         "finishedAt",
+                        "waitingSince",
+                        "waitedMs",
                         "flagCount",
                         "held",
                         "reviewedBy",

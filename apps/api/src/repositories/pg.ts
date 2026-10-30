@@ -296,6 +296,9 @@ interface ItemRow {
   redeliver_of: string | null;
   started_at: Date | null;
   finished_at: Date | null;
+  waiting_since: Date | null;
+  /** bigint: node-postgres reads it as a string. */
+  waited_ms: string;
   flag_count: number | null;
   held: boolean;
   reviewed_by: Item['reviewedBy'];
@@ -322,7 +325,7 @@ interface ItemRow {
  */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
   job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of, started_at,
-  finished_at, flag_count,
+  finished_at, waiting_since, waited_ms, flag_count,
   (decomposition_items.outcome = 'awaiting_review' AND held_sha256 IS NOT NULL) AS held,
   reviewed_by, reviewed_at, review_note,
   CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
@@ -411,6 +414,8 @@ const toItem = (r: ItemRow): Item => ({
   rerunAt: r.rerun_at?.toISOString() ?? null,
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
+  waitingSince: r.waiting_since?.toISOString() ?? null,
+  waitedMs: Number(r.waited_ms),
   flagCount: r.flag_count,
   held: r.held,
   reviewedBy: r.reviewed_by,

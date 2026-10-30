@@ -88,21 +88,40 @@ export function spokenDuration(seconds: number): string {
 }
 
 /**
- * How long a document took to convert ("took 1 min 12 s", from `startedAt` to `finishedAt`), or
- * how long an unfinished one has run so far ("running for 40 s"); null before it started, and
- * for a document converted before CT Studio timed them.
+ * How long the item has waited between decomposing and delivering (a free lane, a review), up
+ * to `end`: its waits already over and the one under way.
+ */
+export function waitedMs(item: Pick<Item, 'waitingSince' | 'waitedMs'>, end: number): number {
+  const open = item.waitingSince ? Math.max(0, end - Date.parse(item.waitingSince)) : 0;
+  return item.waitedMs + open;
+}
+
+/**
+ * How long a document took to convert ("took 1 min 12 s"), or how long an unfinished one has run
+ * so far ("running for 40 s", "40 s so far" while it waits): from `startedAt` to `finishedAt`
+ * (or now), less its waits for a lane or a review, so documents compare by the work they took.
+ * Null before it started, and for a document converted before CT Studio timed them.
  */
 export function itemTiming(
-  item: Pick<Item, 'outcome' | 'startedAt' | 'finishedAt'>,
+  item: Pick<Item, 'outcome' | 'startedAt' | 'finishedAt' | 'waitingSince' | 'waitedMs'>,
   now: number,
 ): string | null {
   if (!item.startedAt) return null;
-  const start = Date.parse(item.startedAt);
-  if (item.finishedAt)
-    return `took ${spokenDuration((Date.parse(item.finishedAt) - start) / 1000)}`;
-  return UNFINISHED.includes(item.outcome)
-    ? `running for ${spokenDuration((now - start) / 1000)}`
-    : null;
+  const end = item.finishedAt ? Date.parse(item.finishedAt) : now;
+  const worked = spokenDuration((end - Date.parse(item.startedAt) - waitedMs(item, end)) / 1000);
+  if (item.finishedAt) return `took ${worked}`;
+  if (item.waitingSince) return `${worked} so far`;
+  return UNFINISHED.includes(item.outcome) ? `running for ${worked}` : null;
+}
+
+/** The waits `itemTiming` leaves out ("5 min, not counted"); null under a second. */
+export function itemWait(
+  item: Pick<Item, 'startedAt' | 'finishedAt' | 'waitingSince' | 'waitedMs'>,
+  now: number,
+): string | null {
+  if (!item.startedAt) return null;
+  const ms = waitedMs(item, item.finishedAt ? Date.parse(item.finishedAt) : now);
+  return ms >= 1000 ? `${spokenDuration(ms / 1000)}, not counted` : null;
 }
 
 /** The glyph a row shows for its outcome (the label names it). */

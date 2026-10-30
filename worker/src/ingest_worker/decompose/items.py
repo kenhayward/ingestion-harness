@@ -20,6 +20,12 @@ like deciding, moves only an undecided item. `rejected` is the reviewer's, writt
 An item records when it started (`started_at`, migration 202610261331: its first move to
 `decomposing`, kept on a retry) and finished (`finished_at`: a final outcome the worker decides;
 the API's settle sets it for a delivered or refused one).
+
+It also records the time it spent waiting between its decomposition and its delivery (migration
+202610300930), so its working time leaves the wait out: `wait` and `hold` set `waiting_since`;
+the run that carries it on (`resume` in the dispatcher's `waited` run, `start` of an approved
+hold's run) adds the wait to `waited_ms` and clears it. A wait never ended (a rejected hold, a
+waiting item failed) lasts until `finished_at`.
 """
 
 from __future__ import annotations
@@ -103,12 +109,21 @@ class ConversionItem:
     held_entry: dict[str, Any] | None = None
     #: How many flags the report holds.
     flag_count: int | None = None
+    #: The wait under way between decomposing and delivering (a lane, a review), if any.
+    waiting_since: datetime | None = None
+    #: The waits already over, in milliseconds.
+    waited_ms: int = 0
 
 
 class ItemStore(Protocol):
     def start(self, item_id: str) -> ConversionItem | None:
         """The item as it was (None: no such item); moved to `decomposing` when it was still
-        `queued` or `decomposing`, recording when it started unless a try already did."""
+        `queued` or `decomposing`, recording when it started unless a try already did, and
+        ending the wait of an approved hold that left it queued."""
+        ...
+
+    def resume(self, item_id: str) -> None:
+        """End the item's wait for a lane, if one is under way: its waited run has begun."""
         ...
 
     def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
@@ -125,12 +140,13 @@ class ItemStore(Protocol):
         """Hold the item for review: `awaiting_review`, recording the held files' sha-256 and the
         register entry approval would write, and `detail` (the words the check could not prove).
         Only while the item is still `queued` or `decomposing`; False when it had moved on. A
-        held item is not finished."""
+        held item is not finished, and waits from now until its approved run starts."""
         ...
 
     def wait(self, item_id: str, held_sha256: str, held_entry: dict[str, Any] | None) -> bool:
         """The item waits for a lane: `waiting_to_deliver`, recording its stored decomposition's
-        sha-256 and the register entry it was decided against (if any). Only while the item is
+        sha-256, the register entry it was decided against (if any) and when it began waiting.
+        Only while the item is
         still `queued` or `decomposing`; False when it had moved on. A waiting item is not
         finished."""
         ...
@@ -159,10 +175,25 @@ class MemoryItemStore:
         with self._lock:
             item = self.items.get(item_id)
             if item is not None and item.outcome in UNDECIDED:
-                self.items[item_id] = replace(
-                    item, outcome="decomposing", started_at=item.started_at or self._clock()
+                self.items[item_id] = self._ended(
+                    replace(
+                        item, outcome="decomposing", started_at=item.started_at or self._clock()
+                    )
                 )
             return item
+
+    def resume(self, item_id: str) -> None:
+        with self._lock:
+            item = self.items.get(item_id)
+            if item is not None:
+                self.items[item_id] = self._ended(item)
+
+    def _ended(self, item: ConversionItem) -> ConversionItem:
+        """The item with its wait, if one is under way, added to what it waited."""
+        if item.waiting_since is None:
+            return item
+        waited = int((self._clock() - item.waiting_since).total_seconds() * 1000)
+        return replace(item, waiting_since=None, waited_ms=item.waited_ms + max(0, waited))
 
     def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
         with self._lock:
@@ -187,6 +218,7 @@ class MemoryItemStore:
                 held_sha256=held_sha256,
                 held_entry=held_entry,
                 detail=detail,
+                waiting_since=self._clock(),
             )
             return True
 
@@ -196,7 +228,11 @@ class MemoryItemStore:
             if item is None or item.outcome not in UNDECIDED:
                 return False
             self.items[item_id] = replace(
-                item, outcome="waiting_to_deliver", held_sha256=held_sha256, held_entry=held_entry
+                item,
+                outcome="waiting_to_deliver",
+                held_sha256=held_sha256,
+                held_entry=held_entry,
+                waiting_since=self._clock(),
             )
             return True
 
@@ -215,6 +251,12 @@ class MemoryItemStore:
             return True
 
 
+#: An UPDATE's assignments adding the wait under way (if any) to what the item waited.
+_END_WAIT = """waited_ms = waited_ms + COALESCE(
+                  GREATEST(0, (extract(epoch FROM now() - waiting_since) * 1000)::bigint), 0),
+              waiting_since = NULL"""
+
+
 class PgItemStore:
     """The items on Postgres, on one autocommit connection. An item id that is not a UUID names
     no item, as an unknown one does."""
@@ -229,7 +271,7 @@ class PgItemStore:
             row = self._conn.execute(
                 """SELECT id::text, batch_id::text, source_key, object_key, outcome, detail,
                           register_entry_id::text, report_key, started_at, finished_at,
-                          held_sha256, held_entry, flag_count
+                          held_sha256, held_entry, flag_count, waiting_since, waited_ms
                      FROM decomposition_items WHERE id = %s FOR UPDATE""",
                 (item_id,),
             ).fetchone()
@@ -238,12 +280,22 @@ class PgItemStore:
             item = ConversionItem(*row)
             if item.outcome in UNDECIDED:
                 self._conn.execute(
-                    """UPDATE decomposition_items
-                          SET outcome = 'decomposing', started_at = COALESCE(started_at, now())
+                    f"""UPDATE decomposition_items
+                          SET outcome = 'decomposing', started_at = COALESCE(started_at, now()),
+                              {_END_WAIT}
                         WHERE id = %s""",
                     (item_id,),
                 )
             return item
+
+    def resume(self, item_id: str) -> None:
+        if not is_uuid(item_id):
+            return
+        self._conn.execute(
+            f"""UPDATE decomposition_items SET {_END_WAIT}
+                 WHERE id = %s AND waiting_since IS NOT NULL""",
+            (item_id,),
+        )
 
     def set_report(self, item_id: str, report_key: str, flag_count: int) -> None:
         if not is_uuid(item_id):
@@ -265,7 +317,7 @@ class PgItemStore:
         cur = self._conn.execute(
             """UPDATE decomposition_items
                   SET outcome = 'awaiting_review', held_sha256 = %s, held_entry = %s,
-                      detail = %s
+                      detail = %s, waiting_since = now()
                 WHERE id = %s AND outcome IN ('queued', 'decomposing')""",
             (held_sha256, Jsonb(held_entry) if held_entry is not None else None, detail, item_id),
         )
@@ -276,7 +328,8 @@ class PgItemStore:
             return False
         cur = self._conn.execute(
             """UPDATE decomposition_items
-                  SET outcome = 'waiting_to_deliver', held_sha256 = %s, held_entry = %s
+                  SET outcome = 'waiting_to_deliver', held_sha256 = %s, held_entry = %s,
+                      waiting_since = now()
                 WHERE id = %s AND outcome IN ('decomposing', 'queued')""",
             (held_sha256, Jsonb(held_entry) if held_entry is not None else None, item_id),
         )
