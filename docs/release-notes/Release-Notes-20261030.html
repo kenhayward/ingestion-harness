@@ -161,7 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Friday 30 October 2026: a document's conversion time leaves out its waits, so long and short
-        documents compare: PR #371.
+        documents compare: PR #371. Word tables whose header is merged down over an empty row are
+        delivered: PR #372.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -170,6 +171,13 @@
           <li>
             <a href="#working-time">A document's time leaves out its waits</a>
             <span>— the time to convert and deliver it, not the time it waited for its turn</span>
+          </li>
+        </ul>
+        <h4>Fixes</h4>
+        <ul>
+          <li>
+            <a href="#merged-empty-row">Word tables with a header merged over an empty row</a>
+            <span>— the empty row is left out, so the target takes the table</span>
           </li>
         </ul>
       </nav>
@@ -214,6 +222,21 @@
         </li>
         <li>Documents converted before this change have no waits recorded, so their times stay.</li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="fixes">Fixes</h2>
+      <h3 id="merged-empty-row">Word tables with a header merged over an empty row</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/372">#372</a>
+      </p>
+      <p>
+        A Word document (TPR-003408) was refused on delivery with <em>row 2 has no cells</em>. Its
+        Table 7 has a header row whose every cell is merged down over a second row, so that row
+        holds nothing of its own: Word shows it only as extra height in the header. The empty row is
+        now left out and the merged cells are one row shorter; the table reads the same, and the
+        check against the source leaves the row out the same way. Re-run the document once this is
+        deployed.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
   </body>

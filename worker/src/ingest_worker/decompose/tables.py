@@ -4,7 +4,9 @@ The grid is Word's own. `w:tblGrid/w:gridCol` gives the columns (widened if a ro
 `w:gridSpan` a cell's column span, and `w:vMerge` its row span: a `restart` cell absorbs the
 `continue` cells (`w:vMerge` with no value, or `continue`) directly below it that start in the
 same grid column with the same column span. Their own content is left out: Word shows only the
-restart cell's, and some generators repeat it in every continue cell. A continue cell under no merge is a cell of its own; one that overlaps a merge above without lining up
+restart cell's, and some generators repeat it in every continue cell. A row whose every slot
+such a merge covers has no cell of its own and is left out, its merges one row shorter (a
+sink refuses an empty row); the fidelity check's source walk leaves it out the same way. A continue cell under no merge is a cell of its own; one that overlaps a merge above without lining up
 with it is ambiguous and refused. Slots a row leaves empty (`w:gridBefore`, `w:gridAfter`, or a
 row short of the grid) become empty cells, one per slot. A row deleted by a tracked change is
 dropped; tracked cell-level changes and legacy horizontal merges are refused.
@@ -335,6 +337,18 @@ def _resolve_merges(layouts: list[list[_Entry]], table_id: str) -> None:
         heads = nxt
 
 
+def _drop_covered_rows(layouts: list[list[_Entry]]) -> set[int]:
+    """The rows whose every slot a merge from above covers, with those merges shortened.
+
+    Such a row has no cell of its own, which a sink refuses; Word shows it only as height.
+    """
+    covered = {r for r, row in enumerate(layouts) if all(e.head is not None for e in row)}
+    for r in covered:
+        for head in {id(e.head): e.head for e in layouts[r] if e.head is not None}.values():
+            head.row_span -= 1
+    return covered
+
+
 def _h_align(tc: Element) -> HAlign:
     first = next(unwrapped(tc, f"{W}p"), None)
     jc = first.find(f"{W}pPr/{W}jc") if first is not None else None
@@ -400,9 +414,12 @@ def table_of(
             if entry.tc is not None and entry.head is None:
                 entry.blocks.extend(walk_blocks(entry.tc, child_id(id, "cell", ordinal)))
 
-    header_rows = 0
-    while header_rows < len(kept) and _is_header(kept[header_rows]):
-        header_rows += 1
+    headers = 0
+    while headers < len(kept) and _is_header(kept[headers]):
+        headers += 1
+    covered = _drop_covered_rows(layouts)
+    header_rows = headers - sum(1 for r in covered if r < headers)
+    layouts = [row for r, row in enumerate(layouts) if r not in covered]
 
     built: list[Row] = []
     for r, row in enumerate(layouts):

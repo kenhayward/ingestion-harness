@@ -280,6 +280,20 @@ def test_wrong_merge_fails() -> None:
     assert failed.value.at == table.id
 
 
+def test_a_row_of_only_continue_cells_is_left_out_on_both_sides() -> None:
+    restart, cont = '<w:vMerge w:val="restart"/>', "<w:vMerge/>"
+    body = heading("Data") + tbl(
+        tr(cell(para(run("A")), props=restart), cell(para(run("B")), props=restart)),
+        tr(cell(para(), props=cont), cell(para(), props=cont)),
+        tr(tc("C"), tc("D")),
+        cols=[1, 1],
+    )
+    doc, pkg, ctx = decompose(body)
+    (table,) = doc.sections[0].blocks
+    assert isinstance(table, Table) and len(table.rows) == 2
+    assert check(doc, pkg, ctx) is None
+
+
 def test_text_moved_between_cells_fails() -> None:
     body = heading("Data") + tbl(tr(tc("A"), tc("")), tr(tc("B"), tc("C")), cols=[1, 1])
     doc, pkg, ctx = decompose(body)
