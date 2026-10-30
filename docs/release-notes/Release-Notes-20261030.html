@@ -165,6 +165,7 @@
         delivered: PR #372. Word documents with an empty, invisible shape left in them convert: PR
         #373. A Word table hidden in the document no longer arrives as an empty grid: PR #374. The
         titles of a removed table of contents and lists of tables and figures go with them: PR #375.
+        Wingdings arrows in Word documents arrive as arrows, not as unknown characters: PR #377.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -192,6 +193,10 @@
           <li>
             <a href="#list-titles">Titles of a removed table of contents or list</a>
             <span>— "Table of Contents", "List of Tables" and "List of Figures" go too</span>
+          </li>
+          <li>
+            <a href="#wingdings-arrows">Wingdings arrows in Word documents</a>
+            <span>— arrows drawn with Wingdings arrive as arrows, not as �</span>
           </li>
         </ul>
       </nav>
@@ -298,6 +303,20 @@
         <em>Table of Contents</em>, <em>List of Tables</em>, <em>List of Figures</em>, in any case,
         with or without a colon) or uses Word's own <em>TOC Heading</em> style. Any other paragraph
         before a list stays, and so does a title made a heading. Re-run the document once this is
+        deployed.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="wingdings-arrows">Wingdings arrows in Word documents</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/377">#377</a>
+      </p>
+      <p>
+        The same document's Figure 2, a flow drawn as a table, puts a Wingdings down arrow between
+        its steps. Only the Wingdings characters used for bullets and check boxes were known, so
+        each arrow arrived as <em>�</em>, with a warning in the report. The Wingdings arrows (solid,
+        outlined and diagonal, in every direction) now arrive as the matching common arrow (⬇, ⇨, ⬉
+        and so on), in Word documents and in PDFs made from them. Re-run the document once this is
         deployed.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>

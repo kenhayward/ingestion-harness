@@ -100,6 +100,14 @@ def test_symbol_font_characters() -> None:
     assert "F001" in ctx.flags[0].message.upper()
 
 
+def test_wingdings_arrows_between_steps_are_arrows() -> None:
+    """A flow drawn in a table: Wingdings down arrows between its steps."""
+    body = '<w:p><w:r><w:sym w:font="Wingdings" w:char="F0E2"/></w:r></w:p>'
+    inl, ctx = _inlines(body)
+    assert plain_text(inl) == "⬇"
+    assert ctx.flags == []
+
+
 def test_symbol_font_text_and_private_use() -> None:
     body = (
         '<w:p><w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>'

@@ -48,10 +48,19 @@ SYMBOL: Mapping[int, str] = {
     0xF8: "⎠", 0xF9: "⎤", 0xFA: "⎥", 0xFB: "⎦", 0xFC: "⎫", 0xFD: "⎬", 0xFE: "⎭",
 }  # fmt: skip
 
-#: The Wingdings codes documents use for bullets and check boxes; the rest stay as they are.
+#: The Wingdings codes documents use for bullets, check boxes and arrows; the rest stay as
+#: they are. The arrows (0xDF-0xF8, as flow charts drawn in tables use them) are the common
+#: arrows of their direction and fill, not the exact wide-headed and 3D shapes (U+1F868 and
+#: on), which few fonts have: Wingdings orders each set left, right, up, down, then up-left,
+#: up-right, down-left, down-right.
 WINGDINGS: Mapping[int, str] = {
     0x6C: "●", 0x6E: "■", 0x6F: "□", 0x71: "❑", 0x75: "◆", 0x76: "❖", 0xA7: "▪", 0xA8: "◻",
-    0xD8: "➢", 0xFB: "✗", 0xFC: "✓", 0xFD: "☒", 0xFE: "☑",
+    0xD8: "➢",
+    0xDF: "⬅", 0xE0: "➡", 0xE1: "⬆", 0xE2: "⬇", 0xE3: "⬉", 0xE4: "⬈", 0xE5: "⬋", 0xE6: "⬊",
+    0xE7: "⬅", 0xE8: "➡", 0xE9: "⬆", 0xEA: "⬇", 0xEB: "⬉", 0xEC: "⬈", 0xED: "⬋", 0xEE: "⬊",
+    0xEF: "⇦", 0xF0: "⇨", 0xF1: "⇧", 0xF2: "⇩", 0xF3: "⬄", 0xF4: "⇳",
+    0xF5: "⬀", 0xF6: "⬁", 0xF7: "⬃", 0xF8: "⬂",
+    0xFB: "✗", 0xFC: "✓", 0xFD: "☒", 0xFE: "☑",
 }  # fmt: skip
 
 TABLES: Mapping[Family, Mapping[int, str]] = {"symbol": SYMBOL, "wingdings": WINGDINGS}
