@@ -1762,6 +1762,20 @@ def test_a_waited_run_delivers_the_stored_copy(monkeypatch: pytest.MonkeyPatch) 
     assert world.lanes.in_flight(TENANT) == 1
 
 
+def test_a_waited_item_is_waiting_until_its_waited_run_resumes_it() -> None:
+    world = World()
+    first = world.upload(report_docx("First"), "r1.docx")
+    second = world.upload(report_docx("Second"), "r2.docx")
+    run_decompose(first, world.deps())
+    run_decompose(second, world.deps())
+    assert world.item(second).waiting_since == AT
+    _settle(world, first)
+
+    run_decompose(_waited(world, second), world.deps())
+
+    assert world.item(second).waiting_since is None
+
+
 def test_a_waited_run_settled_by_its_event_before_it_records_delivering_keeps_the_outcome() -> None:
     """The bridge's final event lands while the waited run's item still reads
     `waiting_to_deliver` (the API settles that too): the run's late `delivering` write moves

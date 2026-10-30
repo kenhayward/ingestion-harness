@@ -341,6 +341,42 @@ describe('the Conversion tab: the batch view', () => {
     }
   });
 
+  it('leaves the waits for a lane or a review out of how long a document took', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-26T13:00:40.000Z'));
+    try {
+      const api = batchApi([
+        // 7 min 12 s from start to finish, 5 min of it waiting for a lane.
+        item('waited.docx', 'created', {
+          startedAt: '2026-10-26T12:50:00.000Z',
+          finishedAt: '2026-10-26T12:57:12.000Z',
+          waitedMs: 300_000,
+        }),
+        // Decomposed in 30 s, waiting for a lane since: the time stops while it waits.
+        item('waiting.docx', 'waiting_to_deliver', {
+          startedAt: '2026-10-26T12:59:30.000Z',
+          waitingSince: '2026-10-26T13:00:00.000Z',
+        }),
+        // Rejected in review: the review's wait lasts until it finished.
+        item('rejected.pdf', 'rejected', {
+          startedAt: '2026-10-26T12:00:00.000Z',
+          waitingSince: '2026-10-26T12:00:45.000Z',
+          finishedAt: '2026-10-26T12:40:00.000Z',
+        }),
+      ]);
+      view(api);
+      await findRow('waited.docx');
+      expect(rowOf('waited.docx')).toHaveTextContent('2 min 12 s');
+      const panel = panelFor('waited.docx');
+      expect(panel.getByText(/took 2 min 12 s/)).toBeVisible();
+      expect(panel.getByText('5 min, not counted')).toBeVisible();
+      expect(rowOf('waiting.docx')).toHaveTextContent('30 s so far');
+      expect(rowOf('rejected.pdf')).toHaveTextContent('45 s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     [0, '0 s'],
     [40, '40 s'],

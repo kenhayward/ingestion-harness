@@ -203,3 +203,53 @@ def test_a_final_outcome_the_worker_decides_finishes_the_item(
     started, finished = _times(conn, item_id)
     assert isinstance(started, datetime) and isinstance(finished, datetime)
     assert finished >= started
+
+
+def _wait(conn: psycopg.Connection[tuple[object, ...]], item_id: str) -> tuple[object, ...]:
+    row = conn.execute(
+        "SELECT waiting_since, waited_ms FROM decomposition_items WHERE id = %s", (item_id,)
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def _backdate_wait(
+    conn: psycopg.Connection[tuple[object, ...]], item_id: str, minutes: int
+) -> None:
+    conn.execute(
+        """UPDATE decomposition_items SET waiting_since = waiting_since - make_interval(mins => %s)
+            WHERE id = %s""",
+        (minutes, item_id),
+    )
+
+
+def test_a_wait_for_a_lane_is_timed_until_the_waited_run_resumes(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    store.start(item_id)
+    assert _wait(conn, item_id) == (None, 0)
+    assert store.wait(item_id, "a" * 64, None)
+    since, waited = _wait(conn, item_id)
+    assert isinstance(since, datetime) and waited == 0
+    store.start(item_id)  # a retry of the first run: still waiting
+    assert _wait(conn, item_id) == (since, 0)
+    _backdate_wait(conn, item_id, 5)
+    store.resume(item_id)
+    since, waited = _wait(conn, item_id)
+    assert since is None and isinstance(waited, int) and 5 * 60_000 <= waited < 6 * 60_000
+    store.resume(item_id)  # nothing open: nothing added
+    assert _wait(conn, item_id) == (None, waited)
+
+
+def test_a_hold_is_timed_until_the_approved_run_starts(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    store.start(item_id)
+    assert store.hold(item_id, "a" * 64, None)
+    _backdate_wait(conn, item_id, 30)
+    conn.execute("UPDATE decomposition_items SET outcome = 'queued' WHERE id = %s", (item_id,))
+    store.start(item_id)  # the approved run
+    since, waited = _wait(conn, item_id)
+    assert since is None and isinstance(waited, int) and 30 * 60_000 <= waited < 31 * 60_000

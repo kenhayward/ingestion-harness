@@ -58,6 +58,8 @@ export interface ConversionFacts {
   watchBatch(watchId: string): Promise<string | null>;
   /** Records when an item started and finished, as the worker and the settle do. */
   times(itemId: string, startedAt: string | null, finishedAt: string | null): Promise<void>;
+  /** Records an item's waits between decomposing and delivering, as the worker does. */
+  waits(itemId: string, waitingSince: string | null, waitedMs: number): Promise<void>;
 }
 
 const ADA = { id: '7a1f3c52-1b2e-4c3d-8e4f-5a6b7c8d9e0f', name: 'Ada' };
@@ -154,6 +156,8 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        waitingSince: null,
+        waitedMs: 0,
         flagCount: null,
         held: false,
         reviewedBy: null,
@@ -182,6 +186,20 @@ export function conversionsContract(
         startedAt: '2026-10-26T13:00:00.000Z',
         finishedAt: '2026-10-26T13:01:12.000Z',
       });
+    });
+
+    it('says how long an item has waited between decomposing and delivering', async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const waiting = item(batch.id, 'waiting.docx');
+      await repo.addItem(waiting);
+      await facts.waits(waiting.id, '2026-10-26T13:00:30.000Z', 120_000);
+      expect(ItemSchema.parse(await repo.getItem(waiting.id))).toMatchObject({
+        waitingSince: '2026-10-26T13:00:30.000Z',
+        waitedMs: 120_000,
+      });
+      const listed = await repo.listItems(batch.id);
+      expect(listed.find((i) => i.id === waiting.id)).toMatchObject({ waitedMs: 120_000 });
     });
 
     it('refuses a repeated source key in one batch, but not in another', async () => {
@@ -385,6 +403,8 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        waitingSince: null,
+        waitedMs: 0,
         flagCount: null,
         held: false,
         reviewedBy: null,
