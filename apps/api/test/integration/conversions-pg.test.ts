@@ -14,7 +14,7 @@ import { applyEvent } from '../../src/bridge/events.js';
 import { migrate } from '../../src/db/migrate.js';
 import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
-import { DOCX_MIME, GONE_DETAIL } from '@ih/shared';
+import { DOCX_MIME, GONE_DETAIL, type Item } from '@ih/shared';
 import type { RegisterAction } from '../../src/conversions/repo.js';
 import type { RegisterEntry } from '../../src/repositories/types.js';
 import { conversionsContract, type EntrySeed } from '../conversions-contract.js';
@@ -179,6 +179,32 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             `UPDATE decomposition_items SET waiting_since = $2, waited_ms = $3 WHERE id = $1`,
             [itemId, waitingSince, waitedMs],
           );
+        },
+        legacyRerun: async (of: Item, objectKey?: string) => {
+          const batchId = randomUUID();
+          const itemId = randomUUID();
+          await p.query(
+            `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
+             VALUES ($1, 'manuals', true, '{"id":null,"name":null}', 'started', now())`,
+            [batchId],
+          );
+          await p.query(
+            `INSERT INTO decomposition_items
+               (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
+                redeliver_of)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              itemId,
+              batchId,
+              of.sourceKey,
+              of.filename,
+              of.contentSha256,
+              of.sizeBytes,
+              objectKey ?? `decompositions/${batchId}/${itemId}.docx`,
+              of.id,
+            ],
+          );
+          return { batchId, itemId };
         },
         dropEntry: async (entryId: string) => {
           await p.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);

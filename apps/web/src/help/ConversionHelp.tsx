@@ -166,10 +166,9 @@ export function ConversionHelp() {
         document can be re-run as often as it fails; its line shows the latest run.
       </p>
       <p>
-        A document run again in a batch of its own (by <strong>Force-load</strong>,{' '}
-        <strong>Redeliver</strong> or <strong>Load as a new document</strong>, or re-run before
-        re-runs stayed in their batch) says <strong>Re-run in batch</strong> and the date, which
-        opens that batch, and it is no longer offered here: if it fails there, re-run it from there.
+        A document run again in a batch of its own, before every action stayed in its batch, says{' '}
+        <strong>Re-run in batch</strong> and the date, which opens that batch, and it is no longer
+        offered here: if it fails there, re-run it from there.
       </p>
       <p>
         <strong>Download original</strong>, on the panel and in the <strong>⋯</strong> menu, saves
@@ -186,7 +185,8 @@ export function ConversionHelp() {
         </li>
         <li>
           <strong>Redeliver</strong> updates the document, from the stored file or a replacement you
-          choose. The replacement keeps the original&apos;s name, so it updates the same document.
+          choose. The replacement keeps the original&apos;s name, so it updates the same document,
+          and becomes the file the line downloads and runs again.
         </li>
         <li>
           <strong>Load as a new document</strong>, on a document the target no longer has (someone
@@ -196,8 +196,9 @@ export function ConversionHelp() {
           update the document that is gone, so it stays unresolved until you do this or detach it.
         </li>
         <li>
-          Force-load, redeliver and load as a new document each start a new batch of one, which the
-          notice links to.
+          Force-load, redeliver and load as a new document each run the document again in this
+          batch, like a re-run: its line goes back to Queued, its last result is replaced, and the
+          list refreshes while it is under way.
         </li>
         <li>
           For a document changed in the target, <strong>Detach</strong> forgets it: it stays in the
@@ -211,14 +212,17 @@ export function ConversionHelp() {
       </ul>
       <p>
         Under a new batch, <strong>Earlier batches</strong> lists the batches started before, newest
-        first, ten a page: how each stands, when it started, its target, how many documents, what
-        became of them, and who started it. Click a line to open the batch.
+        first, ten a page: how each stands, its name (or when it started, until it is named), its
+        target, how many documents, what became of them, and who started it. Click a line to open
+        the batch.
       </p>
       <p>
-        The bin at the end of a line deletes that batch, after you confirm: it leaves the list with
-        its uploaded files and reports. What it delivered stays in the target, and is still found
-        there when loaded again. A batch can be deleted only once all its documents have finished,
-        none still converting, delivering or waiting for review.
+        The <strong>⋯</strong> menu at the end of a line offers <strong>Rename…</strong>, which
+        names the batch as the list and the batch show it (leave it empty to go back to the date),
+        and <strong>Delete…</strong>, which deletes the batch after you confirm: it leaves the list
+        with its uploaded files and reports. What it delivered stays in the target, and is still
+        found there when loaded again. A batch can be deleted only once all its documents have
+        finished, none still converting, delivering or waiting for review.
       </p>
     </>
   );

@@ -17,7 +17,7 @@ import {
   decompositionHeldImageKey,
   decompositionHeldManifestKey,
   decompositionHeldPageKey,
-  decompositionSourceKey,
+  decompositionBatchPrefix,
   DecomposeParamsSchema,
   DOCX_MIME,
   ItemSchema,
@@ -185,7 +185,7 @@ const TRACKED_BODY = '<w:p><w:ins w:id="1"><w:r><w:t>new</w:t></w:r></w:ins></w:
 const runsObjects = (c: Ctx) => [...c.store.objects.keys()].filter((k) => k.startsWith('runs/'));
 
 describe('force-load', () => {
-  it('force-load turns already loaded into an update', async () => {
+  it("force-load turns already loaded into an update, in the item's own batch", async () => {
     const c = await setup();
     const item = await startedItem(c);
     settle(c, item, 'already_loaded', { state: 'delivered' });
@@ -193,35 +193,34 @@ describe('force-load', () => {
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/force`);
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const { batch, items } = BatchDetailSchema.parse(res.json());
-    expect(batch).toMatchObject({ targetId: 'manuals', force: true, state: 'started' });
-    expect(batch.id).not.toBe(item.batchId);
+    expect(batch).toMatchObject({ id: item.batchId, force: false, state: 'started' });
     const [rerun] = items as [Item];
     expect(rerun).toMatchObject({
+      id: item.id,
       sourceKey: item.sourceKey,
       filename: item.filename,
       contentSha256: item.contentSha256,
       sizeBytes: item.sizeBytes,
       // The stored source is reused: nothing new is uploaded.
       objectKey: item.objectKey,
-      redeliverOf: item.id,
+      redeliverOf: null,
       outcome: 'queued',
-      registerEntryId: null,
     });
     expect(runsObjects(c)).toEqual(objects);
-    // The batch starts at once: its job is queued, forced (the worker makes it an update).
+    expect(c.repo.conversionBatches.size).toBe(1);
+    // Its job is queued at once, forced (the worker makes it an update).
     const job = jobOf(c, rerun)!;
     expect(rerun.jobId).toBe(job.id);
+    expect(rerun.jobId).not.toBe(item.jobId);
     expect(DecomposeParamsSchema.parse(job.params)).toEqual({
-      batchId: batch.id,
-      itemId: rerun.id,
+      batchId: item.batchId,
+      itemId: item.id,
       targetId: 'manuals',
       sourceKey: item.sourceKey,
       force: true,
     });
-    const detail = await c.app.inject(`/api/conversions/batches/${batch.id}`);
-    expect(BatchDetailSchema.parse(detail.json()).items).toEqual([rerun]);
   });
 
   it('force-load turns a duplicate into a create', async () => {
@@ -235,14 +234,13 @@ describe('force-load', () => {
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/force`);
 
-    expect(res.statusCode).toBe(201);
-    const { batch, items } = BatchDetailSchema.parse(res.json());
-    expect(batch.force).toBe(true);
-    expect(items[0]).toMatchObject({ sourceKey: item.sourceKey, objectKey: item.objectKey });
+    expect(res.statusCode).toBe(200);
+    const { items } = BatchDetailSchema.parse(res.json());
+    expect(items[0]).toMatchObject({ id: item.id, objectKey: item.objectKey, detail: null });
     expect((jobOf(c, items[0]!)!.params as { force: boolean }).force).toBe(true);
   });
 
-  it('force-load decomposes a rejected item again, in a new batch of one', async () => {
+  it('force-load decomposes a rejected item again in its batch, and its approval stays forced', async () => {
     const c = await setup();
     const item = await startedItem(c, 'scans/audit.pdf');
     Object.assign(c.repo.conversionItems.get(item.id)!, {
@@ -252,15 +250,21 @@ describe('force-load', () => {
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/force`);
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const { batch, items } = BatchDetailSchema.parse(res.json());
-    expect(batch).toMatchObject({ force: true, state: 'started' });
+    expect(batch).toMatchObject({ id: item.batchId, force: false });
     expect(items[0]).toMatchObject({
-      sourceKey: item.sourceKey,
+      id: item.id,
       objectKey: item.objectKey,
-      redeliverOf: item.id,
       outcome: 'queued',
+      reviewNote: null,
     });
+    // Held again: approving it delivers it forced, as the force-load asked, not as the batch.
+    Object.assign(c.repo.conversionItems.get(item.id)!, { outcome: 'awaiting_review', held: true });
+    const approved = await post(c.app, `/api/conversions/items/${item.id}/approve`, {});
+    expect(approved.statusCode).toBe(202);
+    const job = c.repo.backgroundJobs.find((j) => j.id === approved.json().jobId)!;
+    expect(job.params).toMatchObject({ force: true, approved: true });
   });
 
   it('a second force-load while the first is unfinished is refused', async () => {
@@ -271,15 +275,14 @@ describe('force-load', () => {
     const first = await post(c.app, `/api/conversions/items/${item.id}/force`);
     const second = await post(c.app, `/api/conversions/items/${item.id}/force`);
 
-    expect(first.statusCode).toBe(201);
+    expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(409);
     expect(second.json()).toMatchObject({ code: 'not_finished' });
-    expect(c.repo.conversionBatches.size).toBe(2); // the original and one rerun
+    expect(c.repo.conversionBatches.size).toBe(1);
     expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
     // Once the rerun has an outcome, the row may be rerun again.
-    const [rerun] = BatchDetailSchema.parse(first.json()).items as [Item];
-    c.repo.conversionItems.get(rerun.id)!.outcome = 'updated';
-    expect((await post(c.app, `/api/conversions/items/${item.id}/force`)).statusCode).toBe(201);
+    c.repo.conversionItems.get(item.id)!.outcome = 'updated';
+    expect((await post(c.app, `/api/conversions/items/${item.id}/force`)).statusCode).toBe(200);
   });
 
   it('refuses an item still running, or one not found', async () => {
@@ -311,7 +314,7 @@ describe('redeliver', () => {
     });
   };
 
-  it('redeliver with a replacement file keeps the source key', async () => {
+  it("redeliver with a replacement file keeps the source key, in the item's own batch", async () => {
     const c = await setup();
     const item = await startedItem(c);
     settle(c, item, 'created', { state: 'delivered' });
@@ -319,22 +322,26 @@ describe('redeliver', () => {
 
     const res = await redeliver(c, item, replacement);
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const { batch, items } = BatchDetailSchema.parse(res.json());
     const [rerun] = items as [Item];
-    expect(batch).toMatchObject({ force: true, state: 'started', targetId: 'manuals' });
+    expect(batch).toMatchObject({ id: item.batchId, state: 'started', targetId: 'manuals' });
     expect(rerun).toMatchObject({
+      id: item.id,
       sourceKey: item.sourceKey, // the same document is updated
       filename: 'renamed.docx',
       contentSha256: createHash('sha256').update(replacement).digest('hex'),
       sizeBytes: replacement.length,
-      objectKey: decompositionSourceKey(batch.id, rerun.id, 'docx'),
-      redeliverOf: item.id,
+      redeliverOf: null,
+      outcome: 'queued',
     });
+    // Stored under the batch, beside the file it replaces.
+    expect(rerun.objectKey!.startsWith(decompositionBatchPrefix(batch.id))).toBe(true);
+    expect(rerun.objectKey).toMatch(/\.docx$/);
+    expect(rerun.objectKey).not.toBe(item.objectKey);
     expect(await c.store.get('runs', rerun.objectKey!)).toEqual(replacement);
-    // The original's file stays: its row still has a report and a source.
-    expect(await c.store.get('runs', item.objectKey!)).not.toBeNull();
     expect(jobOf(c, rerun)!.params).toMatchObject({ sourceKey: item.sourceKey, force: true });
+    expect(c.repo.conversionBatches.size).toBe(1);
   });
 
   it('takes a PDF as the replacement, stored as a .pdf', async () => {
@@ -344,11 +351,11 @@ describe('redeliver', () => {
 
     const res = await redeliver(c, item, fakePdf);
 
-    expect(res.statusCode).toBe(201);
-    const { batch, items } = BatchDetailSchema.parse(res.json());
+    expect(res.statusCode).toBe(200);
+    const { items } = BatchDetailSchema.parse(res.json());
     const [rerun] = items as [Item];
-    expect(rerun.objectKey).toBe(decompositionSourceKey(batch.id, rerun.id, 'pdf'));
-    expect(rerun).toMatchObject({ sourceKey: item.sourceKey, redeliverOf: item.id });
+    expect(rerun.objectKey).toMatch(/\.pdf$/);
+    expect(rerun).toMatchObject({ id: item.id, sourceKey: item.sourceKey });
     expect(c.store.objects.get(`runs/${rerun.objectKey}`)).toMatchObject({
       contentType: 'application/pdf',
     });
@@ -365,9 +372,9 @@ describe('redeliver', () => {
 
     const res = await redeliver(c, item);
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const [rerun] = BatchDetailSchema.parse(res.json()).items as [Item];
-    expect(rerun).toMatchObject({ objectKey: item.objectKey, sourceKey: item.sourceKey });
+    expect(rerun).toMatchObject({ id: item.id, objectKey: item.objectKey, outcome: 'queued' });
   });
 
   it('a second redeliver with a replacement stores nothing more', async () => {
@@ -380,12 +387,12 @@ describe('redeliver', () => {
     const first = await redeliver(c, item, replacement);
     const second = await redeliver(c, item, replacement);
 
-    expect(first.statusCode).toBe(201);
+    expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(409);
     expect(second.json()).toMatchObject({ code: 'not_finished' });
     const [rerun] = BatchDetailSchema.parse(first.json()).items as [Item];
     expect(runsObjects(c)).toEqual([...objects, `runs/${rerun.objectKey}`]);
-    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.conversionBatches.size).toBe(1);
     expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
   });
 
@@ -535,7 +542,7 @@ describe('detach', () => {
     const c = await setup();
     const item = await startedItem(c);
     const entry = changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
-    expect((await post(c.app, `/api/conversions/items/${item.id}/redeliver`)).statusCode).toBe(201);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/redeliver`)).statusCode).toBe(200);
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/detach`);
 
@@ -690,27 +697,28 @@ describe('a document gone from the target', () => {
     expect(takeViolations()).toEqual([]);
   });
 
-  it('reload detaches it and starts one batch that creates it again', async () => {
+  it('reload detaches it and runs it again in its batch, creating it again', async () => {
     const c = await setup();
     const item = await startedItem(c);
     const entry = goneEntry(c, item);
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/reload`);
 
-    expect(res.statusCode, res.body).toBe(201);
+    expect(res.statusCode, res.body).toBe(200);
     const { batch, items } = BatchDetailSchema.parse(res.json());
-    expect(batch).toMatchObject({ targetId: 'manuals', force: false, state: 'started' });
+    expect(batch).toMatchObject({ id: item.batchId, targetId: 'manuals', state: 'started' });
     const [rerun] = items as [Item];
     expect(rerun).toMatchObject({
+      id: item.id,
       sourceKey: item.sourceKey,
       objectKey: item.objectKey,
-      redeliverOf: item.id,
+      redeliverOf: null,
       outcome: 'queued',
     });
     // A plain create: after the detach, its key takes the detach's id, so a new document.
     expect(DecomposeParamsSchema.parse(jobOf(c, rerun)!.params)).toEqual({
-      batchId: batch.id,
-      itemId: rerun.id,
+      batchId: item.batchId,
+      itemId: item.id,
       targetId: 'manuals',
       sourceKey: item.sourceKey,
       force: false,
@@ -734,12 +742,12 @@ describe('a document gone from the target', () => {
       resolution: 'detached',
       gone: false,
     });
-    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.conversionBatches.size).toBe(1);
     expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
     expect(takeViolations()).toEqual([]);
   });
 
-  it('a double click makes one batch', async () => {
+  it('a double click queues one job', async () => {
     const c = await setup();
     const item = await startedItem(c);
     goneEntry(c, item);
@@ -749,11 +757,11 @@ describe('a document gone from the target', () => {
       post(c.app, `/api/conversions/items/${item.id}/reload`),
     ]);
 
-    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 409]);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([200, 409]);
     expect([first, second].find((r) => r.statusCode === 409)!.json()).toMatchObject({
       code: 'not_finished',
     });
-    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.conversionBatches.size).toBe(1);
     expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
     expect(c.repo.registerActions).toHaveLength(1);
     // While that rerun runs, every further click is refused.
@@ -768,8 +776,9 @@ describe('a document gone from the target', () => {
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/reload`);
 
-    expect(res.statusCode).toBe(201);
-    expect(BatchDetailSchema.parse(res.json()).batch.force).toBe(false);
+    expect(res.statusCode).toBe(200);
+    const [rerun] = BatchDetailSchema.parse(res.json()).items as [Item];
+    expect(jobOf(c, rerun)!.params).toMatchObject({ force: false });
     expect(c.repo.registerActions).toHaveLength(1);
   });
 
@@ -822,7 +831,7 @@ describe('a document gone from the target', () => {
       resolution: 'detached',
       reloadable: true,
     });
-    expect((await post(c.app, `/api/conversions/items/${item.id}/reload`)).statusCode).toBe(201);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/reload`)).statusCode).toBe(200);
   });
 
   it('refuses a document that is not gone', async () => {
@@ -856,11 +865,9 @@ describe('a document gone from the target', () => {
 
     const res = await post(c.app, `/api/conversions/items/${item.id}/reload`, undefined, cookie);
 
-    expect(res.statusCode, res.body).toBe(201);
-    expect(BatchDetailSchema.parse(res.json()).batch.createdBy).toEqual({
-      id: user.id,
-      name: 'Olu',
-    });
+    expect(res.statusCode, res.body).toBe(200);
+    const [rerun] = BatchDetailSchema.parse(res.json()).items as [Item];
+    expect(jobOf(c, rerun)!.createdByUser).toBe(user.id);
     expect(c.repo.registerActions[0]?.by).toEqual({ id: user.id, name: 'Olu' });
   });
 });
@@ -1250,22 +1257,17 @@ describe('re-running failed documents', () => {
     const { batch, items } = await startedBatch(c, ['qa/a.docx']);
     const [a] = items as [Item];
     failed(c, a);
-    const reload = await c.repo.rerunItem({
-      batchId: randomUUID(),
-      itemId: randomUUID(),
-      of: a,
-      targetId: 'manuals',
-      createdBy: { id: null, name: null },
-      by: null,
-      source: {
-        filename: a.filename,
-        contentSha256: a.contentSha256,
-        sizeBytes: a.sizeBytes,
-        objectKey: a.objectKey,
-      },
+    // A reload from before reruns ran in place: a batch of one naming `a`, failed.
+    const batchId = randomUUID();
+    const itemId = randomUUID();
+    c.repo.conversionBatches.set(batchId, { ...batch, id: batchId, force: false });
+    c.repo.conversionItems.set(itemId, {
+      ...c.repo.conversionItems.get(a.id)!,
+      id: itemId,
+      batchId,
+      redeliverOf: a.id,
+      outcome: 'failed',
     });
-    if (!reload.ok) throw new Error(reload.reason);
-    c.repo.conversionItems.get(reload.item.id)!.outcome = 'failed';
     const res = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
       itemIds: [a.id],
     });
@@ -1358,19 +1360,18 @@ describe('row actions', () => {
       changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
       const url = (action: string) => `/api/conversions/items/${item.id}/${action}`;
 
-      /** A rerun's item given an outcome, so the row may be acted on again. */
+      /** The rerun item given an outcome, so the row may be acted on again. */
       const finish = (res: { json(): unknown }) => {
-        const [rerun] = BatchDetailSchema.parse(res.json()).items as [Item];
+        const rerun = BatchDetailSchema.parse(res.json()).items.find((i) => i.id === item.id)!;
         c.repo.conversionItems.get(rerun.id)!.outcome = 'changed_in_target';
         return rerun;
       };
 
       const forced = await post(c.app, url('force'), undefined, cookie);
-      expect(forced.statusCode, `${role} force`).toBe(201);
-      expect(BatchDetailSchema.parse(forced.json()).batch.createdBy.name).toBe(`Olu ${role}`);
+      expect(forced.statusCode, `${role} force`).toBe(200);
       expect(jobOf(c, finish(forced))?.createdBy).toBe(`Olu ${role}`);
       const redelivered = await post(c.app, url('redeliver'), undefined, cookie);
-      expect(redelivered.statusCode, role).toBe(201);
+      expect(redelivered.statusCode, role).toBe(200);
       finish(redelivered);
       const preview = await c.app.inject({ url: url('accept'), headers: { cookie } });
       expect(preview.statusCode, `${role} preview`).toBe(200);
@@ -1490,11 +1491,11 @@ async function event(
   expect(applied).toBe('applied');
 }
 
-/** Redeliver from the item's row: the new batch's item. */
+/** Redeliver from the item's row: the item, queued again in its batch. */
 async function redeliverItem(c: Ctx, item: Item): Promise<Item> {
   const res = await post(c.app, `/api/conversions/items/${item.id}/redeliver`);
-  expect(res.statusCode).toBe(201);
-  return BatchDetailSchema.parse(res.json()).items[0]!;
+  expect(res.statusCode).toBe(200);
+  return BatchDetailSchema.parse(res.json()).items.find((i) => i.id === item.id)!;
 }
 
 describe('reviewing a held PDF', () => {

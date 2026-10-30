@@ -573,10 +573,9 @@ describe('the Conversion tab: the batch view', () => {
     const duplicate = item('duplicate.docx', 'duplicate');
     const created = item('created.docx', 'created', { registerEntryId: crypto.randomUUID() });
     const api = batchApi([loaded, duplicate, created], {
-      forceConversionItem: vi.fn(async () => ({
-        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED, force: true }),
-        items: [item('loaded.docx', 'queued', { batchId: NEW_BATCH_ID, redeliverOf: loaded.id })],
-      })),
+      forceConversionItem: vi.fn(async () =>
+        detailOf([{ ...loaded, outcome: 'queued' as const }, duplicate, created]),
+      ),
     });
     view(api);
     await findRow('loaded.docx');
@@ -590,11 +589,10 @@ describe('the Conversion tab: the batch view', () => {
       panelFor('loaded.docx').getByRole('button', { name: 'Force-load loaded.docx' }),
     );
     expect(api.forceConversionItem).toHaveBeenCalledWith(loaded.id);
+    // It runs again in this batch: no other batch is linked, and the batch is read again.
     const notice = await screen.findByRole('status', { name: 'Action' });
-    expect(within(notice).getByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
-      'href',
-      `#/conversion/${NEW_BATCH_ID}`,
-    );
+    expect(notice).toHaveTextContent('Force-load queued loaded.docx again in this batch.');
+    expect(within(notice).queryByRole('link')).toBeNull();
     await waitFor(() => expect(api.getConversionBatch).toHaveBeenCalledTimes(2));
   });
 
@@ -612,10 +610,9 @@ describe('the Conversion tab: the batch view', () => {
         item('duplicate.docx', 'duplicate'),
       ],
       {
-        redeliverConversionItem: vi.fn(async () => ({
-          batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED, force: true }),
-          items: [item('created.docx', 'queued', { batchId: NEW_BATCH_ID })],
-        })),
+        redeliverConversionItem: vi.fn(async () =>
+          detailOf([{ ...created, outcome: 'queued' as const, filename: 'created-v2.docx' }]),
+        ),
       },
     );
     view(api);
@@ -638,9 +635,8 @@ describe('the Conversion tab: the batch view', () => {
     await userEvent.upload(dialog.getByLabelText(/Replacement file/), replacement);
     await userEvent.click(dialog.getByRole('button', { name: 'Redeliver' }));
     expect(api.redeliverConversionItem).toHaveBeenCalledWith(created.id, replacement);
-    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
-      'href',
-      `#/conversion/${NEW_BATCH_ID}`,
+    expect(await screen.findByRole('status', { name: 'Action' })).toHaveTextContent(
+      'Redeliver queued created.docx again in this batch.',
     );
   });
 
@@ -786,10 +782,7 @@ describe('the Conversion tab: the batch view', () => {
       reloadable: true,
       detail: 'The target no longer has this document (it may have been deleted).',
     });
-    const reloaded = {
-      batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
-      items: [item('gone.docx', 'queued', { redeliverOf: gone.id })],
-    };
+    const reloaded = detailOf([{ ...gone, outcome: 'queued' as const }]);
     const api = batchApi([gone], {
       reloadConversionItem: vi.fn(async () => reloaded),
     });
@@ -812,9 +805,8 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.reloadConversionItem).toHaveBeenCalledWith(gone.id);
     expect(api.reloadConversionItem).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
-      'href',
-      `#/conversion/${NEW_BATCH_ID}`,
+    expect(await screen.findByRole('status', { name: 'Action' })).toHaveTextContent(
+      'Load as a new document queued gone.docx again in this batch.',
     );
   });
 
@@ -825,10 +817,7 @@ describe('the Conversion tab: the batch view', () => {
       reloadable: true,
     });
     const api = batchApi([gone], {
-      reloadConversionItem: vi.fn(async () => ({
-        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
-        items: [item('gone.docx', 'queued', { redeliverOf: gone.id })],
-      })),
+      reloadConversionItem: vi.fn(async () => detailOf([{ ...gone, outcome: 'queued' as const }])),
     });
     view(api);
     await findRow('gone.docx');
@@ -853,9 +842,8 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.reloadConversionItem).toHaveBeenCalledWith(gone.id);
     expect(api.reloadConversionItem).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
-      'href',
-      `#/conversion/${NEW_BATCH_ID}`,
+    expect(await screen.findByRole('status', { name: 'Action' })).toHaveTextContent(
+      /queued gone.docx again in this batch/,
     );
   });
 

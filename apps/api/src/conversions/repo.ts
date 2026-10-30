@@ -40,6 +40,11 @@ export interface ConversionRepo {
    * least one item.
    */
   startBatch(id: string, by: Creator | null): Promise<StartBatchResult>;
+  /**
+   * Names a batch (null: no name), open or started; null when there is no such batch, or it
+   * was discarded.
+   */
+  renameBatch(id: string, name: string | null): Promise<Batch | null>;
   /** Marks an open batch discarded; returns its items' object keys, which the caller deletes. */
   discardBatch(id: string): Promise<DiscardBatchResult>;
   /**
@@ -56,12 +61,13 @@ export interface ConversionRepo {
    */
   deleteBatch(id: string): Promise<DeleteBatchResult>;
   /**
-   * A row action's rerun of an item (force-load, redeliver): a new batch of one item, forced and
-   * started at once, its `decompose` job queued, all at once. The item keeps `of`'s source key
-   * and records `redeliverOf`; it delivers `source` (the stored file, or a replacement already
-   * stored under the new ids). With `of` locked, refused (`running`) while an earlier rerun of
-   * it is unfinished, so a repeated request makes one batch, or while `of` itself is under way
-   * again (re-run in place).
+   * A row action's rerun of an item (force-load, redeliver, reload), in place in its own batch
+   * (owner's call 2026-10-30): with the item locked, a new `decompose` job is queued for it,
+   * forced or not, and it is `queued` again, delivering `source` (the stored file, or a
+   * replacement already stored under the batch), its last run's detail, report, link, times,
+   * waits and review cleared (its register entry is kept), all at once. Refused (`running`)
+   * while the item is under way, so a repeated request queues one job, or while a rerun of it
+   * made in another batch before is.
    */
   rerunItem(rerun: Rerun): Promise<RerunResult>;
   /**
@@ -78,8 +84,8 @@ export interface ConversionRepo {
   /**
    * Approve a held PDF (spec §14.4): with the item locked, only while its outcome is
    * `awaiting_review` (`not_awaiting` otherwise), records who, when and the note, sets the outcome
-   * `queued` and queues a `decompose` job with the item's params, its batch's `force` (what the
-   * held run used) and `approved: true`, linked to the item, all at once. Two reviewers cannot
+   * `queued` and queues a `decompose` job with the item's params, the held run's `force` (a
+   * force-load re-runs the item in place; its batch's when that job is gone) and `approved: true`, linked to the item, all at once. Two reviewers cannot
    * both approve: the second finds the outcome moved on.
    */
   approveItem(review: ReviewInput): Promise<ApproveResult>;
@@ -148,26 +154,22 @@ export interface Accept {
 }
 
 export type RerunResult =
-  { ok: true; batch: Batch; item: Item } | { ok: false; reason: 'running' | 'not_detached' };
+  { ok: true; item: Item } | { ok: false; reason: 'running' | 'not_detached' };
 
 export interface Rerun {
-  /** The new batch's and item's ids (a replacement file is stored under them first). */
-  batchId: string;
-  itemId: string;
   /** The item rerun. */
   of: Item;
   targetId: string;
-  createdBy: Batch['createdBy'];
   /** Who queues the job. */
   by: Creator | null;
   source: Pick<Item, 'filename' | 'contentSha256' | 'sizeBytes' | 'objectKey'>;
   /**
-   * Whether the batch is forced (default true: force-load and redeliver). Reload reruns as a
+   * Whether the run is forced (default true: force-load and redeliver). Reload reruns as a
    * plain create (false): after its detach, that makes a new document.
    */
   force?: boolean;
   /**
-   * A register entry that must still be a detached tombstone (reload): checked with the batch
+   * A register entry that must still be a detached tombstone (reload): checked with the job
    * insert, in one transaction, refused `not_detached` when a create replaced it meanwhile.
    */
   whileDetached?: string;

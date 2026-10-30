@@ -125,6 +125,17 @@ const NOT_REVIEWED = {
 
 /** A new item's waits between decomposing and delivering: none yet. */
 const NOT_WAITED = { waitingSince: null, waitedMs: 0 } as const;
+/** An item run again in place (Re-run, force-load, redeliver, reload): its last run cleared. */
+const RUN_AGAIN = {
+  outcome: 'queued',
+  detail: null,
+  reportKey: null,
+  link: null,
+  startedAt: null,
+  finishedAt: null,
+  ...NOT_REVIEWED,
+  ...NOT_WAITED,
+} as const;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1382,6 +1393,7 @@ export class MemoryRepo implements IngestionRepo {
     const batch: Batch = {
       id: randomUUID(),
       targetId,
+      name: null,
       createdBy: { ...createdBy },
       state: 'open',
       force,
@@ -1513,6 +1525,13 @@ export class MemoryRepo implements IngestionRepo {
     return { ok: true, batch: structuredClone(batch), jobIds };
   }
 
+  async renameBatch(id: string, name: string | null): Promise<Batch | null> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch || batch.state === 'discarded') return null;
+    batch.name = name;
+    return structuredClone(batch);
+  }
+
   async discardBatch(id: string): Promise<DiscardBatchResult> {
     const batch = this.conversionBatches.get(id);
     if (!batch) return { ok: false, reason: 'missing' };
@@ -1570,11 +1589,8 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async rerunItem({
-    batchId,
-    itemId,
     of,
     targetId,
-    createdBy,
     by,
     source,
     force = true,
@@ -1587,43 +1603,15 @@ export class MemoryRepo implements IngestionRepo {
     if (whileDetached !== undefined && this.register.get(whileDetached)?.state !== 'detached') {
       return { ok: false, reason: 'not_detached' };
     }
-    const batch: Batch = {
-      id: batchId,
-      targetId,
-      createdBy: { ...createdBy },
-      state: 'started',
-      force,
-      autoApprove: false,
-      createdAt: new Date().toISOString(),
-      startedAt: new Date().toISOString(),
-      watch: null,
-    };
-    const item: StoredItem = {
-      id: itemId,
-      batchId,
-      sourceKey: of.sourceKey,
-      ...source,
-      jobId: null,
-      outcome: 'queued',
-      detail: null,
-      registerEntryId: null,
-      reportKey: null,
-      link: null,
-      redeliverOf: of.id,
-      startedAt: null,
-      finishedAt: null,
-      ...NOT_REVIEWED,
-      ...NOT_WAITED,
-    };
+    const item = this.conversionItems.get(of.id)!;
+    Object.assign(item, { ...source, ...RUN_AGAIN });
     item.jobId = this.queueBackground(
       'decompose',
-      { batchId, itemId, targetId, sourceKey: of.sourceKey, force },
+      { batchId: item.batchId, itemId: item.id, targetId, sourceKey: item.sourceKey, force },
       by?.name ?? null,
       by?.userId ?? null,
     );
-    this.conversionBatches.set(batchId, batch);
-    this.conversionItems.set(itemId, item);
-    return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
+    return { ok: true, item: this.withResolution(item) };
   }
 
   async approveItem({ id, by, note }: ReviewInput): Promise<ApproveResult> {
@@ -1631,6 +1619,9 @@ export class MemoryRepo implements IngestionRepo {
     if (!item) return { kind: 'not_found' };
     if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
     const batch = this.conversionBatches.get(item.batchId)!;
+    // The held run's force: a force-load re-runs the item in place.
+    const ran = this.backgroundJobs.find((j) => j.id === item.jobId)?.params as
+      { force?: boolean } | undefined;
     const jobId = this.queueBackground(
       'decompose',
       {
@@ -1638,7 +1629,7 @@ export class MemoryRepo implements IngestionRepo {
         itemId: id,
         targetId: batch.targetId,
         sourceKey: item.sourceKey,
-        force: batch.force,
+        force: ran?.force ?? batch.force,
         approved: true,
       },
       by?.name ?? null,
@@ -1694,16 +1685,7 @@ export class MemoryRepo implements IngestionRepo {
     }
     const made = asked.map(({ id }) => {
       const item = this.conversionItems.get(id)!;
-      Object.assign(item, {
-        outcome: 'queued',
-        detail: null,
-        reportKey: null,
-        link: null,
-        startedAt: null,
-        finishedAt: null,
-        ...NOT_REVIEWED,
-        ...NOT_WAITED,
-      });
+      Object.assign(item, RUN_AGAIN);
       item.jobId = this.queueBackground(
         'decompose',
         {

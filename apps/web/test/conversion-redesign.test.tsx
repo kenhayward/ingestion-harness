@@ -45,6 +45,22 @@ describe('the Conversion tab redesign: a batch', () => {
     window.location.hash = '';
   });
 
+  it('heads a named batch with its name, and says when it started beside where it went', async () => {
+    const api = batchApi([item('a.docx', 'created')], {
+      getConversionBatch: vi.fn(async () => ({
+        batch: conversionBatch({ id: BATCH_ID, ...STARTED, name: 'QA SOPs, first pass' }),
+        items: [item('a.docx', 'created')],
+      })),
+    });
+    render(<ConversionPage api={api} batchId={BATCH_ID} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'QA SOPs, first pass' }),
+    ).toBeVisible();
+    expect(screen.getByText(/Controlled documents/).closest('p')).toHaveTextContent(
+      /^\S.* · Controlled documents/,
+    );
+  });
+
   it('heads the batch with where it went, who started it, and its totals', async () => {
     const api = batchApi(
       [
@@ -495,6 +511,11 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     expect(r2).toHaveTextContent('12 docs');
     expect(r2).toHaveTextContent('12 created');
     expect(r2).toHaveTextContent('Priya');
+    expect(within(r2!).getByText('Priya')).toHaveClass('by-name');
+    expect(within(r2!).getByRole('cell', { name: /Priya/ })).toHaveAttribute(
+      'title',
+      'Started by Priya',
+    );
     expect(within(r3!).getByText('1 failed')).toHaveClass('pill', 'tone-danger');
     expect(r3).toHaveTextContent('Force-load');
     expect(within(r1!).getByRole('link')).toHaveAttribute('href', `#/conversion/${running.id}`);
@@ -555,8 +576,11 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     { id: '55555555-5555-4555-8555-555555555555', createdAt: '2026-10-21T09:00:00.000Z' },
     { created: 1, delivering: 1, awaiting_review: 1 },
   );
-  const deleteOf = (row: HTMLElement) =>
-    within(row).getByRole('button', { name: /^Delete the batch of/ });
+  /** A row's `⋯` menu opened: its Delete… item. */
+  const deleteOf = async (row: HTMLElement) => {
+    await userEvent.click(within(row).getByRole('button', { name: /^Actions for / }));
+    return screen.getByRole('menuitem', { name: 'Delete…' });
+  };
 
   it('a batch with documents not finished cannot be deleted, and says why', async () => {
     render(
@@ -565,10 +589,12 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
     await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(2));
     const [busy, old] = batches.getAllByRole('row');
-    expect(deleteOf(busy!)).toBeDisabled();
-    expect(deleteOf(busy!)).toHaveAttribute('title', '2 documents not finished yet');
-    expect(deleteOf(old!)).toBeEnabled();
-    expect(deleteOf(old!)).toHaveAttribute('title', 'Delete…');
+    const busyDelete = await deleteOf(busy!);
+    expect(busyDelete).toBeDisabled();
+    expect(busyDelete).toHaveAttribute('title', '2 documents not finished yet');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(await deleteOf(old!)).toBeEnabled();
   });
 
   it('deletes a batch once confirmed, and it leaves the list', async () => {
@@ -580,7 +606,7 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     );
     const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
     await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(2));
-    await userEvent.click(deleteOf(batches.getAllByRole('row')[1]!));
+    await userEvent.click(await deleteOf(batches.getAllByRole('row')[1]!));
     const dialog = within(screen.getByRole('dialog', { name: 'Delete this batch?' }));
     expect(dialog.getByText(/3 documents, leaves this list/)).toBeVisible();
     expect(dialog.getByText(/stay in the target/)).toBeVisible();
@@ -602,14 +628,71 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     );
     const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
     await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(1));
-    await userEvent.click(deleteOf(batches.getAllByRole('row')[0]!));
+    await userEvent.click(await deleteOf(batches.getAllByRole('row')[0]!));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(deleteConversionBatch).not.toHaveBeenCalled();
-    await userEvent.click(deleteOf(batches.getAllByRole('row')[0]!));
+    await userEvent.click(await deleteOf(batches.getAllByRole('row')[0]!));
     await userEvent.click(screen.getByRole('button', { name: 'Delete batch' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('1 document is not finished yet');
     expect(screen.getByRole('dialog')).toBeVisible();
     expect(batches.getAllByRole('row')).toHaveLength(1);
+  });
+
+  it('renames a batch from its menu: the list shows the name, then the date beside it', async () => {
+    const renameConversionBatch = vi.fn(async (_id: string, name: string | null) => ({
+      ...OLD,
+      name,
+    }));
+    render(
+      <ConversionPage
+        api={page({ listConversionBatches: vi.fn(async () => [OLD]), renameConversionBatch })}
+      />,
+    );
+    const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(1));
+    const row = () => batches.getAllByRole('row')[0]!;
+    const rename = async () => {
+      await userEvent.click(within(row()).getByRole('button', { name: /^Actions for / }));
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
+      return within(screen.getByRole('dialog', { name: 'Rename batch' }));
+    };
+
+    const dialog = await rename();
+    const save = dialog.getByRole('button', { name: 'Rename' });
+    expect(save).toBeDisabled(); // nothing changed yet
+    await userEvent.type(dialog.getByRole('textbox', { name: 'Name' }), '  QA SOPs  ');
+    await userEvent.click(save);
+    expect(renameConversionBatch).toHaveBeenCalledWith(OLD.id, 'QA SOPs');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(row()).getByRole('link')).toHaveTextContent('QA SOPs');
+    expect(row()).toHaveTextContent(/QA SOPs · /);
+
+    // Emptied, it goes back to the date.
+    const again = await rename();
+    await userEvent.clear(again.getByRole('textbox', { name: 'Name' }));
+    await userEvent.click(again.getByRole('button', { name: 'Rename' }));
+    expect(renameConversionBatch).toHaveBeenLastCalledWith(OLD.id, null);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(row()).getByRole('link')).not.toHaveTextContent('QA SOPs');
+  });
+
+  it('a refused rename stays shown in the dialog', async () => {
+    const renameConversionBatch = vi.fn(async () => {
+      throw new ApiError('not found', 404);
+    });
+    render(
+      <ConversionPage
+        api={page({ listConversionBatches: vi.fn(async () => [OLD]), renameConversionBatch })}
+      />,
+    );
+    const batches = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(batches.getAllByRole('row')).toHaveLength(1));
+    await userEvent.click(within(batches.getAllByRole('row')[0]!).getByRole('button'));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Rename…' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Mine');
+    await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('not found');
+    expect(screen.getByRole('dialog', { name: 'Rename batch' })).toBeVisible();
   });
 });

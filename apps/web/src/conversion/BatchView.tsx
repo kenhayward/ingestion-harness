@@ -74,8 +74,8 @@ function storeFilter(batchId: string, f: Filter) {
 }
 
 /**
- * Re-run applies to a failed document of a started batch that was never run again: a document
- * is re-run once, and a failed re-run is re-run from its own batch (`Item.rerunIn`).
+ * Re-run applies to a failed document of a started batch, unless it was run again in a batch of
+ * its own before reruns stayed in their batch (`Item.rerunIn`): that one is re-run from there.
  */
 const canRetry = (started: boolean, item: Item, watched: boolean) =>
   started && !watched && item.outcome === 'failed' && item.rerunIn === null;
@@ -306,8 +306,9 @@ export function BatchView({
       </a>
       <div className="batch-head">
         <div className="batch-head-text">
-          <h1 id="batch-heading">Batch · {when(startedAt)}</h1>
+          <h1 id="batch-heading">{batch.name ?? `Batch · ${when(startedAt)}`}</h1>
           <p className="batch-meta muted">
+            {batch.name && `${when(startedAt)} · `}
             {target}
             {targetInfo && <span className="sink-tag">{targetInfo.sinkName}</span>}
             {batch.createdBy.name && (
@@ -366,10 +367,7 @@ export function BatchView({
 
       {result && (
         <p role={result.failed ? 'alert' : 'status'} aria-label="Action">
-          {result.message}{' '}
-          {result.batchId && (
-            <a href={`#/conversion/${encodeURIComponent(result.batchId)}`}>Open the new batch</a>
-          )}
+          {result.message}
         </p>
       )}
 

@@ -68,6 +68,7 @@ const OPERATOR_CALLS = new Set([
   'POST /api/conversions/batches',
   'GET /api/conversions/batches/:id',
   'DELETE /api/conversions/batches/:id',
+  'PATCH /api/conversions/batches/:id',
   'POST /api/conversions/batches/:id/items',
   'POST /api/conversions/batches/:id/start',
   'POST /api/conversions/batches/:id/retry',

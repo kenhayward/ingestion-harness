@@ -305,21 +305,22 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
   }
 
   /**
-   * A row action that starts a new batch of one (force-load, reload), run to its end: the new
-   * batch's item.
+   * A row action that runs the item again in its batch (force-load, reload), run to its end: the
+   * item as it left it.
    */
   async function rerunOf(item: Item, action: 'force' | 'reload'): Promise<Item> {
     const res = await c.app.inject({
       method: 'POST',
       url: `/api/conversions/items/${item.id}/${action}`,
     });
-    expect(res.statusCode, res.body).toBe(201);
+    expect(res.statusCode, res.body).toBe(200);
     const { batch } = BatchDetailSchema.parse(res.json());
+    expect(batch.id).toBe(item.batchId);
     await runAndSettle();
     const detail = BatchDetailSchema.parse(
       (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
     );
-    return detail.items[0]!;
+    return detail.items.find((i) => i.id === item.id)!;
   }
 
   async function detach(item: Item): Promise<void> {

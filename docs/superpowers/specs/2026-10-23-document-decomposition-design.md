@@ -455,6 +455,16 @@ An entry is in one of these states. **[call]**
 **Redeliver** from a document's row in CT Studio, optionally with a replacement file, updates
 that document explicitly. This is how a renamed or moved file updates the right document.
 
+(owner, 2026-10-30) **Every action from within a batch stays in the batch.** Force-load,
+redeliver and load as a new document run the document again in place, as a re-run does: the row
+is queued again under its own id with a new job, and its last run's detail, report, link, times,
+waits and review are cleared. Its register entry is kept. No batch of one is made. A replacement
+file becomes the row's file, stored under the batch beside the one it replaces, so deleting the
+batch deletes both. A force-load held for review is approved forced, as the force-load asked,
+whatever the batch was started with. Each is refused while the row is unfinished, so a double
+click queues one job. Reruns made in a batch of their own before this keep their link back
+(*Re-run in batch*) and are re-run from there. **[owner]**
+
 ### The version check
 
 An update says to the sink: "update the document with this persistent id, provided every component
@@ -530,7 +540,9 @@ it another update, forced or not. The row offers **Load as a new document** and 
 reload whose rerun failed after its detach can be tried again), and the row isn't *superseded*.
 Load as a new document asks for confirmation, then detaches the entry (recorded with `reason: gone`) and
 reruns the stored file as a plain create in a new batch of one. Because of the detach, that create
-makes a new document with a new persistent id. A double click makes one batch.
+makes a new document with a new persistent id. A double click makes one batch. (owner, 2026-10-30)
+It now reruns the file in the row's own batch, as force-load and redeliver do (§8, "The two
+checks"); a double click queues one job.
 
 ### Deliveries that don't finish cleanly **[call]**
 
@@ -643,6 +655,10 @@ so it changes deliberately, as a new contract version. **[call]**
   - Results: each document's outcome, its link in the target, its report, and the actions it
     offers (force-load, redeliver, detach, accept the target's state).
   - Earlier batches, newest first.
+  - (owner, 2026-10-30) Each earlier batch shows who started it, at every width (the target and
+    the document count give way first). A batch can be named: **Rename…** in the row's menu,
+    beside **Delete…**. The list and the batch's own heading show the name, with the date beside
+    it; an empty name goes back to the date. **[owner]**
 - **Bridge.** Delivering version 2 packages, conditional updates and the new receipt fields.
 - **Contract package.** Version 2, published, with the conformance checks.
 

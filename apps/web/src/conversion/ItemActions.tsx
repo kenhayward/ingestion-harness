@@ -11,8 +11,6 @@ export interface ActionResult {
   message: string;
   /** The item as the action left it (detach, accept). */
   item?: Item;
-  /** Force-load, redeliver and reload start a new batch of one: its id. */
-  batchId?: string;
   /** The action was refused or failed: `message` says why. */
   failed?: boolean;
 }
@@ -202,11 +200,12 @@ export function ItemActions({
   );
 }
 
+/** Force-load, redeliver and reload run the document again in place, in this batch. */
 const rerunDone =
   (item: Item, onResult: (r: ActionResult) => void, what: string) => (detail: BatchDetail) =>
     onResult({
-      message: `${what} started a new batch for ${item.sourceKey}.`,
-      batchId: detail.batch.id,
+      message: `${what} queued ${item.sourceKey} again in this batch.`,
+      item: detail.items.find((i) => i.id === item.id),
     });
 const failed = (item: Item, what: string, err: Error): ActionResult => ({
   message: `${what} of ${item.sourceKey} failed: ${err.message}`,
@@ -347,8 +346,8 @@ function RedeliverDialog({
       }
     >
       <p>
-        Updates this document in the target as an explicit update, in a new batch of one. The
-        target&apos;s version check still applies: edits made in the target are not overwritten.
+        Updates this document in the target as an explicit update, running it again in this batch.
+        The target&apos;s version check still applies: edits made in the target are not overwritten.
       </p>
       <ChangedNote note={note} />
       <label className="field" htmlFor={fileId}>
@@ -372,7 +371,7 @@ function RedeliverDialog({
 
 /**
  * Load as a new document: the target no longer has the document, so CT Studio detaches it and
- * creates it again from the stored file, in a new batch of one.
+ * creates it again from the stored file, running it again in its batch.
  */
 function ReloadDialog({
   api,
@@ -422,9 +421,9 @@ function ReloadDialog({
     >
       <p>
         This creates a new document in the target from the stored file of{' '}
-        <span className="mono">{item.sourceKey}</span>, in a new batch of one. The old document no
-        longer exists there: it may have been deleted, so its links and history in the target
-        don&apos;t carry over.
+        <span className="mono">{item.sourceKey}</span>, running it again in this batch. The old
+        document no longer exists there: it may have been deleted, so its links and history in the
+        target don&apos;t carry over.
       </p>
       <ChangedNote note={note} />
       {error && <p role="alert">{error}</p>}
