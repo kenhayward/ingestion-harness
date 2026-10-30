@@ -360,7 +360,13 @@ The flag codes:
 | Document properties, offered | Headers and footers as content |
 | Tracked changes, accepted | Comments, hidden text |
 | A "wide" hint for landscape tables | Page breaks, section breaks, page setup |
-| — | Tables of contents, lists of tables and figures |
+| — | Tables of contents, lists of tables and figures, and their titles |
+
+(2026-10-30) A generated list's title goes with the list: a body-text paragraph straight before
+the list's first entry, in Word's `TOC Heading` style or reading as such a title (`Contents`,
+`Table of Contents`, `List of Tables`, `List of Figures`, `List of Tables and Figures`, any case,
+with or without a colon). Anything else before a list, and a title made a heading, is kept; both
+sides of the check apply the same rule. **[call]**
 
 ## 7. Fidelity checks
 
@@ -370,7 +376,7 @@ These enforce the anti-goal. They run on every document, every time. **[call]**
 
 - **Text accounting.** The source's body text is extracted independently of the decomposition,
   from the same accepted-changes view. That means every paragraph, cell, note and caption, minus
-  only the categories this design drops (tables of contents, number fields, hidden text, comments,
+  only the categories this design drops (tables of contents and their titles, number fields, hidden text, comments,
   deleted text, headers and footers). It is compared with the text of the decomposed document,
   read back in order. A drawing's text counts at the drawing's place, through its image's alt text.
   They must be equal, apart from whitespace normalisation and these documented conversions:

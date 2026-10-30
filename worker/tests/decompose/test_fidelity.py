@@ -70,6 +70,7 @@ STYLES = (
     '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/></w:style>'
     '<w:style w:type="paragraph" w:styleId="TableofFigures">'
     '<w:name w:val="table of figures"/></w:style>'
+    '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/></w:style>'
     '<w:style w:type="character" w:styleId="Hidden"><w:rPr><w:vanish/></w:rPr></w:style>'
     "</w:styles>"
 )
@@ -197,8 +198,7 @@ def test_source_units_apply_only_the_documented_conversions() -> None:
     equation = doc.equations[0]
     assert equation.mathml is not None
     assert source_text_units(pkg, ctx) == [
-        "Contents",
-        "Results",
+        "Results",  # the table of contents and its title "Contents" are dropped
         f"Dose level 5°C, see ⟦xref:{section}⟧ and ⟦xref:{table.id}⟧.⟦note:fn-2⟧ inserted",
         "First item",
         "Nested item",
@@ -336,6 +336,51 @@ def test_a_table_word_shows_nothing_of_is_left_out_on_both_sides() -> None:
 def test_a_table_with_anything_shown_is_kept(table: str) -> None:
     doc, pkg, ctx = decompose(heading("Summary") + table)
     assert [b.kind for b in doc.sections[0].blocks] == ["table"]
+    assert check(doc, pkg, ctx) is None
+
+
+def toc(title: str, *, style: str | None = None) -> str:
+    """A title paragraph, then a table of contents of one entry."""
+    return para(run(title), style=style) + para(field('TOC \\o "1-3"', "Results\t3"), style="TOC1")
+
+
+def all_text(doc: DecomposedDocument) -> str:
+    return doc.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "lists",
+    [
+        toc("Table of Contents")
+        + para(run("List of Tables:"))
+        + para(run("Table 1: A	2"), style="TableofFigures")
+        + para(run(" list of figures "))
+        + para(run("Figure 1: B	3"), style="TableofFigures"),
+        toc("Inhalt", style="TOCHeading"),
+    ],
+    ids=["by-text", "toc-heading-style"],
+)
+def test_a_generated_lists_title_is_left_out_with_it_on_both_sides(lists: str) -> None:
+    doc, pkg, ctx = decompose(lists + heading("Results") + para(run("Body text.")))
+    text = all_text(doc)
+    for title in ("Table of Contents", "List of Tables", "list of figures", "Inhalt"):
+        assert title not in text
+    assert "Body text." in text
+    assert check(doc, pkg, ctx) is None
+
+
+@pytest.mark.parametrize(
+    ("body", "kept"),
+    [
+        (para(run("Contents")) + para(run("Body text.")), "Contents"),
+        (toc("This report covers the results."), "This report covers the results."),
+        (toc("Contents", style="Heading1"), "Contents"),
+    ],
+    ids=["no-list-after", "not-a-title", "a-heading"],
+)
+def test_a_paragraph_that_is_not_a_lists_title_is_kept(body: str, kept: str) -> None:
+    doc, pkg, ctx = decompose(body + heading("Results") + para(run("Body text.")))
+    assert kept in all_text(doc)
     assert check(doc, pkg, ctx) is None
 
 

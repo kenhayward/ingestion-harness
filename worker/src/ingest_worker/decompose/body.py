@@ -16,7 +16,8 @@ the ordinal it was given, unused.
 A bookmark maps to the id of the block it starts in (the next block, when it starts in an empty
 paragraph), or of the section whose heading it starts in. One inside a table maps to the table,
 and one in a caption, or a table of notes, to what took it. Entries of a table of contents or a
-list of tables or figures are dropped, by their style; a field left open at the end of the body
+list of tables or figures are dropped, by their style, and so is the title paragraph straight
+before one (`Styles.generated_list_titles`); a field left open at the end of the body
 refuses the document.
 """
 
@@ -458,7 +459,12 @@ class _Flow:
         """The blocks of a container such as a table cell; every paragraph is body text there."""
         inner = _Flow(_Scope(prefix), self.styles, self.ctx)
         inner.wide = self.wide
-        for el in _elements(parent):
+        elements = list(_elements(parent))
+        titles = self.styles.generated_list_titles(elements)
+        for el in elements:
+            if any(el is title for title in titles):
+                skip_paragraph(el, self.ctx)
+                continue
             inner.element(el)
         inner.end_list()
         return inner.scope.finish(self.ctx, flag_uncaptioned=False)
@@ -520,8 +526,12 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
 
     elements = list(_elements(body))
     wide = _landscape_elements(body, elements)
+    titles = styles.generated_list_titles(elements)
     for i, el in enumerate(elements):
         flow.wide = i in wide
+        if any(el is title for title in titles):
+            skip_paragraph(el, ctx)
+            continue
         if el.tag != f"{W}p" or styles.is_generated_list(el):
             flow.element(el)
             continue

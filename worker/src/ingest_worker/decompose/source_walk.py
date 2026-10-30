@@ -8,7 +8,7 @@ containers it doesn't know, so text the decomposer skips becomes a difference ra
 mirrored silence.
 
 It applies only the documented drops and conversions: tracked changes accepted; tables of
-contents and lists of tables and figures, hidden text, tables Word shows nothing of, comments, headers and footers, deleted
+contents and lists of tables and figures (and the title just before one), hidden text, tables Word shows nothing of, comments, headers and footers, deleted
 text dropped; caption number prefixes (and the `SEQ` result in them) removed; note rows and notes
 tables as `marker: text`; symbols to Unicode, tabs to spaces; a drawing's text at its place as
 its image's alt text, and a shape that shows nothing dropped; images, note references, equations and cross-references (fields, internal
@@ -727,9 +727,13 @@ class _Walk:
 
     def container(self, parent: Element) -> list[_SBlock]:
         blocks: list[_SBlock] = []
-        for el in self.elements(parent):
+        elements = list(self.elements(parent))
+        titles = self.styles.generated_list_titles(elements)
+        for el in elements:
             if el.tag == f"{W}tbl":
                 blocks.append(self.table(el))
+            elif any(el is title for title in titles):
+                self.read(el)  # only to keep the field stack balanced
             else:
                 self.paragraph(el, blocks)
         return self.finish(blocks)
@@ -925,9 +929,14 @@ class _Walk:
             raise DecompositionFailed("document has no body")
         blocks: list[_SBlock] = []
         ordinal = 0
-        for el in self.elements(body):
+        elements = list(self.elements(body))
+        titles = self.styles.generated_list_titles(elements)
+        for el in elements:
             if el.tag == f"{W}tbl":
                 blocks.append(self.table(el))
+                continue
+            if any(el is title for title in titles):
+                self.read(el)  # only to keep the field stack balanced
                 continue
             level = None if self.styles.is_generated_list(el) else self.styles.outline_level(el)
             if level is None:

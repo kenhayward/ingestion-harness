@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from itertools import pairwise
 from xml.etree.ElementTree import Element
 
 from .inline import W
@@ -10,6 +12,14 @@ from .inline import W
 _BODY_LEVEL = 9
 _GENERATED_ID = re.compile(r"TOC[1-9]|TableofFigures")
 _GENERATED_NAME = re.compile(r"toc [1-9]|table of figures")
+#: Word's own style for a table of contents' title.
+_TITLE_ID = re.compile(r"TOCHeading")
+_TITLE_NAME = re.compile(r"toc heading")
+#: The text of a generated list's title, compared case-insensitively without a trailing colon.
+_TITLE_TEXT = re.compile(
+    r"(table of )?contents|list of (tables|figures|tables and figures|figures and tables)",
+    re.IGNORECASE,
+)
 _UNORDERED = {"bullet", "none"}
 _BUILT_IN_HEADING = re.compile(r"heading ([1-9])")
 
@@ -103,6 +113,31 @@ class Styles:
             _GENERATED_ID.fullmatch(sid) or _GENERATED_NAME.fullmatch(self._names.get(sid, ""))
             for sid in self._style_chain(p)
         )
+
+    def generated_list_titles(self, elements: Sequence[Element]) -> list[Element]:
+        """The paragraphs of a flow that title the generated list straight after them: body
+        text, not a list entry itself, in Word's `TOC Heading` style or reading as such a
+        title (`Contents`, `List of Tables`, ...). The list is dropped, so its title goes too.
+        """
+        return [
+            el
+            for el, following in pairwise(elements)
+            if el.tag == f"{W}p"
+            and following.tag == f"{W}p"
+            and self.is_generated_list(following)
+            and not self.is_generated_list(el)
+            and self.outline_level(el) is None
+            and self._is_list_title(el)
+        ]
+
+    def _is_list_title(self, p: Element) -> bool:
+        if any(
+            _TITLE_ID.fullmatch(sid) or _TITLE_NAME.fullmatch(self._names.get(sid, ""))
+            for sid in self._style_chain(p)
+        ):
+            return True
+        text = "".join(t.text or "" for t in p.iter(f"{W}t"))
+        return _TITLE_TEXT.fullmatch(text.strip().removesuffix(":").strip()) is not None
 
     def outline_level(self, p: Element) -> int | None:
         """0-based outline level (from `w:outlineLvl`, then the style chain); None for body text.

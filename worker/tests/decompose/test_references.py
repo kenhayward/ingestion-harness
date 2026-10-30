@@ -322,7 +322,7 @@ def test_toc_spanning_paragraphs_is_dropped_whole() -> None:
         + para(run("Body text."))
     )
     doc, _ = decompose(body)
-    assert texts(doc.blocks) == ["Contents"]
+    assert texts(doc.blocks) == []  # the list's title goes with it
     assert texts(doc.sections[0].blocks) == ["Body text."]
     assert doc.report == []
 
