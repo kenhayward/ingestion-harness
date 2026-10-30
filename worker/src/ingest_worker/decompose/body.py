@@ -9,7 +9,8 @@ bold, italic and underline. The id still comes from the whole heading text.
 
 When a scope's blocks are complete, a one-cell table of notes directly after a table becomes
 that table's notes, and a caption paragraph (`Caption` style, or holding a `SEQ` field) next to
-a table becomes its caption; next to an image, it makes the image a figure. Adjacency is in the
+a table becomes its caption (a `Figure n` one only directly above a table with no caption of its
+own: a figure laid out as a table); next to an image, it makes the image a figure. Adjacency is in the
 block list, so empty paragraphs between them don't count. A paragraph that takes a caption keeps
 the ordinal it was given, unused.
 
@@ -195,6 +196,19 @@ def adjacent_caption(
     return None
 
 
+def _figure_caption_above(
+    blocks: list[Block], index: int, captions: Mapping[str, Caption], taken: set[int]
+) -> bool:
+    """Whether the paragraph directly above the table at `index` is a `Figure n` caption: a
+    figure laid out as a table (owner's call 2026-10-30) is titled by it, and a reference to
+    the figure goes to the table. Below a table, a figure caption stays the next image's."""
+    j = index - 1
+    if j < 0 or j in taken or not isinstance(blocks[j], Paragraph):
+        return False
+    caption = captions.get(blocks[j].id)
+    return caption is not None and caption.kind == "figure"
+
+
 def _move_flags(ctx: InlineContext, old: str, new: str) -> None:
     """Point the flags raised at `old`, or inside it, and the bookmarks mapped there, at `new`,
     which absorbed it."""
@@ -222,11 +236,11 @@ def attach_captions(
             continue
         if not isinstance(block, Table):
             continue
-        hit = (
-            None
-            if block.caption or block.numbered
-            else adjacent_caption(blocks, i, captions, "table", taken)
-        )
+        hit = None
+        if not (block.caption or block.numbered):
+            hit = adjacent_caption(blocks, i, captions, "table", taken)
+            if hit is None and _figure_caption_above(blocks, i, captions, taken):
+                hit = i - 1, "above"
         if hit is not None:
             j, position = hit
             taken.add(j)

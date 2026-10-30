@@ -247,6 +247,10 @@ A table holds the following.
 - **An id, numbered or not, and a caption** in inline content, with its position (above or below).
   The source's literal "Table 13:" and its number field are removed; the target numbers it. A
   multi-part number ("Table 3-1:", "Table 14.2.1", "Table A.1") is removed whole.
+  (owner, 2026-10-30) A figure laid out as a table, a "Figure n" caption directly above a table
+  with no caption of its own, titles the table, and a reference to the figure goes to the table;
+  the target numbers it as a table. A figure caption below a table stays the next image's.
+  **[owner]**
 - **A caption in a merged first row.** In the sample, each table's title is a merged first row
   that starts "Table n:". Such a row is recognised as the caption, not data.
 - **Columns**: relative widths.

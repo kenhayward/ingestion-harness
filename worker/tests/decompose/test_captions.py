@@ -192,6 +192,24 @@ def test_figure_caption_is_not_taken_by_a_table() -> None:
     assert flags(ctx) == [("caption_not_found", "info", t.id)]
 
 
+def test_a_figure_caption_directly_above_a_table_titles_it() -> None:
+    """A figure laid out as a table (a flow chart of cells)."""
+    blocks, ctx, _ = read(caption_p("Figure 2: Methodology") + tbl(*DATA, cols=[100, 100]))
+    assert len(blocks) == 1
+    (t,) = tables(blocks)
+    assert (t.caption, t.caption_position) == ([Text(text="Methodology")], "above")
+    assert flags(ctx) == []
+    assert ctx.caption_number_map == {("figure", "2"): t.id}
+
+
+def test_a_table_caption_wins_over_a_figure_caption_further_up() -> None:
+    body = caption_p("Figure 2: Chart") + caption_p("Table 4: Assay") + tbl(*DATA, cols=[100, 100])
+    blocks, _, _ = read(body)
+    (t,) = tables(blocks)
+    assert t.caption == [Text(text="Assay")]
+    assert isinstance(blocks[0], Paragraph)
+
+
 def test_table_with_a_caption_row_leaves_the_paragraph() -> None:
     body = tbl(tr(tc("Table 1: Assay", span=2)), *DATA, cols=[100, 100]) + caption_p("Note text")
     blocks, _, _ = read(body)
