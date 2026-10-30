@@ -837,6 +837,10 @@ class _Walk:
                 j = adjacent(i, "figure")
             elif isinstance(block, _STable) and not block.has_caption:
                 j = adjacent(i, "table")
+                # A figure laid out as a table is titled by the Figure caption above it.
+                above = caption_at(i - 1, "figure")
+                if j is None and above is not None and above.kind == "figure":
+                    j = i - 1
             else:
                 continue
             if j is None:
