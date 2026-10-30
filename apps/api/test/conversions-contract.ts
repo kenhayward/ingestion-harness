@@ -215,18 +215,63 @@ export function conversionsContract(
       expect(await repo.listItems(one.id)).toHaveLength(1);
     });
 
-    it('adds no item to a missing or started batch', async () => {
-      const { repo } = await make();
+    it("adds no item to a missing, discarded or watched folder's batch", async () => {
+      const { repo, facts } = await make();
       expect(await repo.addItem(item(randomUUID(), 'a.docx'))).toEqual({
         ok: false,
         reason: 'missing',
       });
-      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
-      await repo.addItem(item(batch.id, 'a.docx'));
-      await repo.startBatch(batch.id, null);
-      expect(await repo.addItem(item(batch.id, 'b.docx'))).toEqual({
+      const gone = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      await repo.discardBatch(gone.id);
+      expect(await repo.addItem(item(gone.id, 'a.docx'))).toEqual({
         ok: false,
         reason: 'not_open',
+      });
+      const watched = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      await repo.addItem(item(watched.id, 'a.docx'));
+      await repo.startBatch(watched.id, null);
+      await facts.watch(watched.id, 'Inbox');
+      expect(await repo.addItem(item(watched.id, 'b.docx'))).toEqual({
+        ok: false,
+        reason: 'watched',
+      });
+      expect(await repo.listItems(watched.id)).toHaveLength(1);
+    });
+
+    it('queues an item added to a started batch at once, as the start did', async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({
+        targetId: 'manuals',
+        force: true,
+        autoApprove: true,
+        createdBy: ADA,
+      });
+      await repo.addItem(item(batch.id, 'a.docx'));
+      await repo.startBatch(batch.id, null);
+      const late = item(batch.id, 'later/b.pdf');
+      const added = await repo.addItem(late, { name: 'Ada', userId: ADA.id });
+      if (!added.ok) throw new Error(added.reason);
+      expect(added.item).toMatchObject({ id: late.id, outcome: 'queued' });
+      expect(added.item.jobId).not.toBeNull();
+      expect(await facts.job(added.item.jobId!)).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        params: {
+          batchId: batch.id,
+          itemId: late.id,
+          targetId: 'manuals',
+          sourceKey: 'later/b.pdf',
+          force: true,
+          autoApprove: true,
+        },
+        createdBy: 'Ada',
+        createdByUser: ADA.id,
+      });
+      expect((await repo.listItems(batch.id)).map((i) => i.jobId)).toContain(added.item.jobId);
+      expect(await repo.addItem(item(batch.id, 'later/b.pdf'))).toEqual({
+        ok: false,
+        reason: 'duplicate',
       });
     });
 

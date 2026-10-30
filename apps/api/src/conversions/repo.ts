@@ -26,8 +26,14 @@ export interface ConversionRepo {
   getItem(id: string): Promise<Item | null>;
   /** The item whose `decompose` job made this delivery (by the job, not the register). */
   itemByDelivery(deliveryId: string): Promise<Item | null>;
-  /** Adds an item to an open batch; its source key must be new in the batch. */
-  addItem(item: NewItem): Promise<AddItemResult>;
+  /**
+   * Adds an item to a batch; its source key must be new in the batch. In an open batch it waits
+   * for the start. In a started batch (Add Documents, owner's call 2026-10-30) its `decompose`
+   * job is queued at once, as `startBatch` queues one, with the batch's `force` and
+   * `autoApprove` and `by` as its creator, all at once. A watch's batch takes only what its
+   * folder sends (`watched`); a discarded one nothing (`not_open`).
+   */
+  addItem(item: NewItem, by?: Creator | null): Promise<AddItemResult>;
   /**
    * Queues one `decompose` job per item (`BACKGROUND_JOBS.decompose`, params `DecomposeParams`), records
    * each job on its item and marks the batch started, all at once. An open batch only, with at
@@ -328,7 +334,8 @@ export type NewItem = Pick<
 >;
 
 export type AddItemResult =
-  { ok: true; item: Item } | { ok: false; reason: 'missing' | 'not_open' | 'duplicate' };
+  | { ok: true; item: Item }
+  | { ok: false; reason: 'missing' | 'not_open' | 'watched' | 'duplicate' };
 
 export type StartBatchResult =
   | { ok: true; batch: Batch; jobIds: string[] }

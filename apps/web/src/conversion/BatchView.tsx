@@ -33,6 +33,7 @@ import {
   spokenDuration,
   spokenSize,
 } from './outcomes.js';
+import { AddDocuments } from './AddDocuments.js';
 import { ReportPanel } from './ReportPanel.js';
 import { RetryDialog } from './RetryDialog.js';
 
@@ -387,6 +388,15 @@ export function BatchView({
                 setPage(0);
               }}
             />
+            {started && !watched && (
+              <AddDocuments
+                api={api}
+                batchId={batch.id}
+                sourceKeys={new Set(items.map((i) => i.sourceKey))}
+                onAdded={() => setReads((n) => n + 1)}
+                onDone={acted}
+              />
+            )}
             {retryable.length > 0 && (
               <button type="button" className="primary batch-rerun" onClick={retryAll}>
                 <Icon name="refresh" size={14} /> Re-run Failures
