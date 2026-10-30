@@ -299,6 +299,65 @@ def test_render_failure_without_fallback_fails_document() -> None:
         read(para(run(text_box("Alone"))), renderer=FakeRenderer(fails=True))
 
 
+def empty_shape(
+    spPr: str = "<a:noFill/><a:ln><a:noFill/></a:ln>", text: str = "", **kwargs: object
+) -> str:
+    """A shape with an empty (or `text`) text box, as Word leaves a placeholder rectangle."""
+    paragraph = f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" if text else "<w:p/>"
+    return drawing(
+        f"<wps:wsp><wps:spPr>{spPr}</wps:spPr>"
+        f"<wps:txbx><w:txbxContent>{paragraph}</w:txbxContent></wps:txbx></wps:wsp>",
+        uri=_WPS_URI,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+EMPTY_VML = (
+    '<w:pict><v:rect style="width:6pt;height:13pt" filled="f" stroked="f">'
+    "<v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox></v:rect></w:pict>"
+)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        alternate(empty_shape(anchor=True), EMPTY_VML),
+        empty_shape(),
+        EMPTY_VML,
+    ],
+    ids=["alternate", "drawing", "vml"],
+)
+def test_a_shape_that_draws_nothing_is_no_image(shape: str) -> None:
+    """An empty text box with neither fill nor line is not rendered (it renders blank)."""
+    renderer = FakeRenderer(fails=True)
+    blocks, ctx, media = read(
+        para(run(shape), text_run("Table 3. Approaches"), style="Caption"), renderer=renderer
+    )
+    assert (media.images, renderer.fragments, ctx.flags) == ([], [], [])
+    [block] = blocks
+    assert isinstance(block, Paragraph)
+    assert block.inlines == [Text(text="Table 3. Approaches")]
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        empty_shape("<a:noFill/>"),  # Word's default line
+        empty_shape('<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:ln><a:noFill/></a:ln>'),
+        empty_shape(text="Note"),
+        empty_shape(descr="A marker"),
+        EMPTY_VML.replace(' stroked="f"', ""),
+        EMPTY_VML.replace("<v:textbox>", '<v:fill color="red"/><v:textbox>'),
+    ],
+    ids=["line", "fill", "text", "alt", "vml-line", "vml-fill"],
+)
+def test_a_shape_that_draws_something_is_rendered(shape: str) -> None:
+    renderer = FakeRenderer()
+    _, _, media = read(para(run(shape)), renderer=renderer)
+    assert len(media.images) == 1
+    assert len(renderer.fragments) == 1
+
+
 def test_vml_picture_is_rendered_with_its_size() -> None:
     renderer = FakeRenderer()
     _, _, media = read(para(run(VML_FALLBACK)), renderer=renderer)

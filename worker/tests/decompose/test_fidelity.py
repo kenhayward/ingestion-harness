@@ -44,7 +44,7 @@ from tests.decompose.test_captions import DATA, SEQ_TABLE_13, caption_p, cell_wi
 from tests.decompose.test_captions import run as caption_run
 from tests.decompose.test_captions import sup as caption_sup
 from tests.decompose.test_equations import display, frac, o_math, r
-from tests.decompose.test_media import PNG, picture, text_box
+from tests.decompose.test_media import EMPTY_VML, PNG, alternate, empty_shape, picture, text_box
 from tests.decompose.test_references import (
     begin,
     bookmark,
@@ -373,6 +373,13 @@ def test_drawing_text_accounted_via_alt() -> None:
         check(doc.model_copy(update={"images": images}), pkg, ctx)
     assert "Box line one" in failed.value.detail
     assert failed.value.at == figures(doc).id
+
+
+def test_a_shape_that_draws_nothing_is_left_out_on_both_sides() -> None:
+    shape = alternate(empty_shape(anchor=True), EMPTY_VML)
+    doc, pkg, ctx = decompose(para(f"<w:r>{shape}</w:r>" + run("Approaches")))
+    assert doc.images == []
+    check(doc, pkg, ctx)
 
 
 def test_image_only_equation_compared_by_its_image() -> None:

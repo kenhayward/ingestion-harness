@@ -4,8 +4,9 @@ A picture (`pic:pic` with an embedded blip) keeps its bytes when they are PNG or
 their magic bytes; EMF, WMF and other formats are rendered to PNG through the `Renderer`, with
 the original kept. A drawing (shape, group, canvas, SmartArt, chart, VML or OLE object) is
 rendered from a fragment holding it, falling back to the picture stored beside it, and its own
-text becomes the image's alt text so no text is lost. Anything that cannot be turned into an
-image fails the document.
+text becomes the image's alt text so no text is lost. A shape that shows nothing (no fill,
+line, text, picture or alt text) is not an image and is left out. Anything else that cannot be
+turned into an image fails the document.
 """
 
 from __future__ import annotations
@@ -42,6 +43,8 @@ _V = "{urn:schemas-microsoft-com:vml}"
 _O = "{urn:schemas-microsoft-com:office:office}"
 _C = "{http://schemas.openxmlformats.org/drawingml/2006/chart}"
 _DGM = "{http://schemas.openxmlformats.org/drawingml/2006/diagram}"
+_WPS = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
+_OMML = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
 
 _PIC_URI = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 _PKG_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -64,6 +67,12 @@ _SKIPPED = {f"{_W}del", f"{_W}moveFrom", f"{_MC}Fallback"}
 _PARAGRAPHS = {f"{_W}p", f"{_A}p"}
 _TEXT = {f"{_W}t", f"{_A}t"}
 _TABS = {f"{_W}tab", f"{_W}ptab"}
+#: What a drawing shows besides its shape's fill and line: text, a symbol, a picture, an
+#: equation or a drawing inside it.
+_SHOWN = {*_TEXT, f"{_W}sym", f"{_A}blip", f"{_V}imagedata", f"{_V}textpath", f"{_OMML}oMath"}
+_VML_SHAPES = {f"{_V}{name}" for name in ("rect", "roundrect", "oval", "shape")}
+#: A VML shape's children that paint it.
+_VML_PAINT = {f"{_V}{name}" for name in ("fill", "stroke", "shadow", "imagedata", "textpath")}
 
 _EMU_PER_MM = 36000
 _TWIPS_PER_MM = 1440 / 25.4
@@ -324,9 +333,7 @@ def text_alternative(alternate: Element) -> Element | None:
 
 def is_media(run_child: Element) -> bool:
     """Whether a run's child is a picture or drawing (possibly in markup-compatibility form)."""
-    return run_child.tag in MEDIA_TAGS or (
-        run_child.tag == ALTERNATE and choose_media(run_child)[0] is not None
-    )
+    return choose_media(run_child)[0] is not None
 
 
 def media_of(
@@ -362,7 +369,57 @@ def media_of(
 
 
 def choose_media(run_child: Element) -> tuple[Element | None, Element | None]:
-    """The picture or drawing to read, and the element holding its fallback picture, if any."""
+    """The picture or drawing to read, and the element holding its fallback picture, if any;
+    none when it draws nothing (`draws_nothing`)."""
+    el, fallback = _preferred_media(run_child)
+    if el is None or draws_nothing(el):
+        return None, None
+    return el, fallback
+
+
+def draws_nothing(el: Element) -> bool:
+    """Whether a drawing shows nothing: one shape with neither fill nor line that holds no
+    text, picture or equation and has no alt text (an empty text box left behind as a
+    placeholder). It is not an image: rendered, it is a blank page."""
+    if any(
+        child.tag in _SHOWN or child.tag in MEDIA_TAGS for child in el.iter() if child is not el
+    ):
+        return False
+    if el.tag == f"{_W}drawing":
+        container = el.find(f"{_WP}inline")
+        if container is None:
+            container = el.find(f"{_WP}anchor")
+        if container is None or doc_pr_alt(container) is not None:
+            return False
+        shapes = container.findall(f"{_A}graphic/{_A}graphicData/*")
+        if len(shapes) != 1 or shapes[0].tag != f"{_WPS}wsp":
+            return False
+        props = shapes[0].find(f"{_WPS}spPr")
+        return (
+            props is not None
+            and props.find(f"{_A}noFill") is not None
+            and props.find(f"{_A}ln/{_A}noFill") is not None
+        )
+    if el.tag == f"{_W}pict":
+        shapes = [child for child in el if child.tag != f"{_V}shapetype"]
+        if len(shapes) != 1 or shapes[0].tag not in _VML_SHAPES:
+            return False
+        shape = shapes[0]
+        return (
+            _vml_off(shape.get("filled"))
+            and _vml_off(shape.get("stroked"))
+            and not shape.get("alt")
+            and not any(child.tag in _VML_PAINT for child in shape)
+        )
+    return False
+
+
+def _vml_off(value: str | None) -> bool:
+    """A VML boolean attribute that is set false (unset, `filled` and `stroked` are true)."""
+    return value is not None and value.strip().lower() in ("f", "false", "0", "off")
+
+
+def _preferred_media(run_child: Element) -> tuple[Element | None, Element | None]:
     if run_child.tag in MEDIA_TAGS:
         return run_child, None
     if run_child.tag != ALTERNATE:
