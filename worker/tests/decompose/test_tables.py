@@ -202,8 +202,42 @@ def test_new_restart_ends_the_merge_above() -> None:
             cols=[1],
         )
     )
-    assert spans(t) == [[(2, 1)], [], [(2, 1)], []]
-    assert origins(grid) == model_grid(t) == [[(0, 0)], [(0, 0)], [(2, 0)], [(2, 0)]]
+    # The rows holding only continue cells have no cells of their own and are left out.
+    assert spans(t) == [[(1, 1)], [(1, 1)]]
+    assert model_grid(t) == [[(0, 0)], [(1, 0)]]
+    assert origins(grid) == [[(0, 0)], [(0, 0)], [(2, 0)], [(2, 0)]]
+
+
+def test_a_row_of_only_continue_cells_is_left_out() -> None:
+    # TPR-003408's Table 7: a header merged down over a second, empty row of continue cells.
+    t, _, _ = table(
+        tbl(
+            tr(tc("A", vmerge="restart"), tc("B", vmerge="restart"), tc("C", vmerge="restart")),
+            tr(tc(vmerge="continue"), tc(vmerge="continue"), tc(vmerge="continue")),
+            tr(tc("D", vmerge="restart"), tc("E"), tc("F")),
+            tr(tc(vmerge="continue"), tc("G"), tc("H")),
+            cols=[1, 1, 1],
+        )
+    )
+    assert spans(t) == [[(1, 1), (1, 1), (1, 1)], [(2, 1), (1, 1), (1, 1)], [(1, 1), (1, 1)]]
+    assert model_grid(t) == [
+        [(0, 0), (0, 1), (0, 2)],
+        [(1, 0), (1, 1), (1, 2)],
+        [(1, 0), (2, 1), (2, 2)],
+    ]
+
+
+def test_header_row_count_leaves_out_a_covered_header_row() -> None:
+    t, _, _ = table(
+        tbl(
+            tr(tc("A", vmerge="restart"), tc("B", vmerge="restart"), header=True),
+            tr(tc(vmerge="continue"), tc(vmerge="continue"), header=True),
+            tr(tc("C"), tc("D")),
+            cols=[1, 1],
+        )
+    )
+    assert t.header_rows == 1
+    assert [[c.header for c in row.cells] for row in t.rows] == [[True, True], [False, False]]
 
 
 def test_continue_without_restart_is_its_own_cell() -> None:

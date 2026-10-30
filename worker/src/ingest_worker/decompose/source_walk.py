@@ -756,6 +756,8 @@ class _Walk:
         grid = source_grid(tbl)  # its own size is capped before it is built
         self.grid_slots = count_slots(self.grid_slots, len(grid), len(grid[0]) if grid else 0)
         kept = structure.grid_rows(len(rows))
+        # A row every slot of which a cell from a row above covers has no cell of its own.
+        kept = [r for r in kept if not grid[r] or any(s.origin[0] >= r for s in grid[r])]
         index = {r: i for i, r in enumerate(kept)}
         origins = [
             [(index[s.origin[0]], s.origin[1]) if s.origin[0] in index else None for s in grid[r]]
