@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -68,3 +71,55 @@ def test_params_say_whether_the_run_waited_for_a_lane() -> None:
     assert DecomposeParams.model_validate({**PARAMS, "waited": True}).waited is True
     with pytest.raises(ValidationError):
         DecomposeParams.model_validate({**PARAMS, "waited": True, "lane": 1})
+
+
+def _clocked(outcome: ItemOutcome, *minutes: int) -> MemoryItemStore:
+    """A store whose clock reads 09:00 plus each of `minutes` in turn."""
+    times = iter(datetime(2026, 10, 30, 9, m, tzinfo=UTC) for m in minutes)
+    store = MemoryItemStore(clock=lambda: next(times))
+    store.add(ConversionItem(ITEM, BATCH, "a.docx", f"decompositions/{BATCH}/{ITEM}.docx", outcome))
+    return store
+
+
+def test_a_wait_for_a_lane_is_timed_until_the_waited_run_resumes() -> None:
+    store = _clocked("queued", 0, 1, 6)
+    store.start(ITEM)
+    assert store.wait(ITEM, "a" * 64, None)
+    assert store.items[ITEM].waiting_since == datetime(2026, 10, 30, 9, 1, tzinfo=UTC)
+    store.resume(ITEM)
+    item = store.items[ITEM]
+    assert (item.waiting_since, item.waited_ms) == (None, 5 * 60_000)
+    assert item.outcome == "waiting_to_deliver"  # the run decides it from here
+
+
+def test_a_hold_is_timed_until_the_approved_run_starts() -> None:
+    store = _clocked("queued", 0, 2, 32)
+    store.start(ITEM)
+    assert store.hold(ITEM, "a" * 64, None)
+    assert store.items[ITEM].waiting_since == datetime(2026, 10, 30, 9, 2, tzinfo=UTC)
+    # Approving queues the item again (the API's write); its run starts it.
+    store.items[ITEM] = replace(store.items[ITEM], outcome="queued")
+    store.start(ITEM)
+    item = store.items[ITEM]
+    assert (item.outcome, item.waiting_since, item.waited_ms) == ("decomposing", None, 30 * 60_000)
+
+
+def test_waits_add_up_and_resuming_without_a_wait_changes_nothing() -> None:
+    store = _clocked("queued", 0, 1, 3, 4, 10)
+    store.start(ITEM)
+    assert store.hold(ITEM, "a" * 64, None)
+    store.items[ITEM] = replace(store.items[ITEM], outcome="queued")
+    store.start(ITEM)  # 2 minutes in review
+    assert store.wait(ITEM, "b" * 64, None)
+    store.resume(ITEM)  # 6 minutes for a lane
+    store.resume(ITEM)  # nothing open: no clock read, nothing added
+    assert store.items[ITEM].waited_ms == 8 * 60_000
+
+
+def test_a_waiting_item_started_again_by_a_retry_keeps_waiting() -> None:
+    store = _clocked("queued", 0, 1)
+    store.start(ITEM)
+    assert store.wait(ITEM, "a" * 64, None)
+    store.start(ITEM)  # a retry of the first run, which leaves it to the dispatcher
+    item = store.items[ITEM]
+    assert (item.waiting_since, item.waited_ms) == (datetime(2026, 10, 30, 9, 1, tzinfo=UTC), 0)

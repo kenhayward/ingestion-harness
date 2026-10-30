@@ -975,6 +975,8 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     rerunAt: null,
     startedAt: null,
     finishedAt: null,
+    waitingSince: null,
+    waitedMs: 0,
     flagCount: null,
     held: false,
     reviewedBy: null,

@@ -174,6 +174,12 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             [itemId, startedAt, finishedAt],
           );
         },
+        waits: async (itemId: string, waitingSince: string | null, waitedMs: number) => {
+          await p.query(
+            `UPDATE decomposition_items SET waiting_since = $2, waited_ms = $3 WHERE id = $1`,
+            [itemId, waitingSince, waitedMs],
+          );
+        },
         dropEntry: async (entryId: string) => {
           await p.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
         },
