@@ -108,6 +108,20 @@ describe('CachingSinkRegistry', () => {
     expect(registry.status('fake')).toBe('available');
   });
 
+  it("keeps why a sink's last describe failed, until it answers again", async () => {
+    const sink = new Flaky();
+    const registry = new CachingSinkRegistry({ fake: sink });
+    expect(registry.reason('fake')).toBeNull();
+    sink.down = true;
+    await registry.refresh();
+    expect(registry.reason('fake')).toBe('down');
+    await registry.refreshUnavailable();
+    expect(registry.reason('fake')).toBe('down');
+    sink.down = false;
+    await registry.refreshUnavailable();
+    expect(registry.reason('fake')).toBeNull();
+  });
+
   it('a sink never described is unavailable and has no describe', async () => {
     const sink = new Flaky();
     sink.down = true;

@@ -35,7 +35,10 @@ await built.internalStore.ensureBucket(config.BRIDGE_STAGING_BUCKET);
 // timeout, or is unavailable until a later refresh), then again on an interval.
 const refreshSinks = () =>
   built.sinks.refresh().then(() => {
-    const down = built.sinks.ids().filter((id) => built.sinks.status(id) === 'unavailable');
+    const down = built.sinks
+      .ids()
+      .filter((id) => built.sinks.status(id) === 'unavailable')
+      .map((id) => ({ id, reason: built.sinks.reason(id) }));
     if (down.length) app.log.warn({ sinks: down }, 'sinks unavailable: their describe failed');
   });
 await refreshSinks();

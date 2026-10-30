@@ -259,6 +259,13 @@ services:
       # Delivery steps run at once (blank = 4) and the largest watched-folder file read (MB, blank = 100).
       BRIDGE_DELIVERY_RUNNERS: ${BRIDGE_DELIVERY_RUNNERS:-}
       BRIDGE_MAX_SOURCE_MB: ${BRIDGE_MAX_SOURCE_MB:-}
+      # An extra certificate authority for external sinks served over https with a locally
+      # issued certificate (a LAN or development address): the path of its root certificate
+      # inside the container, under /etc/ct-bridge/certs (deploy/certs on the host, git-ignored).
+      # Blank: the system's authorities only.
+      NODE_EXTRA_CA_CERTS: ${BRIDGE_EXTRA_CA_CERTS:-}
+    volumes:
+      - ${BRIDGE_CERTS_DIR:-./certs}:/etc/ct-bridge/certs:ro
     networks: [default, rdf]
     depends_on:
       migrate-bridge: { condition: service_completed_successfully }

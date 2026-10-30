@@ -84,10 +84,15 @@ export function effectiveDescribe(id: string, d: SinkDescribe): SinkDescribe {
  * its last good answer but is `unavailable`; one never described has no describe, so whatever
  * needs it is refused as retryable. Every other call goes straight to the sink.
  */
+/** A failed describe in words fit for the log: a SinkError's message, else only the error's kind. */
+const failureOf = (err: unknown): string =>
+  err instanceof SinkError ? err.error.message : err instanceof Error ? err.name : 'unknown error';
+
 export class CachingSinkRegistry implements SinkRegistry {
   private readonly describes = new Map<string, SinkDescribe>();
   private readonly available = new Set<string>();
   private readonly ports = new Map<string, SinkPort>();
+  private readonly failures = new Map<string, string>();
 
   constructor(private readonly sinks: Record<string, SinkPort>) {
     for (const [id, sink] of Object.entries(sinks)) this.ports.set(id, this.cached(id, sink));
@@ -99,8 +104,10 @@ export class CachingSinkRegistry implements SinkRegistry {
         try {
           this.describes.set(id, await sink.describe());
           this.available.add(id);
-        } catch {
+          this.failures.delete(id);
+        } catch (err) {
           this.available.delete(id);
+          this.failures.set(id, failureOf(err));
         }
       }),
     );
@@ -115,8 +122,10 @@ export class CachingSinkRegistry implements SinkRegistry {
           try {
             this.describes.set(id, await sink.describe());
             this.available.add(id);
-          } catch {
+            this.failures.delete(id);
+          } catch (err) {
             // Still unavailable: the next try, or the full refresh, sees it again.
+            this.failures.set(id, failureOf(err));
           }
         }),
     );
@@ -124,6 +133,11 @@ export class CachingSinkRegistry implements SinkRegistry {
 
   status(id: string): 'available' | 'unavailable' {
     return this.available.has(id) ? 'available' : 'unavailable';
+  }
+
+  /** Why the sink's last describe failed (the bridge's own words, never a key); null when it answered. */
+  reason(id: string): string | null {
+    return this.failures.get(id) ?? null;
   }
 
   described(id: string): SinkDescribe | null {

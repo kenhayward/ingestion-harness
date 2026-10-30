@@ -181,6 +181,37 @@ describe('HttpSink', () => {
     expect(refused.error).toMatchObject({ class: 'retryable', code: 'sink_unavailable' });
   });
 
+  it("names the network error's code when the sink cannot be reached", async () => {
+    // A port that was just free (fetch refuses port 1 itself, before any connection).
+    const app = Fastify();
+    const url = await app.listen({ host: '127.0.0.1', port: 0 });
+    await app.close();
+    const refused = await failure(adapter(url).describe());
+    expect(refused.error.message).toBe('the sink fake could not be reached (ECONNREFUSED)');
+  });
+
+  it("says when the bridge does not trust the sink's certificate", async () => {
+    const tls = Object.assign(new Error('unable to get local issuer certificate'), {
+      code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    });
+    const fetchImpl = (() =>
+      Promise.reject(new TypeError('fetch failed', { cause: tls }))) as typeof fetch;
+    const sink = new HttpSink({ id: 'aw', url: 'https://10.0.0.1:8443', key: KEY, fetchImpl });
+    const err = await failure(sink.describe());
+    expect(err.error).toMatchObject({ class: 'retryable', code: 'sink_unavailable' });
+    expect(err.error.message).toBe(
+      'the sink aw could not be reached (UNABLE_TO_GET_ISSUER_CERT_LOCALLY: the bridge does not trust its certificate)',
+    );
+  });
+
+  it('leaves out a cause that is not an error code', async () => {
+    const odd = Object.assign(new Error('x'), { code: 'secret key=abc' });
+    const fetchImpl = (() =>
+      Promise.reject(new TypeError('fetch failed', { cause: odd }))) as typeof fetch;
+    const sink = new HttpSink({ id: 'aw', url: 'https://10.0.0.1:8443', key: KEY, fetchImpl });
+    expect((await failure(sink.describe())).error.message).toBe('the sink aw could not be reached');
+  });
+
   it('a 401 says the signature was refused', async () => {
     const real = await listen(await serveSink(new FakeSink(), KEY));
     const err = await failure(adapter(real, 'w'.repeat(32)).describe());
