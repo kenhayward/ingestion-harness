@@ -144,6 +144,17 @@ least 32 characters, signs the bridge's calls to that sink and is shared with it
 - **Describes.** The bridge describes each sink at start and every
   `BRIDGE_SINK_REFRESH_SECONDS` (300). A sink that doesn't answer is unavailable: new deliveries
   to it are retried until it answers.
+- **A sink with a local certificate.** A sink served over https with a certificate from a local
+  authority (a LAN or development address, a proxy's own CA) is unavailable until the bridge
+  trusts that authority: the log's `sinks unavailable: their describe failed` then gives the
+  reason `could not be reached (UNABLE_TO_GET_ISSUER_CERT_LOCALLY: the bridge does not trust its
+  certificate)`. Put the authority's root certificate (PEM) in `deploy/certs/` (git-ignored,
+  mounted read-only at `/etc/ct-bridge/certs`), set
+  `BRIDGE_EXTRA_CA_CERTS=/etc/ct-bridge/certs/<file>` in `deploy/.env` (it becomes the bridge's
+  `NODE_EXTRA_CA_CERTS`, added to the system's authorities), and recreate the bridge:
+  `docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d bridge`.
+  `BRIDGE_CERTS_DIR` mounts another host folder instead. Blank, the bridge trusts the system's
+  authorities only.
 - **Targets.** Administration > Published outputs lists the sinks under *Systems*. It adds
   targets of a sink with the fields that sink declares.
 - **Deliver-only.** External sinks are deliver-only for now: nothing withdraws from them or reads

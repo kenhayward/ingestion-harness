@@ -169,7 +169,8 @@
         in Word documents arrive as arrows, not as unknown characters: PR #377. A figure laid out as
         a table is titled by its caption, and references to it link: PR #378. Force-load, redeliver
         and load as a new document stay in the batch, and a batch can be named and shows who started
-        it: PR #379.
+        it: PR #379. The delivery bridge can trust a local certificate authority, for a sink on a
+        LAN address, and says why a sink is unavailable: PR #380.
       </p>
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
@@ -215,6 +216,16 @@
             <span>— the Figure caption titles the table, and "see Figure n" links to it</span>
           </li>
         </ul>
+        <h4>Other updates</h4>
+        <ul>
+          <li>
+            <a href="#bridge-extra-ca">Sinks with a locally issued certificate</a>
+            <span
+              >— the bridge can trust an extra certificate authority, and says why a sink is
+              down</span
+            >
+          </li>
+        </ul>
       </nav>
 
       <div class="warn" role="note">
@@ -237,6 +248,11 @@
             <code>POST /api/conversions/items/{id}/force</code>, <code>/redeliver</code> and
             <code>/reload</code> now answer <strong>200</strong> with the item's own batch, the item
             queued again, instead of 201 with a new batch of one.
+          </li>
+          <li>
+            New optional setting <code>BRIDGE_EXTRA_CA_CERTS</code> in
+            <code>deploy/.env</code> (blank: nothing changes), and the bridge now mounts
+            <code>deploy/certs</code> read-only.
           </li>
         </ul>
       </div>
@@ -422,6 +438,24 @@
         to the table. The target numbers it as a table, so it reads <em>Table n</em> there. A figure
         caption below a table is left for the picture after it, as before. Re-run the document once
         this is deployed.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+      <h3 id="bridge-extra-ca">Sinks with a locally issued certificate</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/380">#380</a>
+      </p>
+      <p>
+        An external system the bridge delivers to may sit behind a proxy on the local network whose
+        certificate comes from that proxy's own authority. The bridge did not trust it, so the
+        system never showed when adding a connection, and the log said only that its describe
+        failed. The bridge can now trust one extra authority: put its root certificate in
+        <code>deploy/certs</code>, set <code>BRIDGE_EXTRA_CA_CERTS</code> to
+        <code>/etc/ct-bridge/certs/&lt;file&gt;</code> and recreate the bridge (the steps are in
+        <code>deploy/README.md</code>, under External sinks). When a system cannot be reached, the
+        log now gives the network error's code too, and says when the bridge does not trust its
+        certificate.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

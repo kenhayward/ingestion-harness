@@ -46,6 +46,32 @@ export interface HttpSinkOptions {
 const refuse = (code: 'internal' | 'timeout' | 'sink_unavailable', message: string) =>
   new SinkError(bridgeError(code, message));
 
+/** TLS codes Node gives when the sink's certificate chains to an authority it does not trust. */
+const UNTRUSTED_CERT = new Set([
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'CERT_UNTRUSTED',
+]);
+
+/**
+ * Why a call never reached the sink, as the network error's code (fetch wraps it in `cause`):
+ * ` (ECONNREFUSED)`, or blank when there is none. Only a code is named, never a message.
+ */
+function unreachedBecause(err: unknown): string {
+  for (let e = err, depth = 0; e && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(code)) {
+      return UNTRUSTED_CERT.has(code)
+        ? ` (${code}: the bridge does not trust its certificate)`
+        : ` (${code})`;
+    }
+  }
+  return '';
+}
+
 /** How much of an answer is read, and the refusal past it. */
 interface Limit {
   bytes: number;
@@ -210,7 +236,10 @@ export class HttpSink implements SinkPort {
       if (name === 'TimeoutError' || name === 'AbortError') {
         throw refuse('timeout', `the sink ${this.opts.id} did not answer in time`);
       }
-      throw refuse('sink_unavailable', `the sink ${this.opts.id} could not be reached`);
+      throw refuse(
+        'sink_unavailable',
+        `the sink ${this.opts.id} could not be reached${unreachedBecause(err)}`,
+      );
     }
     if (res.status === 401) {
       throw refuse('internal', "the sink refused the bridge's signature: check its key");

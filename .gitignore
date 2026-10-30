@@ -21,6 +21,9 @@ htmlcov/
 !.env.example
 deploy/.env
 deploy/seaweedfs/s3.json
+# Certificate authorities the bridge trusts besides the system's (BRIDGE_EXTRA_CA_CERTS)
+deploy/certs/*
+!deploy/certs/README.md
 
 # Local data
 .data/
