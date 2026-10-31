@@ -61,7 +61,7 @@ services:
 
   seaweedfs:
     # Pinned to an exact 4.x release; Dependabot proposes newer 4.x tags (ADR 0008).
-    image: chrislusf/seaweedfs:4.48
+    image: chrislusf/seaweedfs:4.50
     restart: unless-stopped
     # Render the S3 identity file from env, then run master+volume+filer+s3 in one process.
     # The admin identity is static (the IAM API can't change it); -s3.iam.readOnly=false lets the
